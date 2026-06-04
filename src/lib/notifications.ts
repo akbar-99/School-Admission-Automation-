@@ -1,4 +1,5 @@
 import "server-only";
+import nodemailer, { type Transporter } from "nodemailer";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { config } from "@/lib/config";
 import type { NotificationChannel } from "@/lib/types";
@@ -31,54 +32,82 @@ class LogProvider implements NotificationProvider {
   }
 }
 
-// Live provider: routes per channel to Resend / MSG91 / WhatsApp Cloud API.
-// Each call degrades to the log provider when its key is not configured.
+// SMTP transport (e.g. Hostinger), created lazily and reused across sends.
+let mailer: Transporter | null = null;
+function smtpTransport(): Transporter {
+  if (!mailer) {
+    const { host, port, user, pass } = config.notifications.smtp;
+    mailer = nodemailer.createTransport({
+      host,
+      port,
+      secure: port === 465, // implicit TLS on 465; STARTTLS on 587
+      auth: { user, pass },
+    });
+  }
+  return mailer;
+}
+
+// Live provider: routes per channel to SMTP / Resend / MSG91 / WhatsApp.
+// A configured channel that fails THROWS (so dispatch records it as `failed`);
+// an unconfigured channel degrades to the log provider (recorded as `sent`).
 class LiveProvider implements NotificationProvider {
   private fallback = new LogProvider();
 
   async send(msg: OutboundMessage): Promise<void> {
-    try {
-      if (msg.channel === "email" && config.notifications.resendApiKey) {
-        await fetch("https://api.resend.com/emails", {
+    if (msg.channel === "email") {
+      const smtp = config.notifications.smtp;
+      if (smtp.enabled) {
+        await smtpTransport().sendMail({
+          from: smtp.from,
+          to: msg.recipient,
+          subject: msg.subject ?? "School Admissions",
+          text: msg.body,
+        });
+        return;
+      }
+      if (config.notifications.resendApiKey) {
+        const res = await fetch("https://api.resend.com/emails", {
           method: "POST",
           headers: {
             Authorization: `Bearer ${config.notifications.resendApiKey}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            from: "Admissions <admissions@example.com>",
+            from: smtp.from || "Admissions <onboarding@resend.dev>",
             to: [msg.recipient],
             subject: msg.subject ?? "School Admissions",
             text: msg.body,
           }),
         });
+        if (!res.ok) {
+          throw new Error(`Resend failed: ${res.status} ${await res.text()}`);
+        }
         return;
       }
-      if (msg.channel === "whatsapp" && config.notifications.whatsappToken) {
-        await fetch(
-          `https://graph.facebook.com/v20.0/${config.notifications.whatsappPhoneId}/messages`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${config.notifications.whatsappToken}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              messaging_product: "whatsapp",
-              to: msg.recipient,
-              type: "text",
-              text: { body: msg.body },
-            }),
+    } else if (msg.channel === "whatsapp" && config.notifications.whatsappToken) {
+      const res = await fetch(
+        `https://graph.facebook.com/v20.0/${config.notifications.whatsappPhoneId}/messages`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${config.notifications.whatsappToken}`,
+            "Content-Type": "application/json",
           },
-        );
-        return;
+          body: JSON.stringify({
+            messaging_product: "whatsapp",
+            to: msg.recipient,
+            type: "text",
+            text: { body: msg.body },
+          }),
+        },
+      );
+      if (!res.ok) {
+        throw new Error(`WhatsApp failed: ${res.status} ${await res.text()}`);
       }
-      // SMS (MSG91) and any unconfigured channel -> log fallback.
-      await this.fallback.send(msg);
-    } catch (err) {
-      console.error("[notify] live provider error, falling back to log", err);
-      await this.fallback.send(msg);
+      return;
     }
+    // SMS (MSG91) and any unconfigured channel -> log fallback.
+    await this.fallback.send(msg);
   }
 }
 

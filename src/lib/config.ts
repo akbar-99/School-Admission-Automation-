@@ -40,6 +40,18 @@ export const config = {
     msg91AuthKey: process.env.MSG91_AUTH_KEY ?? "",
     whatsappToken: process.env.WHATSAPP_TOKEN ?? "",
     whatsappPhoneId: process.env.WHATSAPP_PHONE_ID ?? "",
+    // SMTP email transport (e.g. Hostinger). Preferred over Resend when set.
+    smtp: {
+      host: process.env.SMTP_HOST ?? "",
+      port: Number(process.env.SMTP_PORT ?? 465),
+      user: process.env.SMTP_USER ?? "",
+      pass: process.env.SMTP_PASS ?? "",
+      // Display From; defaults to the authenticated mailbox.
+      from: process.env.SMTP_FROM || process.env.SMTP_USER || "",
+      get enabled() {
+        return Boolean(this.host && this.user && this.pass);
+      },
+    },
   },
 
   setupSecret: process.env.SETUP_SECRET ?? process.env.APP_SECRET ?? "setup",
