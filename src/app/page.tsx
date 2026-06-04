@@ -1,65 +1,105 @@
-import Image from "next/image";
+import Link from "next/link";
+import { ClipboardList, CreditCard, UserCheck, GraduationCap, ArrowRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Logo, LogoFull } from "@/components/logo";
+
+const STEPS = [
+  { icon: ClipboardList, title: "Lead & Application", desc: "Marketing enters a lead; parents complete the secure admission form." },
+  { icon: UserCheck, title: "Assessment", desc: "Grade applicants book a slot; teachers record the result." },
+  { icon: CreditCard, title: "Agreement & Payment", desc: "Auto-generated agreement and a Razorpay payment link." },
+  { icon: GraduationCap, title: "Enrollment", desc: "Automatic admission number, section allocation and onboarding." },
+];
 
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <main className="flex-1">
+      <header className="glass sticky top-0 z-20 border-b border-border/70">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3.5">
+          <Logo size="sm" />
+          <Link href="/login">
+            <Button variant="outline" size="sm">
+              Staff sign in
+            </Button>
+          </Link>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      </header>
+
+      {/* Hero */}
+      <section className="relative overflow-hidden">
+        <div className="mx-auto grid max-w-6xl items-center gap-12 px-6 py-20 lg:grid-cols-[1.1fr_0.9fr]">
+          <div>
+            <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-primary/15 bg-secondary/70 px-3.5 py-1.5 text-xs font-medium uppercase tracking-[0.18em] text-secondary-foreground">
+              Broadway · Home Schooling
+            </p>
+            <h1 className="font-display text-5xl font-semibold leading-[1.05] tracking-tight text-foreground sm:text-6xl">
+              Admissions, refined from{" "}
+              <span className="brand-gradient-text italic">lead to enrollment.</span>
+            </h1>
+            <p className="mt-6 max-w-xl text-lg leading-relaxed text-muted-foreground">
+              A seamless, end-to-end admission experience — application forms,
+              age-based category detection, assessment scheduling, secure
+              payments, and automatic enrollment, in one elegant flow.
+            </p>
+            <div className="mt-9 flex flex-wrap gap-3">
+              <Link href="/login">
+                <Button size="lg">
+                  Staff sign in <ArrowRight className="size-4" />
+                </Button>
+              </Link>
+              <a href="#how">
+                <Button size="lg" variant="outline">
+                  How it works
+                </Button>
+              </a>
+            </div>
+            <p className="mt-5 text-sm text-muted-foreground">
+              Parents don&apos;t need an account — they receive a secure
+              admission link via WhatsApp, SMS and email.
+            </p>
+          </div>
+
+          {/* Brand showcase card */}
+          <div className="relative">
+            <div className="absolute -inset-6 rounded-[2rem] brand-gradient opacity-10 blur-2xl" />
+            <div className="relative flex flex-col items-center gap-7 rounded-[1.75rem] border border-border/70 bg-card/80 p-12 shadow-luxe">
+              <LogoFull height={172} priority />
+              <div className="h-px w-24 bg-border" />
+              <p className="text-center text-sm text-muted-foreground">
+                Nurturing learners at home, with the structure of a school.
+              </p>
+            </div>
+          </div>
         </div>
-      </main>
-    </div>
+      </section>
+
+      {/* Steps */}
+      <section id="how" className="mx-auto max-w-6xl px-6 pb-24">
+        <h2 className="font-display text-2xl font-semibold tracking-tight">
+          The journey
+        </h2>
+        <p className="mt-1 text-muted-foreground">Four refined steps, fully automated.</p>
+        <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          {STEPS.map((s, i) => (
+            <div
+              key={s.title}
+              className="group rounded-lg border border-border/70 bg-card p-6 shadow-soft transition-all hover:-translate-y-1 hover:shadow-luxe"
+            >
+              <div className="mb-4 flex size-11 items-center justify-center rounded-xl brand-gradient text-primary-foreground shadow-soft">
+                <s.icon className="size-5" />
+              </div>
+              <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Step {i + 1}
+              </div>
+              <h3 className="mt-1 font-display text-lg font-semibold">{s.title}</h3>
+              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{s.desc}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <footer className="border-t border-border/60 py-7 text-center text-sm text-muted-foreground">
+        <span className="font-logo font-semibold text-primary">Broadway</span> Home Schooling · Admissions
+      </footer>
+    </main>
   );
 }

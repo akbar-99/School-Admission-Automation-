@@ -1,0 +1,223 @@
+import { getSessionUser } from "@/lib/auth";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { formatDateTime, formatDate } from "@/lib/utils";
+import { openSlot, submitResult } from "./actions";
+import { SubmitButton } from "@/components/submit-button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+
+interface SlotRow {
+  id: string;
+  starts_at: string;
+  ends_at: string;
+  is_open: boolean;
+  application_id: string | null;
+  applications: {
+    id: string;
+    status: string;
+    grade_applying: string | null;
+    students: { full_name: string; dob: string | null } | null;
+    parents: { full_name: string; phone: string; email: string | null } | null;
+  } | null;
+}
+
+export default async function TeacherPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string; opened?: string; recorded?: string }>;
+}) {
+  const { error, opened, recorded } = await searchParams;
+  const session = await getSessionUser();
+  const teacherId = session!.profile!.id;
+  const admin = createSupabaseAdminClient();
+
+  const { data } = await admin
+    .from("assessment_slots")
+    .select(
+      "id, starts_at, ends_at, is_open, application_id, applications(id, status, grade_applying, students(full_name, dob), parents(full_name, phone, email))",
+    )
+    .eq("teacher_id", teacherId)
+    .order("starts_at", { ascending: true });
+  const slots = (data ?? []) as unknown as SlotRow[];
+
+  const now = Date.now();
+  const toRecord = slots.filter(
+    (s) => s.applications && s.applications.status === "ASSESSMENT_SCHEDULED",
+  );
+  const openSlots = slots.filter((s) => s.is_open && !s.application_id && new Date(s.starts_at).getTime() > now);
+  const history = slots.filter(
+    (s) => s.applications && s.applications.status !== "ASSESSMENT_SCHEDULED",
+  );
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="font-display text-3xl font-semibold tracking-tight">Assessments</h1>
+        <p className="text-muted-foreground">
+          Open assessment slots and record results for Grade applicants.
+        </p>
+      </div>
+
+      {error && <Alert variant="error">{error}</Alert>}
+      {opened && <Alert variant="success">Slot opened and applicants notified.</Alert>}
+      {recorded && <Alert variant="success">Result recorded.</Alert>}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Open a new slot</CardTitle>
+          <CardDescription>Parents will be notified that slots are available (N-3).</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={openSlot} className="flex flex-wrap items-end gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="starts_at">Start time</Label>
+              <Input id="starts_at" name="starts_at" type="datetime-local" required />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="duration">Duration (min)</Label>
+              <Input
+                id="duration"
+                name="duration"
+                type="number"
+                min={10}
+                max={240}
+                defaultValue={30}
+                className="w-28"
+              />
+            </div>
+            <SubmitButton pendingText="Opening…">Open slot</SubmitButton>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Assessments to record ({toRecord.length})</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {toRecord.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No assessments awaiting a result.</p>
+          ) : (
+            toRecord.map((s) => (
+              <form
+                key={s.id}
+                action={submitResult}
+                className="space-y-3 rounded-md border border-border p-4"
+              >
+                <input type="hidden" name="application_id" value={s.application_id!} />
+                <input type="hidden" name="slot_id" value={s.id} />
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-base font-semibold">
+                      {s.applications?.students?.full_name ?? "Applicant"}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                      <span>Grade {s.applications?.grade_applying}</span>
+                      {s.applications?.students?.dob && (
+                        <span>DOB {formatDate(s.applications.students.dob)}</span>
+                      )}
+                      <span>Slot {formatDateTime(s.starts_at)}</span>
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                      <span className="text-muted-foreground">
+                        Parent:{" "}
+                        <span className="font-medium text-foreground">
+                          {s.applications?.parents?.full_name ?? "—"}
+                        </span>
+                      </span>
+                      {s.applications?.parents?.phone && (
+                        <a
+                          href={`tel:${s.applications.parents.phone}`}
+                          className="font-medium text-primary hover:underline"
+                        >
+                          {s.applications.parents.phone}
+                        </a>
+                      )}
+                      {s.applications?.parents?.email && (
+                        <a
+                          href={`mailto:${s.applications.parents.email}`}
+                          className="font-medium text-primary hover:underline"
+                        >
+                          {s.applications.parents.email}
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                  <Badge tone="info">Booked</Badge>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-[160px_1fr]">
+                  <div className="space-y-1.5">
+                    <Label>Result</Label>
+                    <Select name="outcome" defaultValue="PASS">
+                      <option value="PASS">Pass</option>
+                      <option value="FAIL">Fail</option>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Remarks</Label>
+                    <Textarea name="remarks" placeholder="Optional remarks…" className="min-h-10" />
+                  </div>
+                </div>
+                <SubmitButton size="sm" pendingText="Saving…">
+                  Record result
+                </SubmitButton>
+              </form>
+            ))
+          )}
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Open slots ({openSlots.length})</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {openSlots.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No open slots.</p>
+            ) : (
+              openSlots.map((s) => (
+                <div
+                  key={s.id}
+                  className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm"
+                >
+                  <span>{formatDateTime(s.starts_at)}</span>
+                  <Badge tone="info">Available</Badge>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>History ({history.length})</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {history.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No past assessments.</p>
+            ) : (
+              history.map((s) => (
+                <div
+                  key={s.id}
+                  className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm"
+                >
+                  <span>
+                    {s.applications?.students?.full_name ?? "Applicant"} ·{" "}
+                    {formatDateTime(s.starts_at)}
+                  </span>
+                  <Badge tone="neutral">{s.applications?.status}</Badge>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}

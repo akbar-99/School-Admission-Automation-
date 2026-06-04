@@ -1,26 +1,122 @@
 @import "tailwindcss";
 
+/* =========================================================================
+   Broadway Home Schooling — premium theme derived from the brand logo
+   (teal #1E88A6 · sage #94AC9F · porcelain neutrals)
+   ========================================================================= */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f4f7f7;
+  --foreground: #14323b;
+
+  --card: #ffffff;
+  --card-foreground: #14323b;
+
+  --muted: #eef3f3;
+  --muted-foreground: #5c727a;
+
+  --border: #e0e9ea;
+  --input: #dce6e7;
+  --ring: #1f8aa6;
+
+  /* Brand teal */
+  --primary: #1b7e9a;
+  --primary-foreground: #ffffff;
+
+  /* Sage */
+  --secondary: #eaf1ed;
+  --secondary-foreground: #41685a;
+  --accent: #94ac9f;
+
+  --destructive: #c0392b;
+  --destructive-foreground: #ffffff;
+  --success: #2f8f6b;
+  --warning: #c08a2d;
+
+  --radius: 0.9rem;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-display: var(--font-display), ui-serif, Georgia, serif;
+  --font-logo: var(--font-logo), var(--font-geist-sans), sans-serif;
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 0.25rem);
+  --radius-sm: calc(var(--radius) - 0.45rem);
+
+  --shadow-soft: 0 1px 2px rgba(20, 50, 59, 0.04), 0 8px 24px -12px rgba(20, 50, 59, 0.12);
+  --shadow-luxe: 0 1px 3px rgba(20, 50, 59, 0.05), 0 24px 48px -20px rgba(20, 50, 59, 0.22);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  border-color: var(--border);
 }
 
 body {
-  background: var(--background);
+  background:
+    radial-gradient(900px 500px at 100% -5%, rgba(31, 138, 166, 0.08), transparent 60%),
+    radial-gradient(820px 480px at -10% 8%, rgba(148, 172, 159, 0.12), transparent 55%),
+    var(--background);
+  background-attachment: fixed;
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Display headings */
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}
+.font-logo {
+  font-family: var(--font-logo);
+}
+
+/* Premium helpers */
+.shadow-soft { box-shadow: var(--shadow-soft); }
+.shadow-luxe { box-shadow: var(--shadow-luxe); }
+
+.glass {
+  background: color-mix(in srgb, var(--card) 78%, transparent);
+  backdrop-filter: saturate(1.4) blur(14px);
+  -webkit-backdrop-filter: saturate(1.4) blur(14px);
+}
+
+.brand-gradient {
+  background-image: linear-gradient(135deg, #2a96b4 0%, #176b85 100%);
+}
+.brand-gradient-text {
+  background-image: linear-gradient(120deg, #2a96b4, #176b85);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.hairline {
+  border: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+::selection {
+  background: color-mix(in srgb, var(--primary) 22%, transparent);
 }
