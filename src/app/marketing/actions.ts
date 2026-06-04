@@ -50,7 +50,7 @@ export async function createLead(formData: FormData) {
     .insert({
       parent_id: parent.id,
       status: "LEAD_CREATED",
-      grade_applying: input.student_name ? null : null,
+      lead_student_name: input.student_name || null,
       created_by: profile.id,
     })
     .select("*")

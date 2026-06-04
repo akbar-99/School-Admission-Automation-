@@ -99,6 +99,7 @@ async function Content({
             <AdmissionForm
               token={token}
               gradeOptions={GRADE_OPTIONS}
+              defaultStudentName={app.lead_student_name}
               ageConfig={{
                 year: config.admission.year,
                 cutoffMMDD: config.admission.ageCutoffMMDD,

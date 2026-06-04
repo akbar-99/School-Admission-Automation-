@@ -283,7 +283,12 @@ export async function handlePaymentCompleted(
     console.error("[workflow] enroll_application failed", error);
     return { status: "ERROR" as const };
   }
-  const res = result as { status: string; admission_number?: string; section?: string };
+  const res = result as {
+    status: string;
+    admission_number?: string;
+    section?: string;
+    already?: boolean;
+  };
 
   const { data: appRow } = await admin.from("applications").select("*").eq("id", appId).single();
   const app = appRow as Application;
@@ -291,16 +296,27 @@ export async function handlePaymentCompleted(
   const parent = parentRow as Parent;
 
   if (res.status === "NEEDS_ADMIN") {
-    await dispatch(
-      fanToStaff(await staffContacts(["admin"]), {
-        applicationId: app.id,
-        event: "N-9",
-        subject: "Action needed: all sections full",
-        body: `All sections for ${app.grade_applying ?? app.category} are full. Manual seat allocation required for admission.`,
-      }),
-    );
-    await logAudit({ action: "enrollment.needs_admin", entity: "application", entityId: app.id, details: res });
+    // `already` => this app was already in NEEDS_ADMIN; don't re-alert admins on
+    // a repeat call (the /verify + /webhook double-fire, or repeated resolves).
+    if (!res.already) {
+      await dispatch(
+        fanToStaff(await staffContacts(["admin"]), {
+          applicationId: app.id,
+          event: "N-9",
+          subject: "Action needed: all sections full",
+          body: `All sections for ${app.grade_applying ?? app.category} are full. Manual seat allocation required for admission.`,
+        }),
+      );
+      await logAudit({ action: "enrollment.needs_admin", entity: "application", entityId: app.id, details: res });
+    }
     return { status: "NEEDS_ADMIN" as const };
+  }
+
+  // Idempotency guard: /verify (checkout) and /webhook both call this for the
+  // same payment. enroll_application returns `already` once the admission number
+  // is set, so only the first caller sends the receipt (N-7) and welcome (N-8).
+  if (res.already) {
+    return { ...res, status: "ENROLLED" as const };
   }
 
   // N-7 payment receipt + admin; N-8 welcome + onboarding + class teacher

@@ -27,10 +27,12 @@ export function AdmissionForm({
   token,
   ageConfig,
   gradeOptions,
+  defaultStudentName,
 }: {
   token: string;
   ageConfig: AgeConfig;
   gradeOptions: readonly string[];
+  defaultStudentName?: string | null;
 }) {
   const [dob, setDob] = useState("");
 
@@ -53,7 +55,12 @@ export function AdmissionForm({
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5 sm:col-span-2">
           <Label htmlFor="student_name">Student full name *</Label>
-          <Input id="student_name" name="student_name" required />
+          <Input
+            id="student_name"
+            name="student_name"
+            required
+            defaultValue={defaultStudentName ?? ""}
+          />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="dob">Date of birth *</Label>

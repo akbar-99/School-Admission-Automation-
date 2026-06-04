@@ -57,13 +57,16 @@ export async function ensureOrderForApplication(
     payment = inserted as Payment;
   }
 
-  // AGREEMENT_SENT -> PAYMENT_PENDING (valid transition)
-  if (app.status === "AGREEMENT_SENT") {
+  // Move into PAYMENT_PENDING for a fresh attempt. Valid from AGREEMENT_SENT
+  // (first attempt) and from PAYMENT_FAILED / ABANDONED (retries, SRS FR-20a).
+  // Without this, the later webhook's `.eq("status","PAYMENT_PENDING")` update
+  // would no-op and enrollment would fail after a paid retry.
+  if (app.status !== "PAYMENT_PENDING") {
     await admin
       .from("applications")
       .update({ status: "PAYMENT_PENDING" })
       .eq("id", app.id)
-      .eq("status", "AGREEMENT_SENT");
+      .eq("status", app.status);
   }
 
   return { payment, orderId: payment.razorpay_order_id!, amount: payment.amount };

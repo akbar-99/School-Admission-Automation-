@@ -17,6 +17,7 @@ interface Row {
   status: AppStatus;
   category: string | null;
   grade_applying: string | null;
+  lead_student_name: string | null;
   access_token: string;
   created_at: string;
   parents: { full_name: string; phone: string; email: string | null } | null;
@@ -32,7 +33,7 @@ export default async function MarketingPage({
   const admin = createSupabaseAdminClient();
   const { data } = await admin
     .from("applications")
-    .select("id, status, category, grade_applying, access_token, created_at, parents(full_name, phone, email), students(full_name)")
+    .select("id, status, category, grade_applying, lead_student_name, access_token, created_at, parents(full_name, phone, email), students(full_name)")
     .order("created_at", { ascending: false })
     .limit(100);
   const rows = (data ?? []) as unknown as Row[];
@@ -115,7 +116,7 @@ export default async function MarketingPage({
                       <div className="font-medium">{r.parents?.full_name ?? "—"}</div>
                       <div className="text-xs text-muted-foreground">{r.parents?.phone}</div>
                     </TD>
-                    <TD>{r.students?.full_name ?? "—"}</TD>
+                    <TD>{r.students?.full_name ?? r.lead_student_name ?? "—"}</TD>
                     <TD>{r.category ?? "—"}</TD>
                     <TD>
                       <StatusBadge status={r.status} />

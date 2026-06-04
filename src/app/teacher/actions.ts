@@ -77,6 +77,30 @@ export async function submitResult(formData: FormData) {
   const input = parsed.data;
   const admin = createSupabaseAdminClient();
 
+  // The application must be awaiting a result. This also prevents recording a
+  // result against an application in any other state.
+  const { data: appRow } = await admin
+    .from("applications")
+    .select("id, status")
+    .eq("id", input.application_id)
+    .maybeSingle();
+  if (!appRow || appRow.status !== "ASSESSMENT_SCHEDULED") {
+    redirect("/teacher?error=" + encodeURIComponent("This applicant is not awaiting an assessment result."));
+  }
+
+  // A teacher may only record a result for a slot they conducted. Admins may
+  // record on anyone's behalf.
+  if (profile.role === "teacher") {
+    const { data: slot } = await admin
+      .from("assessment_slots")
+      .select("teacher_id")
+      .eq("application_id", input.application_id)
+      .maybeSingle();
+    if (!slot || slot.teacher_id !== profile.id) {
+      redirect("/teacher?error=" + encodeURIComponent("You can only record results for your own assessment slots."));
+    }
+  }
+
   const { error: rErr } = await admin.from("assessment_results").insert({
     application_id: input.application_id,
     slot_id: input.slot_id ?? null,

@@ -78,6 +78,7 @@ export interface Application {
   status: AppStatus;
   category: Category | null;
   grade_applying: string | null;
+  lead_student_name: string | null;
   documents: DocumentRef[];
   consent_accepted: boolean;
   consent_at: string | null;
