@@ -391,9 +391,9 @@ async function Content({
             <div>
               <div className="font-medium">Study material list</div>
               <ul className="ml-5 list-disc text-muted-foreground">
-                <li>Prescribed textbooks &amp; workbooks for the grade</li>
-                <li>Two notebooks per subject</li>
-                <li>School uniform &amp; ID card (collect from front office)</li>
+                {settings.studyMaterialItems.map((item, i) => (
+                  <li key={i}>{item}</li>
+                ))}
               </ul>
             </div>
             <div>
@@ -407,7 +407,21 @@ async function Content({
               <Phone className="mt-0.5 size-4 text-primary" />
               <div>
                 <div className="font-medium">Contact person</div>
-                <p className="text-muted-foreground">{settings.schoolContact}</p>
+                <p className="text-muted-foreground">
+                  <a
+                    href={`tel:${settings.schoolPhone.replace(/\s+/g, "")}`}
+                    className="text-primary hover:underline"
+                  >
+                    {settings.schoolPhone}
+                  </a>
+                  {" · "}
+                  <a
+                    href={`mailto:${settings.schoolEmail}`}
+                    className="text-primary hover:underline"
+                  >
+                    {settings.schoolEmail}
+                  </a>
+                </p>
               </div>
             </div>
           </CardContent>

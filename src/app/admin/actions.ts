@@ -234,9 +234,11 @@ export async function updateSettings(formData: FormData) {
     { key: "admission_fee_paise", value: String(feePaise) },
     { key: "agreement_terms", value: String(formData.get("agreement_terms") ?? "").trim() },
     { key: "school_name", value: String(formData.get("school_name") ?? "").trim() },
-    { key: "school_contact", value: String(formData.get("school_contact") ?? "").trim() },
+    { key: "school_phone", value: String(formData.get("school_phone") ?? "").trim() },
+    { key: "school_email", value: String(formData.get("school_email") ?? "").trim() },
     { key: "academic_term_start", value: String(formData.get("academic_term_start") ?? "").trim() },
     { key: "academic_orientation", value: String(formData.get("academic_orientation") ?? "").trim() },
+    { key: "study_material", value: String(formData.get("study_material") ?? "").trim() },
   ];
 
   const admin = createSupabaseAdminClient();

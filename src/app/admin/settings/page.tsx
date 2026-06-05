@@ -68,16 +68,36 @@ export default async function AdminSettingsPage({
                   placeholder="e.g. 2026-06-10"
                 />
               </div>
-              <div className="space-y-1.5 sm:col-span-2">
-                <Label htmlFor="school_contact">School contact</Label>
+              <div className="space-y-1.5">
+                <Label htmlFor="school_phone">School phone</Label>
                 <Input
-                  id="school_contact"
-                  name="school_contact"
-                  defaultValue={s.schoolContact}
-                  placeholder="Admissions Office · email · phone"
+                  id="school_phone"
+                  name="school_phone"
+                  type="tel"
+                  defaultValue={s.schoolPhone}
+                  placeholder="+91 90000 00000"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="school_email">School email</Label>
+                <Input
+                  id="school_email"
+                  name="school_email"
+                  type="email"
+                  defaultValue={s.schoolEmail}
+                  placeholder="admissions@school.example"
+                />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="study_material">Onboarding — study material list</Label>
+                <Textarea
+                  id="study_material"
+                  name="study_material"
+                  defaultValue={s.studyMaterial}
+                  className="min-h-24"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Shown on the onboarding pack and the agreement.
+                  One item per line. Shown in the onboarding pack after enrollment.
                 </p>
               </div>
               <div className="space-y-1.5 sm:col-span-2">

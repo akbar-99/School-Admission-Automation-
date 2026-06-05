@@ -9,21 +9,32 @@ export interface AppSettings {
   feePaise: number;
   agreementTerms: string;
   schoolName: string;
-  schoolContact: string;
+  schoolPhone: string;
+  schoolEmail: string;
   academicTermStart: string;
   academicOrientation: string;
+  studyMaterial: string; // raw, one item per line
+  studyMaterialItems: string[]; // parsed list
 }
 
 const DEFAULT_TERMS =
   "By proceeding with the payment, the parent/guardian accepts the terms of admission, the fee schedule, and the school's code of conduct.";
 
-export const SETTINGS_DEFAULTS: AppSettings = {
+const DEFAULT_STUDY_MATERIAL = [
+  "Prescribed textbooks & workbooks for the grade",
+  "Two notebooks per subject",
+  "School uniform & ID card (collect from front office)",
+].join("\n");
+
+export const SETTINGS_DEFAULTS = {
   feePaise: config.admission.feePaise,
   agreementTerms: DEFAULT_TERMS,
   schoolName: "Broadway Home Schooling",
-  schoolContact: "Admissions Office · admissions@broadwayhomeschool.in",
+  schoolPhone: "+91 90000 00000",
+  schoolEmail: "admissions@broadwayhomeschool.in",
   academicTermStart: `${config.admission.year}-06-15`,
   academicOrientation: `${config.admission.year}-06-10`,
+  studyMaterial: DEFAULT_STUDY_MATERIAL,
 };
 
 // Cached per-request so multiple reads during one render hit the DB once.
@@ -42,12 +53,19 @@ export const getSettings = cache(async (): Promise<AppSettings> => {
     return v != null && v !== "" ? v : fallback;
   };
 
+  const studyMaterial = str("study_material", SETTINGS_DEFAULTS.studyMaterial);
   return {
     feePaise: num("admission_fee_paise", SETTINGS_DEFAULTS.feePaise),
     agreementTerms: str("agreement_terms", SETTINGS_DEFAULTS.agreementTerms),
     schoolName: str("school_name", SETTINGS_DEFAULTS.schoolName),
-    schoolContact: str("school_contact", SETTINGS_DEFAULTS.schoolContact),
+    schoolPhone: str("school_phone", SETTINGS_DEFAULTS.schoolPhone),
+    schoolEmail: str("school_email", SETTINGS_DEFAULTS.schoolEmail),
     academicTermStart: str("academic_term_start", SETTINGS_DEFAULTS.academicTermStart),
     academicOrientation: str("academic_orientation", SETTINGS_DEFAULTS.academicOrientation),
+    studyMaterial,
+    studyMaterialItems: studyMaterial
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean),
   };
 });

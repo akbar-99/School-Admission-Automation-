@@ -57,7 +57,7 @@ export async function GET(
   <button class="btn noprint" onclick="window.print()">Print / Save as PDF</button>
   <h1>Admission Agreement</h1>
   <div class="muted">${esc(s.schoolName)} · ${today}</div>
-  <div class="muted">${esc(s.schoolContact)}</div>
+  <div class="muted"><a href="tel:${esc(s.schoolPhone.replace(/\s+/g, ""))}">${esc(s.schoolPhone)}</a> · <a href="mailto:${esc(s.schoolEmail)}">${esc(s.schoolEmail)}</a></div>
   ${acceptedBanner}
   <p>This agreement records the admission of the student named below for the
   academic year ${config.admission.year}, subject to the school's policies and
