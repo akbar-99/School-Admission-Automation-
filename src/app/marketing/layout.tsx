@@ -11,7 +11,10 @@ export default async function MarketingLayout({
     <DashboardShell
       roleLabel="Marketing"
       userName={profile.full_name ?? profile.email ?? "Marketing"}
-      nav={[{ href: "/marketing", label: "Leads" }]}
+      nav={[
+        { href: "/marketing", label: "Leads" },
+        { href: "/marketing/seats", label: "Seat availability" },
+      ]}
     >
       {children}
     </DashboardShell>

@@ -22,11 +22,20 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   // Read the role profile with the service-role client (avoids RLS edge cases);
   // the auth.uid() was already validated by getUser() above.
   const admin = createSupabaseAdminClient();
-  const { data: profile } = await admin
+  const { data: profile, error } = await admin
     .from("users")
     .select("*")
     .eq("id", user.id)
     .maybeSingle();
+
+  // A failed service-role query (e.g. a wrong/missing SUPABASE_SERVICE_ROLE_KEY)
+  // looks identical to "no profile" downstream — surface it in the logs.
+  if (error) {
+    console.error(
+      "[auth] staff profile lookup failed — check SUPABASE_SERVICE_ROLE_KEY:",
+      error.message,
+    );
+  }
 
   return {
     authId: user.id,

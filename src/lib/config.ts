@@ -2,8 +2,23 @@
 // not hard-coded (SRS FR-7, §4.2). Env provides defaults; the app_config table
 // mirrors them for runtime overrides without redeploy.
 
+// Resolve the public base URL across hosts: explicit env first, then the
+// platform-injected URL (Netlify / Vercel), then localhost for dev.
+function resolveAppUrl(): string {
+  const explicit = process.env.NEXT_PUBLIC_APP_URL || process.env.URL;
+  if (explicit) return explicit.replace(/\/+$/, "");
+  const vercel =
+    process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL;
+  if (vercel) return `https://${vercel.replace(/\/+$/, "")}`;
+  return "http://localhost:3000";
+}
+
 export const config = {
-  appUrl: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
+  // Public base URL for parent-facing links (admission link, agreement, receipt).
+  // Set NEXT_PUBLIC_APP_URL explicitly in production. Falls back to platform-
+  // injected URLs (Netlify `URL`, Vercel `VERCEL_PROJECT_PRODUCTION_URL`/
+  // `VERCEL_URL`), then localhost. Trailing slashes are stripped.
+  appUrl: resolveAppUrl(),
   appSecret: process.env.APP_SECRET ?? "dev-insecure-secret",
 
   supabase: {
