@@ -5,8 +5,221 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireRole } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { handlePaymentCompleted } from "@/lib/workflow";
+import {
+  handlePaymentCompleted,
+  handleSlotBooked,
+  notifySlotsPublished,
+  notifyTeacherSlotAssigned,
+} from "@/lib/workflow";
 import { logAudit } from "@/lib/audit";
+
+// Admin creates an assessment slot and assigns it to a teacher.
+const AssessmentSlotSchema = z.object({
+  starts_at: z.string().min(1, "Start time is required"),
+  duration: z.coerce.number().int().positive().max(240).default(30),
+  teacher_id: z.string().uuid("Select a teacher"),
+});
+
+export async function createAssessmentSlot(formData: FormData) {
+  const { profile } = await requireRole(["admin"]);
+  const parsed = AssessmentSlotSchema.safeParse({
+    starts_at: formData.get("starts_at"),
+    duration: formData.get("duration") ?? 30,
+    teacher_id: formData.get("teacher_id"),
+  });
+  if (!parsed.success) {
+    redirect("/admin/assessments?error=" + encodeURIComponent(parsed.error.issues[0].message));
+  }
+  const { starts_at, duration, teacher_id } = parsed.data!;
+
+  const start = new Date(starts_at);
+  if (Number.isNaN(start.getTime()) || start.getTime() < Date.now()) {
+    redirect("/admin/assessments?error=" + encodeURIComponent("Choose a future start time."));
+  }
+  const end = new Date(start.getTime() + duration * 60_000);
+
+  const admin = createSupabaseAdminClient();
+  const { data, error } = await admin
+    .from("assessment_slots")
+    .insert({
+      teacher_id,
+      starts_at: start.toISOString(),
+      ends_at: end.toISOString(),
+      is_open: true,
+    })
+    .select("id")
+    .single();
+  if (error) {
+    redirect("/admin/assessments?error=" + encodeURIComponent(error.message));
+  }
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "assessment.slot_created",
+    entity: "assessment_slot",
+    entityId: data.id,
+    details: { teacher_id },
+  });
+  await notifyTeacherSlotAssigned(teacher_id, { starts_at: start.toISOString() });
+  await notifySlotsPublished();
+  revalidatePath("/admin/assessments");
+  redirect("/admin/assessments?ok=" + encodeURIComponent("Slot created and assigned to the teacher."));
+}
+
+// Admin directly schedules a specific applicant with a teacher at a set time —
+// no parent self-booking. The slot is created already booked to the applicant.
+const AssignSchema = z.object({
+  application_id: z.string().uuid(),
+  teacher_id: z.string().uuid("Select a teacher"),
+  starts_at: z.string().min(1, "Confirmed time is required"),
+  duration: z.coerce.number().int().positive().max(240).default(30),
+});
+
+export async function assignAssessment(formData: FormData) {
+  const { profile } = await requireRole(["admin"]);
+  const parsed = AssignSchema.safeParse({
+    application_id: formData.get("application_id"),
+    teacher_id: formData.get("teacher_id"),
+    starts_at: formData.get("starts_at"),
+    duration: formData.get("duration") ?? 30,
+  });
+  if (!parsed.success) {
+    redirect("/admin/assessments?error=" + encodeURIComponent(parsed.error.issues[0].message));
+  }
+  const { application_id, teacher_id, starts_at, duration } = parsed.data!;
+
+  const start = new Date(starts_at);
+  if (Number.isNaN(start.getTime()) || start.getTime() < Date.now()) {
+    redirect("/admin/assessments?error=" + encodeURIComponent("Choose a future time."));
+  }
+  const end = new Date(start.getTime() + duration * 60_000);
+
+  const admin = createSupabaseAdminClient();
+  const { data: app } = await admin
+    .from("applications")
+    .select("status, category")
+    .eq("id", application_id)
+    .maybeSingle();
+  if (!app || app.category !== "GRADE" || app.status !== "FORM_SUBMITTED") {
+    redirect(
+      "/admin/assessments?error=" +
+        encodeURIComponent("This applicant is no longer awaiting scheduling."),
+    );
+  }
+
+  // Create the slot already booked to this applicant (unique per application).
+  const { error: slotErr } = await admin.from("assessment_slots").insert({
+    teacher_id,
+    starts_at: start.toISOString(),
+    ends_at: end.toISOString(),
+    is_open: false,
+    application_id,
+  });
+  if (slotErr) {
+    redirect("/admin/assessments?error=" + encodeURIComponent(slotErr.message));
+  }
+
+  // FORM_SUBMITTED -> ASSESSMENT_SCHEDULED (valid transition)
+  await admin
+    .from("applications")
+    .update({ status: "ASSESSMENT_SCHEDULED" })
+    .eq("id", application_id)
+    .eq("status", "FORM_SUBMITTED");
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "assessment.assigned",
+    entity: "application",
+    entityId: application_id,
+    details: { teacher_id, starts_at: start.toISOString() },
+  });
+  // Confirm to parent + assigned teacher + admin.
+  await handleSlotBooked(application_id, { starts_at: start.toISOString(), teacher_id });
+  revalidatePath("/admin/assessments");
+  redirect(
+    "/admin/assessments?ok=" + encodeURIComponent("Assessment scheduled and everyone notified."),
+  );
+}
+
+// Permanently delete one applicant and all their records. Frees their seat if
+// they were enrolled. Guarded by typing DELETE.
+export async function deleteApplication(formData: FormData) {
+  const { profile } = await requireRole(["admin"]);
+  const appId = String(formData.get("application_id") ?? "");
+  const confirm = String(formData.get("confirm") ?? "").trim();
+  if (confirm !== "DELETE") {
+    redirect(`/admin/applications/${appId}?error=` + encodeURIComponent('Type "DELETE" to confirm.'));
+  }
+
+  const admin = createSupabaseAdminClient();
+  const { data: app } = await admin
+    .from("applications")
+    .select("id, parent_id, student_id, section_id")
+    .eq("id", appId)
+    .maybeSingle();
+  if (!app) back("Application not found.", "error");
+
+  // Free the seat if one was allocated.
+  if (app!.section_id) {
+    const { data: sec } = await admin
+      .from("sections")
+      .select("filled")
+      .eq("id", app!.section_id)
+      .maybeSingle();
+    if (sec) {
+      await admin
+        .from("sections")
+        .update({ filled: Math.max(0, sec.filled - 1) })
+        .eq("id", app!.section_id);
+    }
+  }
+
+  // Remove slots tied to this application, then the application (cascades
+  // payments/notifications/results), the student, and the now-orphan parent.
+  await admin.from("assessment_slots").delete().eq("application_id", app!.id);
+  await admin.from("applications").delete().eq("id", app!.id);
+  if (app!.student_id) await admin.from("students").delete().eq("id", app!.student_id);
+  const { count } = await admin
+    .from("applications")
+    .select("id", { count: "exact", head: true })
+    .eq("parent_id", app!.parent_id);
+  if (!count) await admin.from("parents").delete().eq("id", app!.parent_id);
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "application.deleted",
+    entity: "application",
+    entityId: appId,
+  });
+  back("Applicant deleted.");
+}
+
+// Factory reset: wipe ALL applicant data (keeps staff, sections, config).
+// Guarded by typing RESET.
+export async function factoryReset(formData: FormData) {
+  const { profile } = await requireRole(["admin"]);
+  const confirm = String(formData.get("confirm") ?? "").trim();
+  if (confirm !== "RESET") {
+    redirect("/admin/settings?error=" + encodeURIComponent('Type "RESET" to confirm.'));
+  }
+
+  const admin = createSupabaseAdminClient();
+  const { error } = await admin.rpc("factory_reset_applicants");
+  if (error) {
+    redirect("/admin/settings?error=" + encodeURIComponent(error.message));
+  }
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "system.factory_reset",
+    entity: "system",
+  });
+  redirect("/admin/settings?ok=" + encodeURIComponent("All applicant data has been wiped."));
+}
 
 function back(msg?: string, type: "error" | "ok" = "ok") {
   redirect("/admin?" + (msg ? `${type}=${encodeURIComponent(msg)}` : ""));

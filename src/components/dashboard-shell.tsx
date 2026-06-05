@@ -22,7 +22,7 @@ export function DashboardShell({
 }) {
   return (
     <div className="flex min-h-screen flex-1 flex-col">
-      <header className="glass sticky top-0 z-20 border-b border-border/70">
+      <header className="glass sticky top-0 z-20 border-b border-border/70 print:hidden">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-3">
           <div className="flex items-center gap-7">
             <Link href="/" aria-label="Broadway Home Schooling">
@@ -68,7 +68,7 @@ export function DashboardShell({
         </nav>
       </header>
       <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-10">{children}</main>
-      <footer className="border-t border-border/60 py-5 text-center text-xs text-muted-foreground">
+      <footer className="border-t border-border/60 py-5 text-center text-xs text-muted-foreground print:hidden">
         Broadway Home Schooling · Admissions
       </footer>
     </div>

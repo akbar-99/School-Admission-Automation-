@@ -1,10 +1,9 @@
 import { getSessionUser } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { formatDateTime, formatDate } from "@/lib/utils";
-import { openSlot, submitResult } from "./actions";
+import { submitResult } from "./actions";
 import { SubmitButton } from "@/components/submit-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -29,13 +28,14 @@ interface SlotRow {
 export default async function TeacherPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; opened?: string; recorded?: string }>;
+  searchParams: Promise<{ error?: string; recorded?: string }>;
 }) {
-  const { error, opened, recorded } = await searchParams;
+  const { error, recorded } = await searchParams;
   const session = await getSessionUser();
   const teacherId = session!.profile!.id;
   const admin = createSupabaseAdminClient();
 
+  // Only the slots assigned to this teacher by an admin.
   const { data } = await admin
     .from("assessment_slots")
     .select(
@@ -49,7 +49,9 @@ export default async function TeacherPage({
   const toRecord = slots.filter(
     (s) => s.applications && s.applications.status === "ASSESSMENT_SCHEDULED",
   );
-  const openSlots = slots.filter((s) => s.is_open && !s.application_id && new Date(s.starts_at).getTime() > now);
+  const upcoming = slots.filter(
+    (s) => s.is_open && !s.application_id && new Date(s.starts_at).getTime() > now,
+  );
   const history = slots.filter(
     (s) => s.applications && s.applications.status !== "ASSESSMENT_SCHEDULED",
   );
@@ -57,47 +59,19 @@ export default async function TeacherPage({
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="font-display text-3xl font-semibold tracking-tight">Assessments</h1>
+        <h1 className="font-display text-3xl font-semibold tracking-tight">My assessments</h1>
         <p className="text-muted-foreground">
-          Open assessment slots and record results for Grade applicants.
+          Your assigned assessment slots. Record results once an applicant has been assessed.
         </p>
       </div>
 
       {error && <Alert variant="error">{error}</Alert>}
-      {opened && <Alert variant="success">Slot opened and applicants notified.</Alert>}
       {recorded && <Alert variant="success">Result recorded.</Alert>}
 
       <Card>
         <CardHeader>
-          <CardTitle>Open a new slot</CardTitle>
-          <CardDescription>Parents will be notified that slots are available (N-3).</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form action={openSlot} className="flex flex-wrap items-end gap-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="starts_at">Start time</Label>
-              <Input id="starts_at" name="starts_at" type="datetime-local" required />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="duration">Duration (min)</Label>
-              <Input
-                id="duration"
-                name="duration"
-                type="number"
-                min={10}
-                max={240}
-                defaultValue={30}
-                className="w-28"
-              />
-            </div>
-            <SubmitButton pendingText="Opening…">Open slot</SubmitButton>
-          </form>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
           <CardTitle>Assessments to record ({toRecord.length})</CardTitle>
+          <CardDescription>Booked assessments assigned to you, awaiting a result.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {toRecord.length === 0 ? (
@@ -175,19 +149,20 @@ export default async function TeacherPage({
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Open slots ({openSlots.length})</CardTitle>
+            <CardTitle>Your upcoming slots ({upcoming.length})</CardTitle>
+            <CardDescription>Assigned by admin, awaiting a parent booking.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
-            {openSlots.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No open slots.</p>
+            {upcoming.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No upcoming slots assigned to you.</p>
             ) : (
-              openSlots.map((s) => (
+              upcoming.map((s) => (
                 <div
                   key={s.id}
                   className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm"
                 >
                   <span>{formatDateTime(s.starts_at)}</span>
-                  <Badge tone="info">Available</Badge>
+                  <Badge tone="info">Open</Badge>
                 </div>
               ))
             )}

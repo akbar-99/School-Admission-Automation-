@@ -5,56 +5,11 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireRole } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { handleAssessmentResult, notifySlotsPublished } from "@/lib/workflow";
+import { handleAssessmentResult } from "@/lib/workflow";
 import { logAudit } from "@/lib/audit";
 
-const SlotSchema = z.object({
-  starts_at: z.string().min(1, "Start time is required"),
-  duration: z.coerce.number().int().positive().max(240).default(30),
-});
-
-export async function openSlot(formData: FormData) {
-  const { profile } = await requireRole(["teacher", "admin"]);
-  const parsed = SlotSchema.safeParse({
-    starts_at: formData.get("starts_at"),
-    duration: formData.get("duration") ?? 30,
-  });
-  if (!parsed.success) {
-    redirect("/teacher?error=" + encodeURIComponent(parsed.error.issues[0].message));
-  }
-  const start = new Date(parsed.data.starts_at);
-  if (Number.isNaN(start.getTime()) || start.getTime() < Date.now()) {
-    redirect("/teacher?error=" + encodeURIComponent("Choose a future start time."));
-  }
-  const end = new Date(start.getTime() + parsed.data.duration * 60_000);
-
-  const admin = createSupabaseAdminClient();
-  const { data, error } = await admin
-    .from("assessment_slots")
-    .insert({
-      teacher_id: profile.id,
-      starts_at: start.toISOString(),
-      ends_at: end.toISOString(),
-      is_open: true,
-    })
-    .select("id")
-    .single();
-  if (error) {
-    redirect("/teacher?error=" + encodeURIComponent(error.message));
-  }
-
-  await logAudit({
-    actorId: profile.id,
-    actorRole: profile.role,
-    action: "assessment.slot_opened",
-    entity: "assessment_slot",
-    entityId: data.id,
-  });
-  // N-3: notify grade applicants awaiting a slot
-  await notifySlotsPublished();
-  revalidatePath("/teacher");
-  redirect("/teacher?opened=1");
-}
+// Slot creation is admin-only — see src/app/admin/actions.ts (createAssessmentSlot).
+// Teachers only conduct assessments and record results for their assigned slots.
 
 const ResultSchema = z.object({
   application_id: z.string().uuid(),

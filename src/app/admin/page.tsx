@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { formatDateTime } from "@/lib/utils";
 import { resolveSeat } from "./actions";
@@ -121,7 +122,12 @@ export default async function AdminOverview({
                 {rows.map((r) => (
                   <TR key={r.id}>
                     <TD>
-                      <div className="font-medium">{r.students?.full_name ?? "—"}</div>
+                      <Link
+                        href={`/admin/applications/${r.id}`}
+                        className="font-medium text-primary hover:underline"
+                      >
+                        {r.students?.full_name ?? "View details"}
+                      </Link>
                       <div className="text-xs text-muted-foreground">{r.parents?.full_name}</div>
                     </TD>
                     <TD>{r.category ?? "—"}</TD>

@@ -124,13 +124,13 @@ export async function handleFormSubmitted(appId: string) {
       .single();
     await sendAgreement(fresh as Application, parent);
   } else {
-    // GRADE: notify assessment teachers
+    // GRADE: notify admin to create & assign an assessment slot
     messages.push(
-      ...fanToStaff(await staffContacts(["teacher"]), {
+      ...fanToStaff(await staffContacts(["admin"]), {
         applicationId: app.id,
         event: "N-2",
-        subject: "New Grade applicant for assessment",
-        body: `A new Grade applicant (${app.grade_applying}) requires assessment. Please open available slots.`,
+        subject: "New Grade applicant — schedule assessment",
+        body: `A new Grade applicant (${app.grade_applying}) requires an assessment. Please create and assign a slot.`,
       }),
     );
     await dispatch(messages);
@@ -173,9 +173,12 @@ export async function notifySlotsPublished() {
 }
 
 // ---------------------------------------------------------------------------
-// N-4 Slot booked — parent, teacher, admin
+// N-4 Slot booked — parent, the assigned teacher, admin
 // ---------------------------------------------------------------------------
-export async function handleSlotBooked(appId: string, slotInfo: { starts_at: string }) {
+export async function handleSlotBooked(
+  appId: string,
+  slotInfo: { starts_at: string; teacher_id?: string | null },
+) {
   const admin = createSupabaseAdminClient();
   const { data: appRow } = await admin.from("applications").select("*").eq("id", appId).single();
   const app = appRow as Application;
@@ -193,14 +196,66 @@ export async function handleSlotBooked(appId: string, slotInfo: { starts_at: str
       },
       parent,
     ),
-    ...fanToStaff(await staffContacts(["teacher", "admin"]), {
+    ...fanToStaff(await staffContacts(["admin"]), {
       applicationId: app.id,
       event: "N-4",
       subject: "Assessment slot booked",
       body: `An assessment slot was booked for ${when} (Grade ${app.grade_applying}).`,
     }),
   ];
+
+  // Notify the assigned teacher specifically.
+  if (slotInfo.teacher_id) {
+    const { data: t } = await admin
+      .from("users")
+      .select("email, phone")
+      .eq("id", slotInfo.teacher_id)
+      .maybeSingle();
+    if (t) {
+      messages.push(
+        ...multiChannel(
+          {
+            applicationId: app.id,
+            event: "N-4",
+            subject: "Assessment booked for your slot",
+            body: `A parent booked your assessment slot on ${when} (Grade ${app.grade_applying}).`,
+          },
+          { email: t.email, phone: t.phone },
+          ["email"],
+        ),
+      );
+    }
+  }
+
   await dispatch(messages);
+}
+
+// ---------------------------------------------------------------------------
+// Admin assigned a new slot to a teacher — let the teacher know.
+// ---------------------------------------------------------------------------
+export async function notifyTeacherSlotAssigned(
+  teacherId: string,
+  slot: { starts_at: string },
+) {
+  const admin = createSupabaseAdminClient();
+  const { data: t } = await admin
+    .from("users")
+    .select("email, phone")
+    .eq("id", teacherId)
+    .maybeSingle();
+  if (!t) return;
+  const when = new Date(slot.starts_at).toLocaleString("en-IN");
+  await dispatch(
+    multiChannel(
+      {
+        event: "SLOT_ASSIGNED",
+        subject: "New assessment slot assigned to you",
+        body: `An assessment slot on ${when} has been assigned to you. It will appear on your dashboard.`,
+      },
+      { email: t.email, phone: t.phone },
+      ["email"],
+    ),
+  );
 }
 
 // ---------------------------------------------------------------------------
