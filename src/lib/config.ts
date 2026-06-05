@@ -27,6 +27,12 @@ export const config = {
     serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
   },
 
+  // The school's operating timezone — staff see times converted to this.
+  school: {
+    timezone: process.env.SCHOOL_TIMEZONE ?? "Asia/Kolkata",
+    timezoneLabel: process.env.SCHOOL_TIMEZONE_LABEL ?? "IST",
+  },
+
   admission: {
     year: Number(process.env.ADMISSION_YEAR ?? 2026),
     ageCutoffMMDD: process.env.AGE_CUTOFF_MMDD ?? "06-01",
@@ -79,4 +85,14 @@ export const GRADE_OPTIONS = [
   "G3",
   "G4",
   "G5",
+] as const;
+
+// Curriculum options offered on the admission form (editable).
+export const CURRICULUM_OPTIONS = [
+  "Cambridge (IGCSE)",
+  "British",
+  "American",
+  "IB",
+  "CBSE",
+  "ICSE",
 ] as const;

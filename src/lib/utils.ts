@@ -25,3 +25,13 @@ export function formatDate(value: string | Date): string {
   const d = typeof value === "string" ? new Date(value) : value;
   return d.toLocaleDateString("en-IN", { dateStyle: "medium" });
 }
+
+// Format an instant in a specific IANA timezone (e.g. "Asia/Kolkata").
+export function formatInZone(value: string | Date, timeZone: string): string {
+  const d = typeof value === "string" ? new Date(value) : value;
+  try {
+    return d.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone });
+  } catch {
+    return d.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+  }
+}

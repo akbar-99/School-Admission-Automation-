@@ -15,6 +15,26 @@ export async function GET(
   const { application: app, parent, student } = bundle;
   const today = formatDate(new Date());
 
+  const acceptedBanner = app.agreement_accepted
+    ? `<div style="margin:16px 0;padding:10px 14px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;color:#065f46;font-size:14px;">
+         ✓ Digitally accepted by <strong>${esc(app.agreement_signature ?? "")}</strong>${
+           app.agreement_accepted_at ? " on " + formatDate(app.agreement_accepted_at) : ""
+         }.
+       </div>`
+    : "";
+
+  const signBlock = app.agreement_accepted
+    ? `<div class="sign">
+         <div>Digitally signed by ${esc(app.agreement_signature ?? "")}<br/>
+           <span class="muted">${app.agreement_accepted_at ? formatDate(app.agreement_accepted_at) : ""}</span>
+         </div>
+         <div>For the School</div>
+       </div>`
+    : `<div class="sign">
+         <div>Parent / Guardian signature</div>
+         <div>For the School</div>
+       </div>`;
+
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -35,6 +55,7 @@ export async function GET(
   <button class="btn noprint" onclick="window.print()">Print / Save as PDF</button>
   <h1>Admission Agreement</h1>
   <div class="muted">Online School Admission Automation System · ${today}</div>
+  ${acceptedBanner}
   <p>This agreement records the admission of the student named below for the
   academic year ${config.admission.year}, subject to the school's policies and
   payment of the admission fee.</p>
@@ -50,10 +71,7 @@ export async function GET(
   </table>
   <p>By proceeding with the payment, the parent/guardian accepts the terms of
   admission, the fee schedule, and the school's code of conduct.</p>
-  <div class="sign">
-    <div>Parent / Guardian signature</div>
-    <div>For the School</div>
-  </div>
+  ${signBlock}
 </body></html>`;
 
   return new Response(html, {

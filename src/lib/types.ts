@@ -60,12 +60,21 @@ export interface Student {
   dob: string;
   gender: Gender | null;
   previous_school: string | null;
+  curriculum: string | null;
+  country_of_residence: string | null;
+  current_address: string | null;
+  permanent_address: string | null;
+  father_name: string | null;
+  father_phone: string | null;
+  mother_name: string | null;
+  mother_phone: string | null;
   created_at: string;
   updated_at: string;
 }
 
 export interface DocumentRef {
-  type: string;
+  category: string; // e.g. "passport", "birth_certificate"
+  type: string; // MIME type
   path: string;
   name: string;
   size: number;
@@ -79,9 +88,16 @@ export interface Application {
   category: Category | null;
   grade_applying: string | null;
   lead_student_name: string | null;
+  preferred_assessment_date: string | null;
+  preferred_assessment_date_alt: string | null;
+  preferred_assessment_tz: string | null;
   documents: DocumentRef[];
   consent_accepted: boolean;
   consent_at: string | null;
+  agreement_accepted: boolean;
+  agreement_accepted_at: string | null;
+  agreement_signature: string | null;
+  agreement_ip: string | null;
   section_id: string | null;
   admission_number: string | null;
   access_token: string;

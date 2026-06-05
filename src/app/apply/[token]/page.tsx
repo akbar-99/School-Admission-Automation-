@@ -2,15 +2,17 @@ import { CalendarClock, BookOpen, Phone } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { loadApplicationByToken } from "@/lib/parent";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { config, GRADE_OPTIONS } from "@/lib/config";
-import { formatDateTime, formatINR } from "@/lib/utils";
-import { bookSlot } from "./actions";
+import { config, GRADE_OPTIONS, CURRICULUM_OPTIONS } from "@/lib/config";
+import { formatDateTime, formatINR, formatDate, formatInZone } from "@/lib/utils";
+import { bookSlot, acceptAgreement } from "./actions";
 import { AdmissionForm } from "@/components/apply/admission-form";
 import { PayPanel } from "@/components/apply/pay-panel";
 import { StatusBadge } from "@/components/status-badge";
 import { SubmitButton } from "@/components/submit-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import type { AppStatus } from "@/lib/types";
 
 export default async function ApplyPage({
@@ -99,6 +101,9 @@ async function Content({
             <AdmissionForm
               token={token}
               gradeOptions={GRADE_OPTIONS}
+              curriculumOptions={CURRICULUM_OPTIONS}
+              schoolTimezone={config.school.timezone}
+              schoolTimezoneLabel={config.school.timezoneLabel}
               defaultStudentName={app.lead_student_name}
               ageConfig={{
                 year: config.admission.year,
@@ -113,7 +118,11 @@ async function Content({
       )}
 
       {status === "FORM_SUBMITTED" && app.category === "GRADE" && (
-        <SlotPicker token={token} />
+        <SlotPicker
+          token={token}
+          requestedDate={app.preferred_assessment_date}
+          requestedTz={app.preferred_assessment_tz}
+        />
       )}
 
       {status === "FORM_SUBMITTED" && app.category === "KG" && (
@@ -160,15 +169,49 @@ async function Content({
             >
               View / print admission agreement (PDF)
             </a>
-            <PayPanel
-              token={token}
-              amountLabel={formatINR(config.admission.feePaise)}
-              razorpayEnabled={config.razorpay.enabled}
-              razorpayKeyId={config.razorpay.publicKeyId}
-              parentName={parent.full_name}
-              parentEmail={parent.email}
-              parentPhone={parent.phone}
-            />
+
+            {!app.agreement_accepted ? (
+              <form
+                action={acceptAgreement}
+                className="space-y-3 rounded-lg border border-border p-4"
+              >
+                <input type="hidden" name="token" value={token} />
+                <p className="text-sm text-muted-foreground">
+                  Read the agreement above, then sign and accept it to continue to payment.
+                </p>
+                <div className="space-y-1.5">
+                  <Label htmlFor="signature">Type the parent/guardian name to sign *</Label>
+                  <Input id="signature" name="signature" required placeholder={parent.full_name} />
+                  <p className="text-xs text-muted-foreground">
+                    Must match the name on record: <strong>{parent.full_name}</strong>
+                  </p>
+                </div>
+                <label className="flex items-start gap-2 text-sm">
+                  <input type="checkbox" name="agree" className="mt-1" required />
+                  <span>
+                    I have read and accept the admission agreement, fee schedule, and code of
+                    conduct.
+                  </span>
+                </label>
+                <SubmitButton pendingText="Recording…">I accept the agreement</SubmitButton>
+              </form>
+            ) : (
+              <>
+                <Alert variant="success">
+                  ✓ Agreement accepted by <strong>{app.agreement_signature}</strong>
+                  {app.agreement_accepted_at && <> on {formatDateTime(app.agreement_accepted_at)}</>}.
+                </Alert>
+                <PayPanel
+                  token={token}
+                  amountLabel={formatINR(config.admission.feePaise)}
+                  razorpayEnabled={config.razorpay.enabled}
+                  razorpayKeyId={config.razorpay.publicKeyId}
+                  parentName={parent.full_name}
+                  parentEmail={parent.email}
+                  parentPhone={parent.phone}
+                />
+              </>
+            )}
           </CardContent>
         </Card>
       )}
@@ -198,7 +241,15 @@ async function Content({
   );
 
   // ---- step sub-components (server) ----
-  async function SlotPicker({ token }: { token: string }) {
+  async function SlotPicker({
+    token,
+    requestedDate,
+    requestedTz,
+  }: {
+    token: string;
+    requestedDate: string | null;
+    requestedTz: string | null;
+  }) {
     const { data: slots } = await admin
       .from("assessment_slots")
       .select("id, starts_at, ends_at")
@@ -212,7 +263,26 @@ async function Content({
         <CardHeader>
           <CardTitle>Book your assessment slot</CardTitle>
           <CardDescription>
-            Pick a slot. Booking is instant and a slot cannot be double-booked.
+            {requestedDate ? (
+              <>
+                You requested{" "}
+                <strong>{formatInZone(requestedDate, requestedTz ?? config.school.timezone)}</strong>
+                {requestedTz && requestedTz !== config.school.timezone ? (
+                  <>
+                    {" "}({requestedTz}) — that&apos;s{" "}
+                    <strong>
+                      {formatInZone(requestedDate, config.school.timezone)} {config.school.timezoneLabel}
+                    </strong>{" "}
+                    in school time.
+                  </>
+                ) : (
+                  "."
+                )}{" "}
+                Pick a confirmed slot below — booking is instant.
+              </>
+            ) : (
+              "Pick a slot. Booking is instant and a slot cannot be double-booked."
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent>
