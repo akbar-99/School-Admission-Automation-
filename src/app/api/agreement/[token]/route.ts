@@ -1,5 +1,6 @@
 import { loadApplicationByToken } from "@/lib/parent";
 import { config } from "@/lib/config";
+import { getSettings } from "@/lib/settings";
 import { formatINR, formatDate } from "@/lib/utils";
 
 // Auto-generated Admission Agreement (SRS FR-16), pre-filled with parent and
@@ -13,6 +14,7 @@ export async function GET(
   if (!bundle) return new Response("Agreement not found", { status: 404 });
 
   const { application: app, parent, student } = bundle;
+  const s = await getSettings();
   const today = formatDate(new Date());
 
   const acceptedBanner = app.agreement_accepted
@@ -54,7 +56,8 @@ export async function GET(
 <body>
   <button class="btn noprint" onclick="window.print()">Print / Save as PDF</button>
   <h1>Admission Agreement</h1>
-  <div class="muted">Online School Admission Automation System · ${today}</div>
+  <div class="muted">${esc(s.schoolName)} · ${today}</div>
+  <div class="muted">${esc(s.schoolContact)}</div>
   ${acceptedBanner}
   <p>This agreement records the admission of the student named below for the
   academic year ${config.admission.year}, subject to the school's policies and
@@ -66,11 +69,10 @@ export async function GET(
     <tr><td class="k">Grade applying</td><td>${esc(app.grade_applying ?? "—")}</td></tr>
     <tr><td class="k">Parent / guardian</td><td>${esc(parent.full_name)}</td></tr>
     <tr><td class="k">Contact</td><td>${esc(parent.phone)}${parent.email ? " · " + esc(parent.email) : ""}</td></tr>
-    <tr><td class="k">Admission fee</td><td>${formatINR(config.admission.feePaise)}</td></tr>
+    <tr><td class="k">Admission fee</td><td>${formatINR(s.feePaise)}</td></tr>
     <tr><td class="k">Application reference</td><td>${app.id}</td></tr>
   </table>
-  <p>By proceeding with the payment, the parent/guardian accepts the terms of
-  admission, the fee schedule, and the school's code of conduct.</p>
+  <p>${esc(s.agreementTerms)}</p>
   ${signBlock}
 </body></html>`;
 

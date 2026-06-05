@@ -2,7 +2,7 @@ import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createRazorpayOrder } from "@/lib/razorpay";
 import { handlePaymentCompleted } from "@/lib/workflow";
-import { config } from "@/lib/config";
+import { getSettings } from "@/lib/settings";
 import { logAudit } from "@/lib/audit";
 import type { Application, Payment } from "@/lib/types";
 
@@ -36,9 +36,10 @@ export async function ensureOrderForApplication(
   let payment = existing as Payment | null;
 
   if (!payment || !payment.razorpay_order_id) {
+    const { feePaise } = await getSettings();
     const receipt = `adm_${app.id.slice(0, 8)}_${Date.now()}`;
     const order = await createRazorpayOrder({
-      amount: config.admission.feePaise,
+      amount: feePaise,
       receipt,
       notes: { application_id: app.id },
     });
@@ -47,7 +48,7 @@ export async function ensureOrderForApplication(
       .insert({
         application_id: app.id,
         razorpay_order_id: order.id,
-        amount: config.admission.feePaise,
+        amount: feePaise,
         currency: "INR",
         status: "created",
         receipt,

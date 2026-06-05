@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { dispatch, multiChannel, type OutboundMessage } from "@/lib/notifications";
 import { applyUrl } from "@/lib/parent";
 import { config } from "@/lib/config";
+import { getSettings } from "@/lib/settings";
 import { logAudit } from "@/lib/audit";
 import { formatINR } from "@/lib/utils";
 import type { Application, Parent, Student } from "@/lib/types";
@@ -55,13 +56,14 @@ export async function notifyLeadCreated(app: Application, parent: Parent) {
 // ---------------------------------------------------------------------------
 export async function sendAgreement(app: Application, parent: Parent) {
   const portal = applyUrl(app.access_token);
+  const { feePaise } = await getSettings();
   await dispatch(
     multiChannel(
       {
         applicationId: app.id,
         event: "N-6",
         subject: "Admission agreement & payment",
-        body: `Hello ${parent.full_name},\n\nCongratulations! Your admission agreement is ready.\nView the agreement: ${agreementUrl(app.access_token)}\nComplete the admission fee of ${formatINR(config.admission.feePaise)} here: ${portal}`,
+        body: `Hello ${parent.full_name},\n\nCongratulations! Your admission agreement is ready.\nView the agreement: ${agreementUrl(app.access_token)}\nComplete the admission fee of ${formatINR(feePaise)} here: ${portal}`,
       },
       parent,
     ),
@@ -329,6 +331,7 @@ export async function handlePaymentCompleted(
 ) {
   const sendReceipt = opts.sendReceipt ?? true;
   const admin = createSupabaseAdminClient();
+  const { feePaise } = await getSettings();
 
   const { data: result, error } = await admin.rpc("enroll_application", {
     p_application: appId,
@@ -382,7 +385,7 @@ export async function handlePaymentCompleted(
             applicationId: app.id,
             event: "N-7",
             subject: "Payment received",
-            body: `Hello ${parent.full_name},\n\nWe have received your admission fee of ${formatINR(config.admission.feePaise)}. A receipt is available in your portal: ${applyUrl(app.access_token)}`,
+            body: `Hello ${parent.full_name},\n\nWe have received your admission fee of ${formatINR(feePaise)}. A receipt is available in your portal: ${applyUrl(app.access_token)}`,
           },
           parent,
         ),

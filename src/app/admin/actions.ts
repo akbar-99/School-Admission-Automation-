@@ -221,6 +221,40 @@ export async function factoryReset(formData: FormData) {
   redirect("/admin/settings?ok=" + encodeURIComponent("All applicant data has been wiped."));
 }
 
+// Admin-editable settings → app_config (applied at runtime, no redeploy).
+export async function updateSettings(formData: FormData) {
+  const { profile } = await requireRole(["admin"]);
+  const feeRupees = Number(formData.get("fee_rupees"));
+  if (!Number.isFinite(feeRupees) || feeRupees < 0) {
+    redirect("/admin/settings?error=" + encodeURIComponent("Enter a valid admission fee."));
+  }
+  const feePaise = Math.round(feeRupees * 100);
+
+  const rows = [
+    { key: "admission_fee_paise", value: String(feePaise) },
+    { key: "agreement_terms", value: String(formData.get("agreement_terms") ?? "").trim() },
+    { key: "school_name", value: String(formData.get("school_name") ?? "").trim() },
+    { key: "school_contact", value: String(formData.get("school_contact") ?? "").trim() },
+    { key: "academic_term_start", value: String(formData.get("academic_term_start") ?? "").trim() },
+    { key: "academic_orientation", value: String(formData.get("academic_orientation") ?? "").trim() },
+  ];
+
+  const admin = createSupabaseAdminClient();
+  const { error } = await admin.from("app_config").upsert(rows, { onConflict: "key" });
+  if (error) {
+    redirect("/admin/settings?error=" + encodeURIComponent(error.message));
+  }
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "settings.updated",
+    entity: "app_config",
+  });
+  revalidatePath("/admin/settings");
+  redirect("/admin/settings?ok=" + encodeURIComponent("Settings saved."));
+}
+
 function back(msg?: string, type: "error" | "ok" = "ok") {
   redirect("/admin?" + (msg ? `${type}=${encodeURIComponent(msg)}` : ""));
 }

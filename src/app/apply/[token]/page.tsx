@@ -3,6 +3,7 @@ import { Logo } from "@/components/logo";
 import { loadApplicationByToken } from "@/lib/parent";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { config, GRADE_OPTIONS, CURRICULUM_OPTIONS } from "@/lib/config";
+import { getSettings } from "@/lib/settings";
 import { formatDateTime, formatINR, formatDate, formatInZone } from "@/lib/utils";
 import { bookSlot, acceptAgreement } from "./actions";
 import { AdmissionForm } from "@/components/apply/admission-form";
@@ -70,6 +71,7 @@ async function Content({
   const { application: app, parent, student } = bundle;
   const status = app.status as AppStatus;
   const admin = createSupabaseAdminClient();
+  const settings = await getSettings();
 
   return (
     <div className="space-y-6">
@@ -152,7 +154,7 @@ async function Content({
             <CardTitle>Admission agreement &amp; payment</CardTitle>
             <CardDescription>
               Review the agreement and pay the admission fee of{" "}
-              {formatINR(config.admission.feePaise)} to confirm the seat.
+              {formatINR(settings.feePaise)} to confirm the seat.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -203,7 +205,7 @@ async function Content({
                 </Alert>
                 <PayPanel
                   token={token}
-                  amountLabel={formatINR(config.admission.feePaise)}
+                  amountLabel={formatINR(settings.feePaise)}
                   razorpayEnabled={config.razorpay.enabled}
                   razorpayKeyId={config.razorpay.publicKeyId}
                   parentName={parent.full_name}
@@ -397,17 +399,15 @@ async function Content({
             <div>
               <div className="font-medium">Academic calendar</div>
               <p className="text-muted-foreground">
-                Term 1 begins {config.admission.year}-06-15. Orientation day:{" "}
-                {config.admission.year}-06-10.
+                Term 1 begins {settings.academicTermStart}. Orientation day:{" "}
+                {settings.academicOrientation}.
               </p>
             </div>
             <div className="flex items-start gap-2">
               <Phone className="mt-0.5 size-4 text-primary" />
               <div>
                 <div className="font-medium">Contact person</div>
-                <p className="text-muted-foreground">
-                  Admissions Office · admissions@school.example · +91 90000 00000
-                </p>
+                <p className="text-muted-foreground">{settings.schoolContact}</p>
               </div>
             </div>
           </CardContent>
