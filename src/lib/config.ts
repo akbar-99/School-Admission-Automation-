@@ -88,11 +88,4 @@ export const GRADE_OPTIONS = [
 ] as const;
 
 // Curriculum options offered on the admission form (editable).
-export const CURRICULUM_OPTIONS = [
-  "Cambridge (IGCSE)",
-  "British",
-  "American",
-  "IB",
-  "CBSE",
-  "ICSE",
-] as const;
+export const CURRICULUM_OPTIONS = ["IGCSE", "CBSE"] as const;
