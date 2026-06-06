@@ -78,6 +78,8 @@ export const config = {
   setupSecret: process.env.SETUP_SECRET ?? process.env.APP_SECRET ?? "setup",
 } as const;
 
+// Default class list — the admin can override it in Settings (app_config
+// `class_options`). Kept here as the fallback / seed for getSettings().
 export const GRADE_OPTIONS = [
   "KG 1",
   "KG 2",
@@ -90,10 +92,6 @@ export const GRADE_OPTIONS = [
   "G7",
   "G8",
 ] as const;
-
-// The KG sub-grades among GRADE_OPTIONS (used to reconcile the picked grade
-// with the age-detected KG/GRADE category).
-export const KG_GRADES = ["KG 1", "KG 2"] as const;
 
 // Curriculum options offered on the admission form (editable).
 export const CURRICULUM_OPTIONS = ["IGCSE - Cambridge", "CBSE"] as const;

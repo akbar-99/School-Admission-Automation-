@@ -13,7 +13,8 @@ import {
   notifySlotsPublished,
 } from "@/lib/workflow";
 import { logAudit } from "@/lib/audit";
-import { config, KG_GRADES } from "@/lib/config";
+import { config } from "@/lib/config";
+import { getSettings } from "@/lib/settings";
 import type { Application, DocumentRef } from "@/lib/types";
 
 const MAX_FILE = 5 * 1024 * 1024; // 5 MB (SRS FR-4a)
@@ -109,15 +110,17 @@ export async function submitAdmissionForm(formData: FormData) {
   const detect = detectCategory(input.dob);
   if (!detect.eligible) fail(token, detect.message);
 
-  // Reconcile the picked grade with the age-detected category: a KG-aged child
-  // keeps their KG sub-grade (KG 1 / KG 2); a Grade-aged child keeps their G
-  // grade. Mismatches fall back to a sensible default for the category.
-  const isKgGrade = (KG_GRADES as readonly string[]).includes(input.grade);
+  // Reconcile the picked grade with the age-detected category, using the admin's
+  // editable class list. A class whose name contains "KG" is a kindergarten
+  // grade. A KG-aged child keeps their KG sub-grade; a Grade-aged child keeps
+  // their G grade. Mismatches fall back to the first class of the right kind.
+  const classOptions = (await getSettings()).classOptionsItems;
+  const isKg = (g: string) => /kg/i.test(g);
   let grade = input.grade;
   if (detect.category === "KG") {
-    if (!isKgGrade) grade = "KG 1";
-  } else if (isKgGrade || !grade) {
-    grade = "G1";
+    if (!isKg(grade)) grade = classOptions.find(isKg) ?? "KG 1";
+  } else if (isKg(grade) || !grade) {
+    grade = classOptions.find((o) => !isKg(o)) ?? "G1";
   }
 
   // Grade applicants must either pick an open slot or request a preferred date.

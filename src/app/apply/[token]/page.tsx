@@ -2,7 +2,7 @@ import { CalendarClock, BookOpen, Phone } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { loadApplicationByToken } from "@/lib/parent";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { config, GRADE_OPTIONS, CURRICULUM_OPTIONS } from "@/lib/config";
+import { config, CURRICULUM_OPTIONS } from "@/lib/config";
 import { getSettings } from "@/lib/settings";
 import { formatDateTime, formatINR, formatDate, formatInZone } from "@/lib/utils";
 import { bookSlot, acceptAgreement } from "./actions";
@@ -116,7 +116,7 @@ async function Content({
           <CardContent>
             <AdmissionForm
               token={token}
-              gradeOptions={GRADE_OPTIONS}
+              gradeOptions={settings.classOptionsItems}
               curriculumOptions={CURRICULUM_OPTIONS}
               schoolTimezone={config.school.timezone}
               schoolTimezoneLabel={config.school.timezoneLabel}

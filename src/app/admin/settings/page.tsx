@@ -89,6 +89,20 @@ export default async function AdminSettingsPage({
                 />
               </div>
               <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="class_options">Class options (admission form)</Label>
+                <Textarea
+                  id="class_options"
+                  name="class_options"
+                  defaultValue={s.classOptions}
+                  className="min-h-28"
+                />
+                <p className="text-xs text-muted-foreground">
+                  One class per line, in order. These are the choices in
+                  &ldquo;Class applying for&rdquo; on the admission form (e.g. KG 1, G1). Any
+                  class containing &ldquo;KG&rdquo; is treated as a kindergarten grade.
+                </p>
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="study_material">Onboarding — study material list</Label>
                 <Textarea
                   id="study_material"
