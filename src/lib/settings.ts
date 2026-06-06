@@ -1,7 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { config, GRADE_OPTIONS } from "@/lib/config";
+import { config } from "@/lib/config";
 
 // Admin-editable settings stored in the app_config table (key/value), read at
 // runtime so changes apply without a redeploy. Falls back to sensible defaults.
@@ -15,8 +15,6 @@ export interface AppSettings {
   academicOrientation: string;
   studyMaterial: string; // raw, one item per line
   studyMaterialItems: string[]; // parsed list
-  classOptions: string; // raw, one class per line
-  classOptionsItems: string[]; // parsed list shown on the admission form
 }
 
 const DEFAULT_TERMS =
@@ -37,7 +35,6 @@ export const SETTINGS_DEFAULTS = {
   academicTermStart: `${config.admission.year}-06-15`,
   academicOrientation: `${config.admission.year}-06-10`,
   studyMaterial: DEFAULT_STUDY_MATERIAL,
-  classOptions: GRADE_OPTIONS.join("\n"),
 };
 
 // Cached per-request so multiple reads during one render hit the DB once.
@@ -57,13 +54,6 @@ export const getSettings = cache(async (): Promise<AppSettings> => {
   };
 
   const studyMaterial = str("study_material", SETTINGS_DEFAULTS.studyMaterial);
-  const classOptions = str("class_options", SETTINGS_DEFAULTS.classOptions);
-  const toList = (raw: string) =>
-    raw
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean);
-  const classOptionsItems = toList(classOptions);
   return {
     feePaise: num("admission_fee_paise", SETTINGS_DEFAULTS.feePaise),
     agreementTerms: str("agreement_terms", SETTINGS_DEFAULTS.agreementTerms),
@@ -73,9 +63,9 @@ export const getSettings = cache(async (): Promise<AppSettings> => {
     academicTermStart: str("academic_term_start", SETTINGS_DEFAULTS.academicTermStart),
     academicOrientation: str("academic_orientation", SETTINGS_DEFAULTS.academicOrientation),
     studyMaterial,
-    studyMaterialItems: toList(studyMaterial),
-    classOptions,
-    // Always fall back to the defaults if the admin saved an empty list.
-    classOptionsItems: classOptionsItems.length ? classOptionsItems : toList(SETTINGS_DEFAULTS.classOptions),
+    studyMaterialItems: studyMaterial
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean),
   };
 });

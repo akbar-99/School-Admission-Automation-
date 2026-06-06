@@ -4,6 +4,7 @@ import { loadApplicationByToken } from "@/lib/parent";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { config, CURRICULUM_OPTIONS } from "@/lib/config";
 import { getSettings } from "@/lib/settings";
+import { getClassOptions } from "@/lib/classes";
 import { formatDateTime, formatINR, formatDate, formatInZone } from "@/lib/utils";
 import { bookSlot, acceptAgreement } from "./actions";
 import { AdmissionForm } from "@/components/apply/admission-form";
@@ -73,9 +74,11 @@ async function Content({
   const admin = createSupabaseAdminClient();
   const settings = await getSettings();
 
-  // Open assessment slots the parent could book straight from the form.
+  // Class list (from the grades that have sections) + open slots, for the form.
   let openSlots: { id: string; startsAt: string }[] = [];
+  let classOptions: string[] = [];
   if (status === "LEAD_CREATED") {
+    classOptions = await getClassOptions();
     const { data } = await admin
       .from("assessment_slots")
       .select("id, starts_at")
@@ -116,7 +119,7 @@ async function Content({
           <CardContent>
             <AdmissionForm
               token={token}
-              gradeOptions={settings.classOptionsItems}
+              gradeOptions={classOptions}
               curriculumOptions={CURRICULUM_OPTIONS}
               schoolTimezone={config.school.timezone}
               schoolTimezoneLabel={config.school.timezoneLabel}

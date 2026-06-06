@@ -78,8 +78,9 @@ export const config = {
   setupSecret: process.env.SETUP_SECRET ?? process.env.APP_SECRET ?? "setup",
 } as const;
 
-// Default class list — the admin can override it in Settings (app_config
-// `class_options`). Kept here as the fallback / seed for getSettings().
+// Fallback class list used only when no sections exist yet. Normally the
+// admission form's classes come from the grades that have sections
+// (see getClassOptions in lib/classes.ts).
 export const GRADE_OPTIONS = [
   "KG 1",
   "KG 2",
