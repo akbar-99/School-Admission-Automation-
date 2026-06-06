@@ -29,10 +29,6 @@ function fanToStaff(
   return contacts.flatMap((c) => multiChannel(base, c, ["email"]));
 }
 
-function agreementUrl(token: string) {
-  return `${config.appUrl}/api/agreement/${token}`;
-}
-
 // ---------------------------------------------------------------------------
 // N-1 Lead created — admission link to parent
 // ---------------------------------------------------------------------------
@@ -63,7 +59,7 @@ export async function sendAgreement(app: Application, parent: Parent) {
         applicationId: app.id,
         event: "N-6",
         subject: "Admission agreement & payment",
-        body: `Hello ${parent.full_name},\n\nCongratulations! Your admission agreement is ready.\nView the agreement: ${agreementUrl(app.access_token)}\nComplete the admission fee of ${formatINR(feePaise)} here: ${portal}`,
+        body: `Hello ${parent.full_name},\n\nCongratulations! Your admission agreement is ready.\nReview the agreement and complete the admission fee of ${formatINR(feePaise)} here:\n${portal}\n\n(You can read the full agreement on that page before paying.)`,
       },
       parent,
     ),
