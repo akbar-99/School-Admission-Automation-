@@ -1,12 +1,18 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { adjustCapacity, createSection } from "../actions";
+import { adjustCapacity, createSection, updateSection, deleteSection } from "../actions";
 import { SubmitButton } from "@/components/submit-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Alert } from "@/components/ui/alert";
 import type { Section } from "@/lib/types";
 
-export default async function SectionsPage() {
+export default async function SectionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ ok?: string; error?: string }>;
+}) {
+  const { ok, error } = await searchParams;
   const admin = createSupabaseAdminClient();
   const { data } = await admin
     .from("sections")
@@ -25,9 +31,12 @@ export default async function SectionsPage() {
       <div>
         <h1 className="font-display text-3xl font-semibold tracking-tight">Class sections &amp; capacity</h1>
         <p className="text-muted-foreground">
-          Seats fill A → B → C automatically. Add capacity or new sections here.
+          Seats fill A → B → C automatically. Add, edit or remove sections here.
         </p>
       </div>
+
+      {ok && <Alert variant="success">{ok}</Alert>}
+      {error && <Alert variant="error">{error}</Alert>}
 
       <Card>
         <CardHeader>
@@ -76,13 +85,59 @@ export default async function SectionsPage() {
                       style={{ width: `${pct}%` }}
                     />
                   </div>
-                  <form action={adjustCapacity} className="mt-3 flex items-center gap-2">
-                    <input type="hidden" name="section_id" value={s.id} />
-                    <input type="hidden" name="delta" value="5" />
-                    <SubmitButton size="sm" variant="outline" pendingText="Adding…">
-                      +5 seats
-                    </SubmitButton>
-                  </form>
+
+                  <div className="mt-3 flex flex-wrap items-end gap-3">
+                    {/* Edit grade / section / capacity */}
+                    <form action={updateSection} className="flex flex-wrap items-end gap-2">
+                      <input type="hidden" name="section_id" value={s.id} />
+                      <div className="space-y-1">
+                        <Label htmlFor={`grade-${s.id}`} className="text-xs">Grade</Label>
+                        <Input id={`grade-${s.id}`} name="grade" defaultValue={s.grade} className="h-9 w-24" required />
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor={`name-${s.id}`} className="text-xs">Section</Label>
+                        <Input id={`name-${s.id}`} name="name" defaultValue={s.name} className="h-9 w-16" required />
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor={`cap-${s.id}`} className="text-xs">Capacity</Label>
+                        <Input
+                          id={`cap-${s.id}`}
+                          name="capacity"
+                          type="number"
+                          min={s.filled}
+                          defaultValue={s.capacity}
+                          className="h-9 w-24"
+                          required
+                        />
+                      </div>
+                      <SubmitButton size="sm" variant="outline" pendingText="Saving…">
+                        Save
+                      </SubmitButton>
+                    </form>
+
+                    {/* Quick +5 seats */}
+                    <form action={adjustCapacity}>
+                      <input type="hidden" name="section_id" value={s.id} />
+                      <input type="hidden" name="delta" value="5" />
+                      <SubmitButton size="sm" variant="outline" pendingText="Adding…">
+                        +5 seats
+                      </SubmitButton>
+                    </form>
+
+                    {/* Delete (only when empty) */}
+                    {s.filled === 0 ? (
+                      <form action={deleteSection}>
+                        <input type="hidden" name="section_id" value={s.id} />
+                        <SubmitButton size="sm" variant="destructive" pendingText="Deleting…">
+                          Delete
+                        </SubmitButton>
+                      </form>
+                    ) : (
+                      <span className="pb-1.5 text-xs text-muted-foreground">
+                        Empty before deleting
+                      </span>
+                    )}
+                  </div>
                 </div>
               );
             })}

@@ -265,6 +265,10 @@ function back(msg?: string, type: "error" | "ok" = "ok") {
   redirect("/admin?" + (msg ? `${type}=${encodeURIComponent(msg)}` : ""));
 }
 
+function sectionsBack(msg?: string, type: "error" | "ok" = "ok"): never {
+  redirect("/admin/sections?" + (msg ? `${type}=${encodeURIComponent(msg)}` : ""));
+}
+
 // Manually resolve a NEEDS_ADMIN application by re-running enrollment (after
 // capacity has been freed / added). SRS FR-22.
 export async function resolveSeat(formData: FormData) {
@@ -297,7 +301,7 @@ export async function adjustCapacity(formData: FormData) {
     section_id: formData.get("section_id"),
     delta: formData.get("delta"),
   });
-  if (!parsed.success) back("Invalid capacity change", "error");
+  if (!parsed.success) sectionsBack("Invalid capacity change", "error");
   const { section_id, delta } = parsed.data!;
 
   const admin = createSupabaseAdminClient();
@@ -306,10 +310,10 @@ export async function adjustCapacity(formData: FormData) {
     .select("capacity, filled")
     .eq("id", section_id)
     .single();
-  if (!section) back("Section not found", "error");
+  if (!section) sectionsBack("Section not found", "error");
 
   const next = section!.capacity + delta;
-  if (next < section!.filled) back("Capacity cannot be below current enrolment", "error");
+  if (next < section!.filled) sectionsBack("Capacity cannot be below current enrolment", "error");
 
   await admin.from("sections").update({ capacity: next }).eq("id", section_id);
   await logAudit({
@@ -320,7 +324,95 @@ export async function adjustCapacity(formData: FormData) {
     entityId: section_id,
     details: { delta, capacity: next },
   });
-  back("Capacity updated.");
+  revalidatePath("/admin/sections");
+  sectionsBack("Capacity updated.");
+}
+
+// Edit an existing section's grade, name and capacity.
+const UpdateSectionSchema = z.object({
+  section_id: z.string().uuid(),
+  grade: z.string().trim().min(1),
+  name: z.string().trim().min(1).max(4),
+  capacity: z.coerce.number().int().positive().max(200),
+});
+
+export async function updateSection(formData: FormData) {
+  const { profile } = await requireRole(["admin"]);
+  const parsed = UpdateSectionSchema.safeParse({
+    section_id: formData.get("section_id"),
+    grade: formData.get("grade"),
+    name: formData.get("name"),
+    capacity: formData.get("capacity"),
+  });
+  if (!parsed.success) sectionsBack(parsed.error.issues[0].message, "error");
+  const { section_id, grade, name, capacity } = parsed.data!;
+
+  const admin = createSupabaseAdminClient();
+  const { data: section } = await admin
+    .from("sections")
+    .select("filled")
+    .eq("id", section_id)
+    .single();
+  if (!section) sectionsBack("Section not found", "error");
+  if (capacity < section!.filled) {
+    sectionsBack("Capacity cannot be below current enrolment.", "error");
+  }
+
+  const { error } = await admin
+    .from("sections")
+    .update({ grade: grade.toUpperCase(), name: name.toUpperCase(), capacity })
+    .eq("id", section_id);
+  if (error) sectionsBack(error.message, "error");
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "admin.update_section",
+    entity: "section",
+    entityId: section_id,
+    details: { grade, name, capacity },
+  });
+  revalidatePath("/admin/sections");
+  sectionsBack("Section updated.");
+}
+
+// Delete a section. Blocked while any student is enrolled in it.
+export async function deleteSection(formData: FormData) {
+  const { profile } = await requireRole(["admin"]);
+  const section_id = String(formData.get("section_id") ?? "");
+  if (!section_id) sectionsBack("Missing section.", "error");
+
+  const admin = createSupabaseAdminClient();
+  const { data: section } = await admin
+    .from("sections")
+    .select("filled, grade, name")
+    .eq("id", section_id)
+    .single();
+  if (!section) sectionsBack("Section not found", "error");
+  if (section!.filled > 0) {
+    sectionsBack("Cannot delete a section with enrolled students. Empty it first.", "error");
+  }
+  const { count } = await admin
+    .from("applications")
+    .select("id", { count: "exact", head: true })
+    .eq("section_id", section_id);
+  if ((count ?? 0) > 0) {
+    sectionsBack("Cannot delete: applications are still assigned to this section.", "error");
+  }
+
+  const { error } = await admin.from("sections").delete().eq("id", section_id);
+  if (error) sectionsBack(error.message, "error");
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "admin.delete_section",
+    entity: "section",
+    entityId: section_id,
+    details: { grade: section!.grade, name: section!.name },
+  });
+  revalidatePath("/admin/sections");
+  sectionsBack("Section deleted.");
 }
 
 const SectionSchema = z.object({
@@ -336,14 +428,14 @@ export async function createSection(formData: FormData) {
     name: formData.get("name"),
     capacity: formData.get("capacity") ?? 30,
   });
-  if (!parsed.success) back("Invalid section", "error");
+  if (!parsed.success) sectionsBack("Invalid section", "error");
   const { grade, name, capacity } = parsed.data!;
 
   const admin = createSupabaseAdminClient();
   const { error } = await admin
     .from("sections")
     .insert({ grade: grade.toUpperCase(), name: name.toUpperCase(), capacity });
-  if (error) back(error.message, "error");
+  if (error) sectionsBack(error.message, "error");
 
   await logAudit({
     actorId: profile.id,
@@ -353,5 +445,6 @@ export async function createSection(formData: FormData) {
     details: { grade, name, capacity },
   });
   revalidatePath("/admin");
-  back("Section created.");
+  revalidatePath("/admin/sections");
+  sectionsBack("Section created.");
 }
