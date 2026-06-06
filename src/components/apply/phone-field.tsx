@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import { Select } from "@/components/ui/select";
+import { useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
+import { SearchSelect } from "@/components/ui/search-select";
 import { DIAL_CODES, flagEmoji } from "@/lib/dial-codes";
 
-// A phone input with a country-code dropdown. The visible parts are a code
-// <Select> + a local-number <Input>; a hidden field submits the combined
+// A phone input with a searchable country-code dropdown. The visible parts are
+// a code picker + a local-number <Input>; a hidden field submits the combined
 // value (e.g. "+919995224466") under `name`.
 export function PhoneField({
   id,
@@ -24,24 +24,31 @@ export function PhoneField({
   const [iso, setIso] = useState(defaultIso);
   const [number, setNumber] = useState("");
 
+  const options = useMemo(
+    () =>
+      DIAL_CODES.map((c) => ({
+        value: c.iso,
+        search: c.name,
+        label: `${flagEmoji(c.iso)} ${c.dial} ${c.name}`,
+        selectedLabel: `${flagEmoji(c.iso)} ${c.dial}`,
+      })),
+    [],
+  );
+
   const dial = DIAL_CODES.find((c) => c.iso === iso)?.dial ?? "+91";
   const digits = number.replace(/[^\d]/g, "");
   const combined = digits ? `${dial}${digits}` : "";
 
   return (
     <div className="flex gap-2">
-      <Select
-        aria-label="Country code"
+      <SearchSelect
+        ariaLabel="Country code"
         value={iso}
-        onChange={(e) => setIso(e.target.value)}
-        className="w-[8.5rem] shrink-0"
-      >
-        {DIAL_CODES.map((c) => (
-          <option key={c.iso} value={c.iso}>
-            {flagEmoji(c.iso)} {c.dial} {c.name}
-          </option>
-        ))}
-      </Select>
+        onChange={setIso}
+        options={options}
+        searchPlaceholder="Country…"
+        className="w-[7.5rem] shrink-0"
+      />
       <Input
         id={id}
         type="tel"

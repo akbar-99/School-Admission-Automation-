@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { submitAdmissionForm } from "@/app/apply/[token]/actions";
 import { COUNTRIES } from "@/lib/countries";
 import { PhoneField } from "@/components/apply/phone-field";
+import { SearchSelect } from "@/components/ui/search-select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
@@ -174,23 +175,16 @@ export function AdmissionForm({
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="country">Country of residence *</Label>
-            <Select
-              id="country"
+            <Label>Country of residence *</Label>
+            <SearchSelect
               name="country"
-              required
+              ariaLabel="Country of residence"
               value={country}
-              onChange={(e) => setCountry(e.target.value)}
-            >
-              <option value="" disabled>
-                Select…
-              </option>
-              {COUNTRIES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </Select>
+              onChange={setCountry}
+              placeholder="Select country…"
+              searchPlaceholder="Type a country…"
+              options={COUNTRIES.map((c) => ({ value: c, search: c, label: c }))}
+            />
           </div>
           <div className="space-y-1.5 sm:col-span-2">
             <Label htmlFor="previous_school">Detail of previous school *</Label>
