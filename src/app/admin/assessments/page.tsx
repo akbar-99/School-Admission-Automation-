@@ -1,7 +1,8 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { config } from "@/lib/config";
-import { formatDateTime, formatInZone } from "@/lib/utils";
-import { createAssessmentSlot, assignAssessment } from "../actions";
+import { formatDateTime, formatInZone, toZonedInputValue } from "@/lib/utils";
+import { createAssessmentSlot } from "../actions";
+import { AssignAssessmentRow } from "@/components/admin/assign-assessment-row";
 import { SubmitButton } from "@/components/submit-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -145,90 +146,40 @@ export default async function AdminAssessmentsPage({
           {requests.length === 0 ? (
             <p className="text-sm text-muted-foreground">No pending requests.</p>
           ) : (
-            requests.map((r) => (
-              <div key={r.id} className="space-y-2 rounded-md border border-border p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                  <div>
-                    <span className="font-medium">{r.students?.full_name ?? "Applicant"}</span>
-                    <span className="text-muted-foreground"> · Grade {r.grade_applying}</span>
-                    {r.parents?.phone && (
-                      <a href={`tel:${r.parents.phone}`} className="ml-2 text-primary hover:underline">
-                        {r.parents.phone}
-                      </a>
-                    )}
-                  </div>
-                  <div className="text-right text-xs">
-                    {r.preferred_assessment_date ? (
-                      <>
-                        <div className="font-medium text-foreground">
-                          Requested: {formatInZone(r.preferred_assessment_date, schoolTz)} {schoolLabel}
-                        </div>
-                        {r.preferred_assessment_tz && r.preferred_assessment_tz !== schoolTz && (
-                          <div className="text-muted-foreground">
-                            Parent: {formatInZone(r.preferred_assessment_date, r.preferred_assessment_tz)} (
-                            {r.preferred_assessment_tz})
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <span className="text-muted-foreground">No preferred time</span>
-                    )}
-                  </div>
-                </div>
-                {teachers.length > 0 && (
-                  <form
-                    action={assignAssessment}
-                    className="flex flex-wrap items-end gap-2 border-t border-border/60 pt-2"
-                  >
-                    <input type="hidden" name="application_id" value={r.id} />
-                    <div className="space-y-1">
-                      <Label htmlFor={`time-${r.id}`} className="text-xs">
-                        Confirmed time
-                      </Label>
-                      <Input id={`time-${r.id}`} name="starts_at" type="datetime-local" required className="h-9" />
-                    </div>
-                    <div className="space-y-1">
-                      <Label htmlFor={`dur-${r.id}`} className="text-xs">
-                        Min
-                      </Label>
-                      <Input
-                        id={`dur-${r.id}`}
-                        name="duration"
-                        type="number"
-                        min={10}
-                        max={240}
-                        defaultValue={30}
-                        className="h-9 w-20"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label htmlFor={`teach-${r.id}`} className="text-xs">
-                        Teacher
-                      </Label>
-                      <Select
-                        id={`teach-${r.id}`}
-                        name="teacher_id"
-                        required
-                        defaultValue=""
-                        className="h-9 min-w-36"
-                      >
-                        <option value="" disabled>
-                          Select…
-                        </option>
-                        {teachers.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.full_name ?? t.email}
-                          </option>
-                        ))}
-                      </Select>
-                    </div>
-                    <SubmitButton size="sm" pendingText="Scheduling…">
-                      Schedule directly
-                    </SubmitButton>
-                  </form>
-                )}
-              </div>
-            ))
+            requests.map((r) => {
+              const tz = r.preferred_assessment_tz;
+              return (
+                <AssignAssessmentRow
+                  key={r.id}
+                  applicationId={r.id}
+                  studentName={r.students?.full_name ?? "Applicant"}
+                  grade={r.grade_applying}
+                  phone={r.parents?.phone ?? null}
+                  preferred={
+                    r.preferred_assessment_date
+                      ? {
+                          label: `${formatInZone(r.preferred_assessment_date, schoolTz)} ${schoolLabel}`,
+                          value: toZonedInputValue(r.preferred_assessment_date, schoolTz),
+                        }
+                      : null
+                  }
+                  preferredAlt={
+                    r.preferred_assessment_date_alt
+                      ? {
+                          label: `${formatInZone(r.preferred_assessment_date_alt, schoolTz)} ${schoolLabel}`,
+                          value: toZonedInputValue(r.preferred_assessment_date_alt, schoolTz),
+                        }
+                      : null
+                  }
+                  parentLabel={
+                    r.preferred_assessment_date && tz && tz !== schoolTz
+                      ? `${formatInZone(r.preferred_assessment_date, tz)} (${tz})`
+                      : null
+                  }
+                  teachers={teachers.map((t) => ({ id: t.id, label: t.full_name ?? t.email ?? t.id }))}
+                />
+              );
+            })
           )}
         </CardContent>
       </Card>

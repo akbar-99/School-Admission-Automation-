@@ -35,3 +35,32 @@ export function formatInZone(value: string | Date, timeZone: string): string {
     return d.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
   }
 }
+
+// Convert an instant into a "YYYY-MM-DDTHH:mm" string (the value format a
+// <input type="datetime-local"> expects), expressed in the given IANA timezone.
+// Used to pre-fill the confirmed-time field from a parent's requested time.
+export function toZonedInputValue(value: string | Date, timeZone: string): string {
+  const d = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(d.getTime())) return "";
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    })
+      .formatToParts(d)
+      .reduce<Record<string, string>>((acc, p) => {
+        acc[p.type] = p.value;
+        return acc;
+      }, {});
+    // Some engines render midnight as "24"; normalise to "00".
+    const hour = parts.hour === "24" ? "00" : parts.hour;
+    return `${parts.year}-${parts.month}-${parts.day}T${hour}:${parts.minute}`;
+  } catch {
+    return "";
+  }
+}
