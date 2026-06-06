@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { formatDateTime } from "@/lib/utils";
 import { resolveSeat } from "./actions";
 import { StatusBadge } from "@/components/status-badge";
+import { AdmissionsCharts } from "@/components/admin/admissions-charts";
 import { SubmitButton } from "@/components/submit-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
@@ -38,6 +39,14 @@ export default async function AdminOverview({
     .limit(300);
   const rows = (data ?? []) as unknown as Row[];
 
+  // Lightweight, full-history pull for the analytics charts (status + date only).
+  const { data: chartData } = await admin
+    .from("applications")
+    .select("status, created_at")
+    .order("created_at", { ascending: true })
+    .limit(2000);
+  const chartRows = (chartData ?? []) as { status: AppStatus; created_at: string }[];
+
   const stat = (pred: (r: Row) => boolean) => rows.filter(pred).length;
   const stats = [
     { label: "Total applications", value: rows.length },
@@ -67,6 +76,8 @@ export default async function AdminOverview({
           </Card>
         ))}
       </div>
+
+      <AdmissionsCharts rows={chartRows} />
 
       {needsAdmin.length > 0 && (
         <Card>
