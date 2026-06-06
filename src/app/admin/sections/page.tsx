@@ -38,7 +38,7 @@ export default async function SectionsPage() {
           <form action={createSection} className="flex flex-wrap items-end gap-4">
             <div className="space-y-1.5">
               <Label htmlFor="grade">Grade</Label>
-              <Input id="grade" name="grade" placeholder="G1 / KG" className="w-28" required />
+              <Input id="grade" name="grade" placeholder="KG 1 / G1" className="w-28" required />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="name">Section</Label>

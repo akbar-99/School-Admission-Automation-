@@ -79,13 +79,21 @@ export const config = {
 } as const;
 
 export const GRADE_OPTIONS = [
-  "KG",
+  "KG 1",
+  "KG 2",
   "G1",
   "G2",
   "G3",
   "G4",
   "G5",
+  "G6",
+  "G7",
+  "G8",
 ] as const;
 
+// The KG sub-grades among GRADE_OPTIONS (used to reconcile the picked grade
+// with the age-detected KG/GRADE category).
+export const KG_GRADES = ["KG 1", "KG 2"] as const;
+
 // Curriculum options offered on the admission form (editable).
-export const CURRICULUM_OPTIONS = ["IGCSE", "CBSE"] as const;
+export const CURRICULUM_OPTIONS = ["IGCSE - Cambridge", "CBSE"] as const;
