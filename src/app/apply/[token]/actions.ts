@@ -114,9 +114,10 @@ export async function submitAdmissionForm(formData: FormData) {
   if (detect.category === "KG") grade = "KG";
   else if (grade === "KG" || !grade) grade = "G1";
 
-  // Grade applicants must request a preferred assessment date.
-  if (detect.category === "GRADE" && !input.preferred_assessment_date) {
-    fail(token, "Please choose a preferred assessment date.");
+  // Grade applicants must either pick an open slot or request a preferred date.
+  const slotId = String(formData.get("slot_id") ?? "");
+  if (detect.category === "GRADE" && !input.preferred_assessment_date && !slotId) {
+    fail(token, "Please pick an available slot or choose a preferred assessment date.");
   }
 
   const admin = createSupabaseAdminClient();
@@ -196,6 +197,30 @@ export async function submitAdmissionForm(formData: FormData) {
     entityId: app.id,
     details: { category: detect.category, grade, age: detect.ageYears },
   });
+
+  // If the parent picked an open slot on the form, book it now (Grade only):
+  // the slot is confirmed instantly and the parent, teacher and admin are all
+  // notified — no separate "please schedule" step. Falls back to the normal
+  // flow if the slot was just taken by someone else.
+  if (detect.category === "GRADE" && slotId) {
+    const { data: slot, error: bookErr } = await admin.rpc("book_assessment_slot", {
+      p_slot: slotId,
+      p_application: app.id,
+    });
+    if (!bookErr && slot) {
+      await logAudit({
+        action: "assessment.slot_booked",
+        entity: "application",
+        entityId: app.id,
+        details: { slot_id: slotId, via: "form" },
+      });
+      await handleSlotBooked(app.id, slot as { starts_at: string; teacher_id: string });
+      redirect(`/apply/${token}`);
+    }
+    // Slot just taken — notify normally so the parent can pick another below.
+    await handleFormSubmitted(app.id);
+    fail(token, "That slot was just taken — please pick another available slot below.");
+  }
 
   await handleFormSubmitted(app.id);
   redirect(`/apply/${token}`);

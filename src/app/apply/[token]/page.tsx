@@ -73,6 +73,20 @@ async function Content({
   const admin = createSupabaseAdminClient();
   const settings = await getSettings();
 
+  // Open assessment slots the parent could book straight from the form.
+  let openSlots: { id: string; startsAt: string }[] = [];
+  if (status === "LEAD_CREATED") {
+    const { data } = await admin
+      .from("assessment_slots")
+      .select("id, starts_at")
+      .eq("is_open", true)
+      .is("application_id", null)
+      .gt("starts_at", new Date().toISOString())
+      .order("starts_at", { ascending: true })
+      .limit(50);
+    openSlots = (data ?? []).map((s) => ({ id: s.id as string, startsAt: s.starts_at as string }));
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -106,6 +120,7 @@ async function Content({
               curriculumOptions={CURRICULUM_OPTIONS}
               schoolTimezone={config.school.timezone}
               schoolTimezoneLabel={config.school.timezoneLabel}
+              availableSlots={openSlots}
               defaultStudentName={app.lead_student_name}
               ageConfig={{
                 year: config.admission.year,
