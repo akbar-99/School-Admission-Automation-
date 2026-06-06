@@ -34,8 +34,8 @@ becomes **Lead created**.
 1. Parent opens the link from the email/message.
 2. Fills the **Admission form**:
    - **Student:** full name, **date of birth**, gender, **grade applying**, previous
-     school, **curriculum**, **country of residence**, **current address**, and
-     **permanent address**.
+     school, **curriculum (IGCSE or CBSE)**, **country of residence**, **current
+     address**, and **permanent address**.
    - **Parents:** father's name & phone, mother's name & phone.
    - **Documents:** birth certificate, report card / previous marks, photo/ID, and
      **passport** — *passport is required only when the country of residence is not
@@ -80,15 +80,23 @@ The Admin owns scheduling. There are **two ways** to do it — pick whichever su
 ➡️ The parent simply gets a **confirmation** for that time; the assigned teacher and
 admin are notified. Status becomes **Assessment scheduled**.
 
-### Option B — Publish open slots for parents to book
-1. Use **Create & assign a slot**: pick a **start time**, **duration**, and a
-   **teacher**, then **Create slot**.
-➡️ All waiting Grade parents are **emailed that slots are open**. The parent refreshes
-their link, sees a **slot picker**, and **books** a time (can't be double-booked).
-Parent, teacher and admin are notified.
+### Option B — Publish open slots for parents to book themselves
 
-> 📋 The Admin can review everything under **Scheduled assessments** and **All slots**
-> on the same page.
+**B1 — Admin opens slots** 🛠️ · **Where:** `/admin/assessments`
+1. Use **Create & assign a slot**: pick a **start time**, **duration**, and a
+   **teacher**, then **Create slot**. Repeat to offer several times.
+➡️ All waiting Grade parents are **emailed that slots are now open**.
+
+**B2 — Parent books a slot** 👨‍👩‍👦 · **Where:** their link (`/apply/…`) — **no login**
+1. The parent refreshes their link → a **slot picker** now appears, showing each open
+   time in **their local timezone** and the **school time (IST)**.
+2. They pick a time → **Book**.
+➡️ Booking is **instant** and a slot **can't be double-booked** (first come, first
+served). The **parent, the assigned teacher, and the admin** are all notified, and the
+status becomes **Assessment scheduled**.
+
+> 📋 Either way, the Admin can review everything under **Scheduled assessments** and
+> **All slots** on the same page.
 
 ### STEP 4c — Teacher records the result 👩‍🏫
 **Who:** Assessment Teacher · **Where:** `/teacher` *(view-only dashboard)*
@@ -105,8 +113,9 @@ Parent, teacher and admin are notified.
 ## STEP 5 — Agreement + payment link is sent 📄
 **Who:** System (automatic, for KG and Grade-Pass)
 
-➡️ The parent is emailed the **admission agreement** and the **payment link**. Status
-becomes **Agreement sent**.
+➡️ The parent is emailed **a single link** that opens the **payment page**, where they
+can **read the full agreement and pay in one place** (no separate links). Status becomes
+**Agreement sent**.
 
 ---
 
@@ -150,24 +159,31 @@ Teacher is notified** of the new student. **Admission complete.**
 
 ---
 
-## STEP 9 — Admin tools & oversight 🛠️
+## STEP 9 — The Admin portal, tab by tab 🛠️
 **Who:** Admin · **Where:** `/admin`
+**Top navigation:** Overview · Assessments · Sections · Staff · Notifications · Settings
 
-- **Overview dashboard (`/admin`):** four summary cards, **analytics charts** (an
-  application-status **donut** and a 12-month **admissions growth** bar chart), and the
-  full applications table.
-- **Applicant detail page:** click any **student name** in the table to open their full
-  record — all details, **download each uploaded document** (secure, time-limited
-  links), and **Print / export to PDF**. Includes a **Delete applicant** action (type
-  `DELETE` to confirm) that removes that one applicant and frees their seat.
-- **"Needs admin" (no seat):** go to **Sections**, add capacity (**+5 seats**) or a new
-  section, then allocate the seat for that application → it enrols and the welcome pack
-  goes out.
-- **Sections (`/admin/sections`):** manage grades, sections and capacity.
-- **Staff (`/admin/staff`):** invite marketing/teacher/admin by email — they receive a
-  link to **set their own password**.
-- **Notifications (`/admin/notifications`):** a log of **every message sent** (channel +
-  delivered/failed status).
+- **Overview (`/admin`):** four summary cards (total, enrolled, awaiting payment, needs
+  admin), **analytics charts** — an application-status **donut** and a 12-month
+  **admissions-growth** bar chart — and the full **applications table**.
+- **Applicant detail** *(click any **student name** in the table)*: the student's full
+  record — student, parents, assessment, agreement and payment details — with a
+  **download link for each uploaded document** (secure, time-limited), a
+  **Print / export to PDF** button, and a **Delete applicant** action (type `DELETE` to
+  confirm; it removes that one applicant and frees their seat).
+- **Assessments (`/admin/assessments`):** create & assign slots, **schedule directly**
+  (with click-to-fill of the requested time), **publish open slots** for parents to
+  book, and review **Scheduled assessments** + **All slots**. *(Full detail in STEP 4.)*
+- **Sections (`/admin/sections`):** manage grades, sections and capacity. When an
+  applicant is **"Needs admin"** (every section full), add capacity (**+5 seats**) or a
+  new section, then **allocate the seat** → the student enrols and the welcome pack goes
+  out.
+- **Staff (`/admin/staff`):** invite marketing / teacher / admin users by email — each
+  receives a link to **set their own password**.
+- **Notifications (`/admin/notifications`):** a log of **every message sent** (channel,
+  recipient, and delivered/failed status).
+- **Settings (`/admin/settings`):** edit fee, agreement, school contacts, academic dates
+  and onboarding list, plus **Factory reset**. *(Full detail in STEP 10.)*
 
 ---
 
