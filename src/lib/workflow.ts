@@ -5,7 +5,7 @@ import { applyUrl } from "@/lib/parent";
 import { config } from "@/lib/config";
 import { getSettings } from "@/lib/settings";
 import { logAudit } from "@/lib/audit";
-import { formatINR } from "@/lib/utils";
+import { formatINR, formatInZone } from "@/lib/utils";
 import type { Application, Parent, Student } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -183,7 +183,7 @@ export async function handleSlotBooked(
   const { data: parentRow } = await admin.from("parents").select("*").eq("id", app.parent_id).single();
   const parent = parentRow as Parent;
 
-  const when = new Date(slotInfo.starts_at).toLocaleString("en-IN");
+  const when = `${formatInZone(slotInfo.starts_at, config.school.timezone)} ${config.school.timezoneLabel}`;
   const messages: OutboundMessage[] = [
     ...multiChannel(
       {
@@ -242,7 +242,7 @@ export async function notifyTeacherSlotAssigned(
     .eq("id", teacherId)
     .maybeSingle();
   if (!t) return;
-  const when = new Date(slot.starts_at).toLocaleString("en-IN");
+  const when = `${formatInZone(slot.starts_at, config.school.timezone)} ${config.school.timezoneLabel}`;
   await dispatch(
     multiChannel(
       {

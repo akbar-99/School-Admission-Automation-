@@ -150,7 +150,7 @@ async function Content({
       )}
 
       {status === "ASSESSMENT_SCHEDULED" && (
-        <BookedSlot appId={app.id} />
+        <BookedSlot appId={app.id} parentTz={app.preferred_assessment_tz} />
       )}
 
       {status === "ASSESSMENT_COMPLETED" && (
@@ -319,7 +319,12 @@ async function Content({
                   <input type="hidden" name="token" value={token} />
                   <input type="hidden" name="slot_id" value={s.id} />
                   <span className="text-sm font-medium">
-                    {formatDateTime(s.starts_at)}
+                    {formatInZone(s.starts_at, config.school.timezone)} {config.school.timezoneLabel}
+                    {requestedTz && requestedTz !== config.school.timezone && (
+                      <span className="ml-1 font-normal text-muted-foreground">
+                        · your time {formatInZone(s.starts_at, requestedTz)}
+                      </span>
+                    )}
                   </span>
                   <SubmitButton size="sm" pendingText="Booking…">
                     Book
@@ -333,7 +338,7 @@ async function Content({
     );
   }
 
-  async function BookedSlot({ appId }: { appId: string }) {
+  async function BookedSlot({ appId, parentTz }: { appId: string; parentTz: string | null }) {
     const { data: slot } = await admin
       .from("assessment_slots")
       .select("starts_at, ends_at")
@@ -347,9 +352,16 @@ async function Content({
         </CardHeader>
         <CardContent>
           {slot ? (
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <CalendarClock className="size-4 text-primary" />
-              {formatDateTime(slot.starts_at)}
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <CalendarClock className="size-4 text-primary" />
+                {formatInZone(slot.starts_at, config.school.timezone)} {config.school.timezoneLabel}
+              </div>
+              {parentTz && parentTz !== config.school.timezone && (
+                <div className="pl-6 text-xs text-muted-foreground">
+                  Your time: {formatInZone(slot.starts_at, parentTz)}
+                </div>
+              )}
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">Slot details unavailable.</p>

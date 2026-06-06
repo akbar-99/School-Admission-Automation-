@@ -1,6 +1,7 @@
 import { getSessionUser } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { formatDateTime, formatDate } from "@/lib/utils";
+import { config } from "@/lib/config";
+import { formatDate, formatInZone } from "@/lib/utils";
 import { submitResult } from "./actions";
 import { SubmitButton } from "@/components/submit-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,6 +35,8 @@ export default async function TeacherPage({
   const session = await getSessionUser();
   const teacherId = session!.profile!.id;
   const admin = createSupabaseAdminClient();
+  const schoolTz = config.school.timezone;
+  const schoolLabel = config.school.timezoneLabel;
 
   // Only the slots assigned to this teacher by an admin.
   const { data } = await admin
@@ -95,7 +98,7 @@ export default async function TeacherPage({
                       {s.applications?.students?.dob && (
                         <span>DOB {formatDate(s.applications.students.dob)}</span>
                       )}
-                      <span>Slot {formatDateTime(s.starts_at)}</span>
+                      <span>Slot {formatInZone(s.starts_at, schoolTz)} {schoolLabel}</span>
                     </div>
                     <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs">
                       <span className="text-muted-foreground">
@@ -161,7 +164,7 @@ export default async function TeacherPage({
                   key={s.id}
                   className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm"
                 >
-                  <span>{formatDateTime(s.starts_at)}</span>
+                  <span>{formatInZone(s.starts_at, schoolTz)} {schoolLabel}</span>
                   <Badge tone="info">Open</Badge>
                 </div>
               ))
@@ -184,7 +187,7 @@ export default async function TeacherPage({
                 >
                   <span>
                     {s.applications?.students?.full_name ?? "Applicant"} ·{" "}
-                    {formatDateTime(s.starts_at)}
+                    {formatInZone(s.starts_at, schoolTz)} {schoolLabel}
                   </span>
                   <Badge tone="neutral">{s.applications?.status}</Badge>
                 </div>

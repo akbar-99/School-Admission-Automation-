@@ -170,7 +170,7 @@ export default async function ApplicationDetailPage({
           />
           <Field
             label="Scheduled time"
-            value={slot ? formatDateTime(slot.starts_at) : "Not scheduled"}
+            value={slot ? `${formatInZone(slot.starts_at, schoolTz)} ${schoolLabel}` : "Not scheduled"}
           />
           <Field label="Assigned teacher" value={slot?.users?.full_name ?? "—"} />
           <Field label="Result" value={result ? result.outcome : "Pending"} />

@@ -36,6 +36,25 @@ export function formatInZone(value: string | Date, timeZone: string): string {
   }
 }
 
+// Interpret a naive "YYYY-MM-DDTHH:mm" wall-clock as a time in the given IANA
+// timezone and return the matching UTC instant (ISO string). The inverse of
+// toZonedInputValue. Used when staff enter slot times in school time.
+export function zonedTimeToUtcISO(local: string, timeZone: string): string {
+  if (!local) return "";
+  const norm = local.length === 16 ? `${local}:00` : local; // ensure seconds
+  const asIfUtc = new Date(`${norm}Z`); // treat the wall-clock as if it were UTC
+  if (Number.isNaN(asIfUtc.getTime())) return "";
+  try {
+    // How far that instant's clock in `timeZone` is ahead of/behind UTC.
+    const tz = new Date(asIfUtc.toLocaleString("en-US", { timeZone }));
+    const utc = new Date(asIfUtc.toLocaleString("en-US", { timeZone: "UTC" }));
+    const offset = tz.getTime() - utc.getTime();
+    return new Date(asIfUtc.getTime() - offset).toISOString();
+  } catch {
+    return asIfUtc.toISOString();
+  }
+}
+
 // Convert an instant into a "YYYY-MM-DDTHH:mm" string (the value format a
 // <input type="datetime-local"> expects), expressed in the given IANA timezone.
 // Used to pre-fill the confirmed-time field from a parent's requested time.

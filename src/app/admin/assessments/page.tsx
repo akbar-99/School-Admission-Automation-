@@ -1,6 +1,6 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { config } from "@/lib/config";
-import { formatDateTime, formatInZone, toZonedInputValue } from "@/lib/utils";
+import { formatInZone, toZonedInputValue } from "@/lib/utils";
 import { createAssessmentSlot } from "../actions";
 import { AssignAssessmentRow } from "@/components/admin/assign-assessment-row";
 import { SubmitButton } from "@/components/submit-button";
@@ -99,7 +99,7 @@ export default async function AdminAssessmentsPage({
           ) : (
             <form action={createAssessmentSlot} className="flex flex-wrap items-end gap-4">
               <div className="space-y-1.5">
-                <Label htmlFor="starts_at">Start time</Label>
+                <Label htmlFor="starts_at">Start time ({schoolLabel})</Label>
                 <Input id="starts_at" name="starts_at" type="datetime-local" required />
               </div>
               <div className="space-y-1.5">
@@ -207,7 +207,9 @@ export default async function AdminAssessmentsPage({
                   </span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-xs text-muted-foreground">{formatDateTime(s.starts_at)}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {formatInZone(s.starts_at, schoolTz)} {schoolLabel}
+                  </span>
                   <StatusBadge status={(s.applications?.status ?? "ASSESSMENT_SCHEDULED") as AppStatus} />
                 </div>
               </div>
@@ -233,7 +235,9 @@ export default async function AdminAssessmentsPage({
                   className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border px-3 py-2 text-sm"
                 >
                   <div>
-                    <span className="font-medium">{formatDateTime(s.starts_at)}</span>
+                    <span className="font-medium">
+                      {formatInZone(s.starts_at, schoolTz)} {schoolLabel}
+                    </span>
                     <span className="text-muted-foreground"> · {s.users?.full_name ?? "Unassigned"}</span>
                     {booked && s.applications?.students?.full_name && (
                       <span className="text-muted-foreground"> · {s.applications.students.full_name}</span>

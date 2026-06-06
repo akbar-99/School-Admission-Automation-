@@ -93,7 +93,7 @@ export function AssignAssessmentRow({
           <input type="hidden" name="application_id" value={applicationId} />
           <div className="space-y-1">
             <Label htmlFor={`time-${applicationId}`} className="text-xs">
-              Confirmed time
+              Confirmed time (school time)
             </Label>
             <Input
               id={`time-${applicationId}`}

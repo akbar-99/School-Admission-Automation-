@@ -12,6 +12,8 @@ import {
   notifyTeacherSlotAssigned,
 } from "@/lib/workflow";
 import { logAudit } from "@/lib/audit";
+import { config } from "@/lib/config";
+import { zonedTimeToUtcISO } from "@/lib/utils";
 
 // Admin creates an assessment slot and assigns it to a teacher.
 const AssessmentSlotSchema = z.object({
@@ -32,7 +34,8 @@ export async function createAssessmentSlot(formData: FormData) {
   }
   const { starts_at, duration, teacher_id } = parsed.data!;
 
-  const start = new Date(starts_at);
+  // The admin enters the time in school time (e.g. IST); store the true UTC instant.
+  const start = new Date(zonedTimeToUtcISO(starts_at, config.school.timezone));
   if (Number.isNaN(start.getTime()) || start.getTime() < Date.now()) {
     redirect("/admin/assessments?error=" + encodeURIComponent("Choose a future start time."));
   }
@@ -89,7 +92,8 @@ export async function assignAssessment(formData: FormData) {
   }
   const { application_id, teacher_id, starts_at, duration } = parsed.data!;
 
-  const start = new Date(starts_at);
+  // The confirmed time is entered/shown in school time; store the UTC instant.
+  const start = new Date(zonedTimeToUtcISO(starts_at, config.school.timezone));
   if (Number.isNaN(start.getTime()) || start.getTime() < Date.now()) {
     redirect("/admin/assessments?error=" + encodeURIComponent("Choose a future time."));
   }
