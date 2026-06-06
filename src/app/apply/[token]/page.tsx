@@ -462,10 +462,20 @@ async function Content({
             <CardHeader>
               <CardTitle>Payment receipt</CardTitle>
             </CardHeader>
-            <CardContent className="grid gap-4 sm:grid-cols-2 text-sm">
-              <Field label="Amount paid" value={formatINR(payment.amount)} />
-              <Field label="Receipt no." value={payment.receipt ?? "—"} mono />
-              <Field label="Payment ID" value={payment.razorpay_payment_id ?? "—"} mono />
+            <CardContent className="space-y-4 text-sm">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Amount paid" value={formatINR(payment.amount)} />
+                <Field label="Receipt no." value={payment.receipt ?? "—"} mono />
+                <Field label="Payment ID" value={payment.razorpay_payment_id ?? "—"} mono />
+              </div>
+              <a
+                href={`/api/receipt/${token}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex font-medium text-primary underline underline-offset-4"
+              >
+                Download / print receipt (PDF)
+              </a>
             </CardContent>
           </Card>
         )}
