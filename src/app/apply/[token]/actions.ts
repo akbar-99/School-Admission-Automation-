@@ -29,7 +29,7 @@ const FormSchema = z.object({
   country: z.string().trim().min(1, "Country of residence is required"),
   current_address: z.string().trim().min(1, "Current address is required"),
   permanent_address: z.string().trim().min(1, "Permanent address is required"),
-  previous_school: z.string().trim().min(1, "Previous school details are required"),
+  previous_school: z.string().trim().min(1).optional(),
   father_name: z.string().trim().min(1, "Father's full name is required"),
   father_phone: z.string().trim().min(7, "Father's contact number is required"),
   mother_name: z.string().trim().min(1, "Mother's full name is required"),
@@ -92,7 +92,7 @@ export async function submitAdmissionForm(formData: FormData) {
     country: formData.get("country"),
     current_address: formData.get("current_address"),
     permanent_address: formData.get("permanent_address"),
-    previous_school: formData.get("previous_school"),
+    previous_school: formData.get("previous_school") || undefined,
     father_name: formData.get("father_name"),
     father_phone: formData.get("father_phone"),
     mother_name: formData.get("mother_name"),
@@ -121,6 +121,11 @@ export async function submitAdmissionForm(formData: FormData) {
     if (!isKgClass(grade)) grade = classOptions.find(isKgClass) ?? "KG 1";
   } else if (isKgClass(grade) || !grade) {
     grade = classOptions.find((o) => !isKgClass(o)) ?? "G1";
+  }
+
+  // Previous-school details are required for Grade applicants only (not KG).
+  if (detect.category === "GRADE" && !input.previous_school) {
+    fail(token, "Previous school details are required.");
   }
 
   // Grade applicants must either pick an open slot or request a preferred date.
@@ -164,7 +169,7 @@ export async function submitAdmissionForm(formData: FormData) {
       full_name: input.student_name,
       dob: input.dob,
       gender: input.gender,
-      previous_school: input.previous_school,
+      previous_school: input.previous_school ?? null,
       curriculum: input.curriculum,
       country_of_residence: input.country,
       current_address: input.current_address,

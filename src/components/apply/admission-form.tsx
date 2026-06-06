@@ -186,10 +186,17 @@ export function AdmissionForm({
               options={COUNTRIES.map((c) => ({ value: c, search: c, label: c }))}
             />
           </div>
-          <div className="space-y-1.5 sm:col-span-2">
-            <Label htmlFor="previous_school">Detail of previous school *</Label>
-            <Input id="previous_school" name="previous_school" required placeholder="School name, board, last class attended" />
-          </div>
+          {detected?.category !== "KG" && (
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label htmlFor="previous_school">Detail of previous school *</Label>
+              <Input
+                id="previous_school"
+                name="previous_school"
+                required
+                placeholder="School name, board, last class attended"
+              />
+            </div>
+          )}
           <div className="space-y-1.5 sm:col-span-2">
             <Label htmlFor="current_address">Current address *</Label>
             <Textarea id="current_address" name="current_address" required className="min-h-20" />
