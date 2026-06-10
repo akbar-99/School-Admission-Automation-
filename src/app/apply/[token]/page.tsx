@@ -1,4 +1,4 @@
-import { CalendarClock, BookOpen, Phone } from "lucide-react";
+import { CalendarClock, BookOpen, Phone, Download } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { loadApplicationByToken } from "@/lib/parent";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -13,9 +13,10 @@ import { StatusBadge } from "@/components/status-badge";
 import { SubmitButton } from "@/components/submit-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { AppStatus } from "@/lib/types";
+import type { AppStatus, SubjectResult } from "@/lib/types";
 
 export default async function ApplyPage({
   params,
@@ -90,6 +91,33 @@ async function Content({
     openSlots = (data ?? []).map((s) => ({ id: s.id as string, startsAt: s.starts_at as string }));
   }
 
+  // Assessment result (subject-wise), shown to the parent once recorded.
+  let assessmentResult: { outcome: string; remarks: string | null } | null = null;
+  let subjectResults: (SubjectResult & { url: string | null })[] = [];
+  if (app.category === "GRADE") {
+    const { data: resultRow } = await admin
+      .from("assessment_results")
+      .select("outcome, remarks, subjects")
+      .eq("application_id", app.id)
+      .maybeSingle();
+    if (resultRow) {
+      const row = resultRow as { outcome: string; remarks: string | null; subjects?: SubjectResult[] };
+      assessmentResult = { outcome: row.outcome, remarks: row.remarks };
+      subjectResults = await Promise.all(
+        (row.subjects ?? []).map(async (sub) => {
+          let url: string | null = null;
+          if (sub.file) {
+            const { data } = await admin.storage
+              .from("documents")
+              .createSignedUrl(sub.file.path, 3600, { download: sub.file.name });
+            url = data?.signedUrl ?? null;
+          }
+          return { ...sub, url };
+        }),
+      );
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -156,12 +184,14 @@ async function Content({
         <BookedSlot appId={app.id} parentTz={app.preferred_assessment_tz} />
       )}
 
-      {status === "ASSESSMENT_COMPLETED" && (
+      {status === "ASSESSMENT_COMPLETED" && !assessmentResult && (
         <InfoCard title="Assessment completed" tone="info">
           Your child&apos;s assessment is complete. We are preparing the next
           steps — please check back shortly.
         </InfoCard>
       )}
+
+      {assessmentResult && <ResultsCard />}
 
       {(status === "AGREEMENT_SENT" ||
         status === "PAYMENT_PENDING" ||
@@ -368,6 +398,54 @@ async function Content({
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">Slot details unavailable.</p>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  function ResultsCard() {
+    if (!assessmentResult) return null;
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Assessment results</CardTitle>
+          <CardDescription>Your child&apos;s subject-wise assessment.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-muted-foreground">Overall result:</span>
+            <Badge tone={assessmentResult.outcome === "PASS" ? "success" : "danger"}>
+              {assessmentResult.outcome}
+            </Badge>
+          </div>
+          {assessmentResult.remarks && (
+            <p className="text-sm text-muted-foreground">Remarks: {assessmentResult.remarks}</p>
+          )}
+          {subjectResults.length > 0 && (
+            <div className="space-y-2">
+              {subjectResults.map((sub) => (
+                <div key={sub.subject} className="rounded-md border border-border px-3 py-2 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-medium">{sub.subject}</span>
+                    <span className="tabular-nums">
+                      {sub.score != null ? `${sub.score}/100` : "—"}
+                    </span>
+                  </div>
+                  {sub.comment && <p className="mt-1 text-muted-foreground">{sub.comment}</p>}
+                  {sub.file && sub.url && (
+                    <a
+                      href={sub.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-1 inline-flex items-center gap-1 text-primary hover:underline"
+                    >
+                      <Download className="size-3.5" /> {sub.file.name}
+                    </a>
+                  )}
+                </div>
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>
