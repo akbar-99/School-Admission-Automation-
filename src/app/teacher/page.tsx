@@ -1,10 +1,11 @@
 import { getSessionUser } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { config } from "@/lib/config";
+import { config, ASSESSMENT_SUBJECTS } from "@/lib/config";
 import { formatDate, formatInZone } from "@/lib/utils";
 import { submitResult } from "./actions";
 import { SubmitButton } from "@/components/submit-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -127,16 +128,63 @@ export default async function TeacherPage({
                   </div>
                   <Badge tone="info">Booked</Badge>
                 </div>
+
+                {/* Per-subject scores, comments and PDF/Excel attachments */}
+                <div className="space-y-2">
+                  <input type="hidden" name="subject_count" value={ASSESSMENT_SUBJECTS.length} />
+                  <div className="text-sm font-semibold">Subject scores</div>
+                  {ASSESSMENT_SUBJECTS.map((subj, i) => (
+                    <div key={subj} className="space-y-2 rounded-md border border-border/60 p-3">
+                      <input type="hidden" name={`subject_${i}`} value={subj} />
+                      <div className="text-sm font-medium">{subj}</div>
+                      <div className="grid items-start gap-3 sm:grid-cols-[6rem_minmax(0,1fr)_15rem]">
+                        <div className="space-y-1">
+                          <Label htmlFor={`score-${s.id}-${i}`} className="text-xs">Score (/100)</Label>
+                          <Input
+                            id={`score-${s.id}-${i}`}
+                            name={`score_${i}`}
+                            type="number"
+                            min={0}
+                            max={100}
+                            step="1"
+                            placeholder="—"
+                            className="h-9 w-full"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor={`comment-${s.id}-${i}`} className="text-xs">Comment</Label>
+                          <Input
+                            id={`comment-${s.id}-${i}`}
+                            name={`comment_${i}`}
+                            placeholder="Optional comment…"
+                            className="h-9 w-full"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor={`file-${s.id}-${i}`} className="text-xs">Attachment (PDF / Excel)</Label>
+                          <Input
+                            id={`file-${s.id}-${i}`}
+                            name={`file_${i}`}
+                            type="file"
+                            accept=".pdf,.xls,.xlsx,.csv,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
+                            className="h-9 w-full"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
                 <div className="grid gap-3 sm:grid-cols-[160px_1fr]">
                   <div className="space-y-1.5">
-                    <Label>Result</Label>
+                    <Label>Overall result</Label>
                     <Select name="outcome" defaultValue="PASS">
                       <option value="PASS">Pass</option>
                       <option value="FAIL">Fail</option>
                     </Select>
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Remarks</Label>
+                    <Label>Overall remarks</Label>
                     <Textarea name="remarks" placeholder="Optional remarks…" className="min-h-10" />
                   </div>
                 </div>

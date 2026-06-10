@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert } from "@/components/ui/alert";
 import { deleteApplication } from "../../actions";
-import type { Application, Student, Parent, Payment } from "@/lib/types";
+import type { Application, Student, Parent, Payment, SubjectResult } from "@/lib/types";
 
 const DOC_LABEL: Record<string, string> = {
   passport: "Passport copy",
@@ -51,7 +51,7 @@ export default async function ApplicationDetailPage({
       : Promise.resolve({ data: null }),
     admin
       .from("assessment_results")
-      .select("outcome, remarks")
+      .select("outcome, remarks, subjects")
       .eq("application_id", id)
       .maybeSingle(),
     admin
@@ -64,7 +64,11 @@ export default async function ApplicationDetailPage({
   const parent = parentRes.data as Parent | null;
   const payment = paymentRes.data as Payment | null;
   const section = sectionRes.data as { grade: string; name: string } | null;
-  const result = resultRes.data as { outcome: string; remarks: string | null } | null;
+  const result = resultRes.data as {
+    outcome: string;
+    remarks: string | null;
+    subjects?: SubjectResult[];
+  } | null;
   const slot = slotRes.data as { starts_at: string; users: { full_name: string | null } | null } | null;
 
   // Signed download URLs for documents in the private bucket.
@@ -75,6 +79,20 @@ export default async function ApplicationDetailPage({
         .from("documents")
         .createSignedUrl(d.path, 3600, { download: d.name });
       return { doc: d, url: data?.signedUrl ?? null };
+    }),
+  );
+
+  // Per-subject scores + signed download URLs for any attached file.
+  const subjectRows = await Promise.all(
+    (result?.subjects ?? []).map(async (sub) => {
+      let url: string | null = null;
+      if (sub.file) {
+        const { data } = await admin.storage
+          .from("documents")
+          .createSignedUrl(sub.file.path, 3600, { download: sub.file.name });
+        url = data?.signedUrl ?? null;
+      }
+      return { ...sub, url };
     }),
   );
 
@@ -175,6 +193,35 @@ export default async function ApplicationDetailPage({
           <Field label="Assigned teacher" value={slot?.users?.full_name ?? "—"} />
           <Field label="Result" value={result ? result.outcome : "Pending"} />
           {result?.remarks && <Field label="Remarks" value={result.remarks} wide />}
+          {subjectRows.length > 0 && (
+            <div className="space-y-2 sm:col-span-2 lg:col-span-3">
+              <div className="text-xs uppercase tracking-wide text-muted-foreground">Subject scores</div>
+              {subjectRows.map((sub) => (
+                <div key={sub.subject} className="rounded-md border border-border px-3 py-2 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-medium">{sub.subject}</span>
+                    <span className="tabular-nums">{sub.score != null ? `${sub.score}/100` : "—"}</span>
+                  </div>
+                  {sub.comment && <p className="mt-1 text-muted-foreground">{sub.comment}</p>}
+                  {sub.file &&
+                    (sub.url ? (
+                      <a
+                        href={sub.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-1 inline-flex items-center gap-1 text-primary hover:underline"
+                      >
+                        <Download className="size-3.5" /> {sub.file.name}
+                      </a>
+                    ) : (
+                      <span className="mt-1 block text-xs text-muted-foreground">
+                        {sub.file.name} (link unavailable)
+                      </span>
+                    ))}
+                </div>
+              ))}
+            </div>
+          )}
         </Section>
       )}
 

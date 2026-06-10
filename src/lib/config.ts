@@ -2,10 +2,10 @@
 // not hard-coded (SRS FR-7, §4.2). Env provides defaults; the app_config table
 // mirrors them for runtime overrides without redeploy.
 
-// Resolve the public base URL across hosts: explicit env first, then the
-// platform-injected URL (Netlify / Vercel), then localhost for dev.
+// Resolve the public base URL: explicit env first, then the Vercel-injected
+// production URL, then localhost for dev.
 function resolveAppUrl(): string {
-  const explicit = process.env.NEXT_PUBLIC_APP_URL || process.env.URL;
+  const explicit = process.env.NEXT_PUBLIC_APP_URL;
   if (explicit) return explicit.replace(/\/+$/, "");
   const vercel =
     process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL;
@@ -15,9 +15,9 @@ function resolveAppUrl(): string {
 
 export const config = {
   // Public base URL for parent-facing links (admission link, agreement, receipt).
-  // Set NEXT_PUBLIC_APP_URL explicitly in production. Falls back to platform-
-  // injected URLs (Netlify `URL`, Vercel `VERCEL_PROJECT_PRODUCTION_URL`/
-  // `VERCEL_URL`), then localhost. Trailing slashes are stripped.
+  // Set NEXT_PUBLIC_APP_URL explicitly in production. Falls back to Vercel's
+  // injected `VERCEL_PROJECT_PRODUCTION_URL` / `VERCEL_URL`, then localhost.
+  // Trailing slashes are stripped.
   appUrl: resolveAppUrl(),
   appSecret: process.env.APP_SECRET ?? "dev-insecure-secret",
 
@@ -96,3 +96,7 @@ export const GRADE_OPTIONS = [
 
 // Curriculum options offered on the admission form (editable).
 export const CURRICULUM_OPTIONS = ["IGCSE - Cambridge", "CBSE"] as const;
+
+// Subjects scored during a Grade assessment. The teacher records a score,
+// a comment and an optional file (PDF / Excel) per subject.
+export const ASSESSMENT_SUBJECTS = ["Maths", "English"] as const;

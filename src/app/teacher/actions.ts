@@ -18,6 +18,63 @@ const ResultSchema = z.object({
   remarks: z.string().trim().optional(),
 });
 
+const ASSESSMENT_MAX_FILE = 5 * 1024 * 1024; // 5 MB
+const ASSESSMENT_ALLOWED_EXT = [".pdf", ".xls", ".xlsx", ".csv"];
+
+interface SubjectInput {
+  subject: string;
+  score: number | null;
+  comment: string | null;
+  file: { category: string; type: string; path: string; name: string; size: number } | null;
+}
+
+// Read the per-subject score / comment / file rows from the form, uploading any
+// attached PDF/Excel into the private "documents" bucket.
+async function parseSubjects(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  applicationId: string,
+  formData: FormData,
+): Promise<SubjectInput[]> {
+  const subjects: SubjectInput[] = [];
+  const count = Number(formData.get("subject_count") ?? 0);
+  for (let i = 0; i < count; i++) {
+    const subject = String(formData.get(`subject_${i}`) ?? "").trim();
+    if (!subject) continue;
+
+    const scoreRaw = formData.get(`score_${i}`);
+    const scoreNum =
+      scoreRaw != null && String(scoreRaw).trim() !== "" ? Number(scoreRaw) : NaN;
+    const score = Number.isFinite(scoreNum) ? scoreNum : null;
+    const comment = String(formData.get(`comment_${i}`) ?? "").trim() || null;
+
+    let file: SubjectInput["file"] = null;
+    const f = formData.get(`file_${i}`);
+    if (f instanceof File && f.size > 0) {
+      const lower = f.name.toLowerCase();
+      if (!ASSESSMENT_ALLOWED_EXT.some((ext) => lower.endsWith(ext))) {
+        redirect("/teacher?error=" + encodeURIComponent(`${subject}: only PDF or Excel files are allowed.`));
+      }
+      if (f.size > ASSESSMENT_MAX_FILE) {
+        redirect("/teacher?error=" + encodeURIComponent(`${subject}: file exceeds the 5 MB limit.`));
+      }
+      const safe = f.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const slug = subject.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+      const path = `assessments/${applicationId}/${slug}_${Date.now()}_${safe}`;
+      const buffer = Buffer.from(await f.arrayBuffer());
+      const { error: upErr } = await admin.storage
+        .from("documents")
+        .upload(path, buffer, { contentType: f.type || "application/octet-stream", upsert: false });
+      if (upErr) {
+        redirect("/teacher?error=" + encodeURIComponent(`${subject}: upload failed — ${upErr.message}`));
+      }
+      file = { category: subject, type: f.type || "application/octet-stream", path, name: f.name, size: f.size };
+    }
+
+    subjects.push({ subject, score, comment, file });
+  }
+  return subjects;
+}
+
 export async function submitResult(formData: FormData) {
   const { profile } = await requireRole(["teacher", "admin"]);
   const parsed = ResultSchema.safeParse({
@@ -56,12 +113,15 @@ export async function submitResult(formData: FormData) {
     }
   }
 
+  const subjects = await parseSubjects(admin, input.application_id, formData);
+
   const { error: rErr } = await admin.from("assessment_results").insert({
     application_id: input.application_id,
     slot_id: input.slot_id ?? null,
     teacher_id: profile.id,
     outcome: input.outcome,
     remarks: input.remarks ?? null,
+    subjects,
   });
   if (rErr) {
     redirect("/teacher?error=" + encodeURIComponent(rErr.message));

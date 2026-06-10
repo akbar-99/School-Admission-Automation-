@@ -128,6 +128,13 @@ export interface AssessmentSlot {
   updated_at: string;
 }
 
+export interface SubjectResult {
+  subject: string;
+  score: number | null;
+  comment: string | null;
+  file: DocumentRef | null; // uploaded PDF / Excel for this subject
+}
+
 export interface AssessmentResult {
   id: string;
   application_id: string;
@@ -135,6 +142,7 @@ export interface AssessmentResult {
   teacher_id: string | null;
   outcome: AssessmentOutcome;
   remarks: string | null;
+  subjects: SubjectResult[];
   created_at: string;
   updated_at: string;
 }
