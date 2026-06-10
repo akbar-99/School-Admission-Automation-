@@ -67,6 +67,7 @@ export async function GET(
     <tr><td class="k">Date of birth</td><td>${student ? formatDate(student.dob) : "—"}</td></tr>
     <tr><td class="k">Category</td><td>${esc(app.category ?? "—")}</td></tr>
     <tr><td class="k">Grade applying</td><td>${esc(app.grade_applying ?? "—")}</td></tr>
+    <tr><td class="k">Curriculum</td><td>${esc(student?.curriculum ?? "—")}</td></tr>
     <tr><td class="k">Parent / guardian</td><td>${esc(parent.full_name)}</td></tr>
     <tr><td class="k">Contact</td><td>${esc(parent.phone)}${parent.email ? " · " + esc(parent.email) : ""}</td></tr>
     <tr><td class="k">Admission fee</td><td>${formatINR(s.feePaise)}</td></tr>
