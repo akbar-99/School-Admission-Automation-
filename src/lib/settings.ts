@@ -1,7 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { config } from "@/lib/config";
+import { config, ASSESSMENT_SUBJECTS } from "@/lib/config";
 
 // Admin-editable settings stored in the app_config table (key/value), read at
 // runtime so changes apply without a redeploy. Falls back to sensible defaults.
@@ -15,6 +15,8 @@ export interface AppSettings {
   academicOrientation: string;
   studyMaterial: string; // raw, one item per line
   studyMaterialItems: string[]; // parsed list
+  assessmentSubjects: string; // raw, one subject per line
+  assessmentSubjectsItems: string[]; // parsed list scored on the assessment
 }
 
 const DEFAULT_TERMS =
@@ -35,6 +37,7 @@ export const SETTINGS_DEFAULTS = {
   academicTermStart: `${config.admission.year}-06-15`,
   academicOrientation: `${config.admission.year}-06-10`,
   studyMaterial: DEFAULT_STUDY_MATERIAL,
+  assessmentSubjects: ASSESSMENT_SUBJECTS.join("\n"),
 };
 
 // Cached per-request so multiple reads during one render hit the DB once.
@@ -53,7 +56,15 @@ export const getSettings = cache(async (): Promise<AppSettings> => {
     return v != null && v !== "" ? v : fallback;
   };
 
+  const toList = (raw: string) =>
+    raw
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+
   const studyMaterial = str("study_material", SETTINGS_DEFAULTS.studyMaterial);
+  const assessmentSubjects = str("assessment_subjects", SETTINGS_DEFAULTS.assessmentSubjects);
+  const assessmentSubjectsItems = toList(assessmentSubjects);
   return {
     feePaise: num("admission_fee_paise", SETTINGS_DEFAULTS.feePaise),
     agreementTerms: str("agreement_terms", SETTINGS_DEFAULTS.agreementTerms),
@@ -63,9 +74,11 @@ export const getSettings = cache(async (): Promise<AppSettings> => {
     academicTermStart: str("academic_term_start", SETTINGS_DEFAULTS.academicTermStart),
     academicOrientation: str("academic_orientation", SETTINGS_DEFAULTS.academicOrientation),
     studyMaterial,
-    studyMaterialItems: studyMaterial
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean),
+    studyMaterialItems: toList(studyMaterial),
+    assessmentSubjects,
+    // Fall back to defaults if the admin saved an empty list.
+    assessmentSubjectsItems: assessmentSubjectsItems.length
+      ? assessmentSubjectsItems
+      : toList(SETTINGS_DEFAULTS.assessmentSubjects),
   };
 });

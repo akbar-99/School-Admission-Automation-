@@ -89,6 +89,19 @@ export default async function AdminSettingsPage({
                 />
               </div>
               <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="assessment_subjects">Assessment subjects</Label>
+                <Textarea
+                  id="assessment_subjects"
+                  name="assessment_subjects"
+                  defaultValue={s.assessmentSubjects}
+                  className="min-h-24"
+                />
+                <p className="text-xs text-muted-foreground">
+                  One subject per line. These are scored (score + comment + file) by the teacher
+                  during a Grade assessment.
+                </p>
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="study_material">Onboarding — study material list</Label>
                 <Textarea
                   id="study_material"

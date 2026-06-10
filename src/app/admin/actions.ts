@@ -243,6 +243,7 @@ export async function updateSettings(formData: FormData) {
     { key: "academic_term_start", value: String(formData.get("academic_term_start") ?? "").trim() },
     { key: "academic_orientation", value: String(formData.get("academic_orientation") ?? "").trim() },
     { key: "study_material", value: String(formData.get("study_material") ?? "").trim() },
+    { key: "assessment_subjects", value: String(formData.get("assessment_subjects") ?? "").trim() },
   ];
 
   const admin = createSupabaseAdminClient();

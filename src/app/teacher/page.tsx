@@ -1,6 +1,7 @@
 import { getSessionUser } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { config, ASSESSMENT_SUBJECTS } from "@/lib/config";
+import { config } from "@/lib/config";
+import { getSettings } from "@/lib/settings";
 import { formatDate, formatInZone } from "@/lib/utils";
 import { submitResult } from "./actions";
 import { SubmitButton } from "@/components/submit-button";
@@ -38,6 +39,7 @@ export default async function TeacherPage({
   const admin = createSupabaseAdminClient();
   const schoolTz = config.school.timezone;
   const schoolLabel = config.school.timezoneLabel;
+  const subjects = (await getSettings()).assessmentSubjectsItems;
 
   // Only the slots assigned to this teacher by an admin.
   const { data } = await admin
@@ -131,9 +133,9 @@ export default async function TeacherPage({
 
                 {/* Per-subject scores, comments and PDF/Excel attachments */}
                 <div className="space-y-2">
-                  <input type="hidden" name="subject_count" value={ASSESSMENT_SUBJECTS.length} />
+                  <input type="hidden" name="subject_count" value={subjects.length} />
                   <div className="text-sm font-semibold">Subject scores</div>
-                  {ASSESSMENT_SUBJECTS.map((subj, i) => (
+                  {subjects.map((subj, i) => (
                     <div key={subj} className="space-y-2 rounded-md border border-border/60 p-3">
                       <input type="hidden" name={`subject_${i}`} value={subj} />
                       <div className="text-sm font-medium">{subj}</div>
