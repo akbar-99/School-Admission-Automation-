@@ -7,6 +7,12 @@ import type { NotificationChannel } from "@/lib/types";
 // SRS §2.1: all providers sit behind a single NotificationService interface so
 // they can be swapped; development uses a mock/log provider.
 
+export interface EmailAttachment {
+  filename: string;
+  content: Buffer;
+  contentType?: string;
+}
+
 export interface OutboundMessage {
   applicationId?: string | null;
   event: string; // N-1 .. N-10
@@ -15,6 +21,7 @@ export interface OutboundMessage {
   subject?: string;
   body: string;
   payload?: Record<string, unknown>;
+  attachments?: EmailAttachment[]; // email-only; ignored by SMS/WhatsApp
 }
 
 interface NotificationProvider {
@@ -62,6 +69,11 @@ class LiveProvider implements NotificationProvider {
           to: msg.recipient,
           subject: msg.subject ?? "School Admissions",
           text: msg.body,
+          attachments: msg.attachments?.map((a) => ({
+            filename: a.filename,
+            content: a.content,
+            contentType: a.contentType,
+          })),
         });
         return;
       }
@@ -77,6 +89,14 @@ class LiveProvider implements NotificationProvider {
             to: [msg.recipient],
             subject: msg.subject ?? "School Admissions",
             text: msg.body,
+            ...(msg.attachments?.length
+              ? {
+                  attachments: msg.attachments.map((a) => ({
+                    filename: a.filename,
+                    content: a.content.toString("base64"),
+                  })),
+                }
+              : {}),
           }),
         });
         if (!res.ok) {

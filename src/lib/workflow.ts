@@ -1,12 +1,12 @@
 import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { dispatch, multiChannel, type OutboundMessage } from "@/lib/notifications";
+import { dispatch, multiChannel, type OutboundMessage, type EmailAttachment } from "@/lib/notifications";
 import { applyUrl } from "@/lib/parent";
 import { config } from "@/lib/config";
 import { getSettings } from "@/lib/settings";
 import { logAudit } from "@/lib/audit";
 import { formatINR, formatInZone } from "@/lib/utils";
-import type { Application, Parent, Student } from "@/lib/types";
+import type { Application, Parent, Student, SubjectResult } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Recipients
@@ -270,14 +270,50 @@ export async function handleAssessmentResult(
   const { data: parentRow } = await admin.from("parents").select("*").eq("id", app.parent_id).single();
   const parent = parentRow as Parent;
 
-  // N-5 result to parent + admin
+  // Gather the subject-wise scores and attach the uploaded files to the email.
+  const { data: rRow } = await admin
+    .from("assessment_results")
+    .select("subjects")
+    .eq("application_id", appId)
+    .maybeSingle();
+  const subjects = ((rRow?.subjects as SubjectResult[] | undefined) ?? []);
+  const subjectLines = subjects
+    .map(
+      (s) =>
+        `- ${s.subject}: ${s.score != null ? `${s.score}/100` : "—"}${s.comment ? ` — ${s.comment}` : ""}`,
+    )
+    .join("\n");
+
+  const attachments: EmailAttachment[] = [];
+  for (const s of subjects) {
+    if (!s.file) continue;
+    const { data: blob } = await admin.storage.from("documents").download(s.file.path);
+    if (blob) {
+      attachments.push({
+        filename: s.file.name,
+        content: Buffer.from(await blob.arrayBuffer()),
+        contentType: s.file.type,
+      });
+    }
+  }
+
+  const portal = applyUrl(app.access_token);
+  const parentBody =
+    `Hello ${parent.full_name},\n\n` +
+    `Your child's assessment result is: ${outcome}.\n` +
+    (subjectLines ? `\nSubject scores:\n${subjectLines}\n` : "") +
+    (remarks ? `\nRemarks: ${remarks}\n` : "") +
+    `\nView the full results${attachments.length ? " and download the assessment sheets" : ""} here:\n${portal}`;
+
+  // N-5 result to parent (with per-subject scores + attached files) + admin
   await dispatch([
     ...multiChannel(
       {
         applicationId: app.id,
         event: "N-5",
         subject: "Assessment result",
-        body: `Hello ${parent.full_name},\n\nYour child's assessment result is: ${outcome}.${remarks ? `\nRemarks: ${remarks}` : ""}`,
+        body: parentBody,
+        attachments,
       },
       parent,
     ),
