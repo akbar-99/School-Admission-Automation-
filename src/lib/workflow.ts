@@ -5,7 +5,8 @@ import { applyUrl } from "@/lib/parent";
 import { config } from "@/lib/config";
 import { getSettings } from "@/lib/settings";
 import { logAudit } from "@/lib/audit";
-import { formatINR, formatInZone } from "@/lib/utils";
+import { formatINR, formatInZone, formatDate } from "@/lib/utils";
+import { generateResultPdf } from "@/lib/result-pdf";
 import type { Application, Parent, Student, SubjectResult } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -297,13 +298,58 @@ export async function handleAssessmentResult(
     }
   }
 
+  // Professional PDF report card (with the school logo), attached first.
+  let pdfAttached = false;
+  try {
+    const studentRow = app.student_id
+      ? (await admin.from("students").select("full_name, dob").eq("id", app.student_id).maybeSingle()).data
+      : null;
+    const st = studentRow as { full_name?: string; dob?: string } | null;
+    const s = await getSettings();
+    let logo: Uint8Array | null = null;
+    try {
+      const res = await fetch(`${config.appUrl}/broadway-logo.png`);
+      if (res.ok) logo = new Uint8Array(await res.arrayBuffer());
+    } catch {
+      /* logo is optional */
+    }
+    const pdf = await generateResultPdf({
+      schoolName: s.schoolName,
+      schoolPhone: s.schoolPhone,
+      schoolEmail: s.schoolEmail,
+      studentName: st?.full_name ?? parent.full_name,
+      dob: st?.dob ? formatDate(st.dob) : null,
+      grade: app.grade_applying,
+      parentName: parent.full_name,
+      admissionRef: app.id,
+      outcome,
+      remarks,
+      subjects: subjects.map((x) => ({ subject: x.subject, score: x.score, comment: x.comment })),
+      logo,
+      date: formatDate(new Date()),
+    });
+    const safeName = (st?.full_name ?? "student").replace(/[^a-z0-9]+/gi, "-");
+    attachments.unshift({
+      filename: `Assessment-Result-${safeName}.pdf`,
+      content: pdf,
+      contentType: "application/pdf",
+    });
+    pdfAttached = true;
+  } catch (err) {
+    console.error("[workflow] result PDF generation failed", err);
+  }
+
+  const hasFiles = subjects.some((s) => s.file);
   const portal = applyUrl(app.access_token);
   const parentBody =
     `Hello ${parent.full_name},\n\n` +
     `Your child's assessment result is: ${outcome}.\n` +
     (subjectLines ? `\nSubject scores:\n${subjectLines}\n` : "") +
     (remarks ? `\nRemarks: ${remarks}\n` : "") +
-    `\nView the full results${attachments.length ? " and download the assessment sheets" : ""} here:\n${portal}`;
+    (pdfAttached
+      ? `\nYour detailed assessment report (PDF)${hasFiles ? " and the subject sheets are" : " is"} attached.`
+      : "") +
+    `\nYou can also view the full results online here:\n${portal}`;
 
   // N-5 result to parent (with per-subject scores + attached files) + admin
   await dispatch([
