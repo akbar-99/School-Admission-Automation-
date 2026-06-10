@@ -139,19 +139,30 @@ export default async function TeacherPage({
                     <div key={subj} className="space-y-2 rounded-md border border-border/60 p-3">
                       <input type="hidden" name={`subject_${i}`} value={subj} />
                       <div className="text-sm font-medium">{subj}</div>
-                      <div className="grid items-start gap-3 sm:grid-cols-[6rem_minmax(0,1fr)_15rem]">
+                      <div className="grid items-start gap-3 sm:grid-cols-[10rem_minmax(0,1fr)_14rem]">
                         <div className="space-y-1">
-                          <Label htmlFor={`score-${s.id}-${i}`} className="text-xs">Score (/100)</Label>
-                          <Input
-                            id={`score-${s.id}-${i}`}
-                            name={`score_${i}`}
-                            type="number"
-                            min={0}
-                            max={100}
-                            step="1"
-                            placeholder="—"
-                            className="h-9 w-full"
-                          />
+                          <Label htmlFor={`score-${s.id}-${i}`} className="text-xs">Score</Label>
+                          <div className="flex items-center gap-1">
+                            <Input
+                              id={`score-${s.id}-${i}`}
+                              name={`score_${i}`}
+                              type="number"
+                              min={0}
+                              step="1"
+                              placeholder="—"
+                              className="h-9 w-16"
+                            />
+                            <span className="text-muted-foreground">/</span>
+                            <Input
+                              aria-label={`${subj} maximum score`}
+                              name={`max_${i}`}
+                              type="number"
+                              min={1}
+                              step="1"
+                              defaultValue={100}
+                              className="h-9 w-16"
+                            />
+                          </div>
                         </div>
                         <div className="space-y-1">
                           <Label htmlFor={`comment-${s.id}-${i}`} className="text-xs">Comment</Label>

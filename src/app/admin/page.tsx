@@ -4,6 +4,7 @@ import { formatDateTime } from "@/lib/utils";
 import { resolveSeat } from "./actions";
 import { StatusBadge } from "@/components/status-badge";
 import { AdmissionsCharts } from "@/components/admin/admissions-charts";
+import { SlotRequestAlert } from "@/components/admin/slot-request-alert";
 import { SubmitButton } from "@/components/submit-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
@@ -55,9 +56,13 @@ export default async function AdminOverview({
     { label: "Needs admin", value: stat((r) => r.status === "NEEDS_ADMIN") },
   ];
   const needsAdmin = rows.filter((r) => r.status === "NEEDS_ADMIN");
+  const pendingRequests = rows.filter(
+    (r) => r.status === "FORM_SUBMITTED" && r.category === "GRADE",
+  ).length;
 
   return (
     <div className="space-y-6">
+      <SlotRequestAlert initialCount={pendingRequests} />
       <div>
         <h1 className="font-display text-3xl font-semibold tracking-tight">Admissions overview</h1>
         <p className="text-muted-foreground">Monitor applications, payments and seat allocation.</p>

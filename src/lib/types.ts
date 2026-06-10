@@ -131,6 +131,7 @@ export interface AssessmentSlot {
 export interface SubjectResult {
   subject: string;
   score: number | null;
+  maxScore: number | null; // out-of value, e.g. 100, 50, 10
   comment: string | null;
   file: DocumentRef | null; // uploaded PDF / Excel for this subject
 }

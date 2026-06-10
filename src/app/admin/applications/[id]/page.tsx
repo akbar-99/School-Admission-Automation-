@@ -200,7 +200,7 @@ export default async function ApplicationDetailPage({
                 <div key={sub.subject} className="rounded-md border border-border px-3 py-2 text-sm">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="font-medium">{sub.subject}</span>
-                    <span className="tabular-nums">{sub.score != null ? `${sub.score}/100` : "—"}</span>
+                    <span className="tabular-nums">{sub.score != null ? `${sub.score}/${sub.maxScore ?? 100}` : "—"}</span>
                   </div>
                   {sub.comment && <p className="mt-1 text-muted-foreground">{sub.comment}</p>}
                   {sub.file &&

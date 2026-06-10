@@ -281,7 +281,7 @@ export async function handleAssessmentResult(
   const subjectLines = subjects
     .map(
       (s) =>
-        `- ${s.subject}: ${s.score != null ? `${s.score}/100` : "—"}${s.comment ? ` — ${s.comment}` : ""}`,
+        `- ${s.subject}: ${s.score != null ? `${s.score}/${s.maxScore ?? 100}` : "—"}${s.comment ? ` — ${s.comment}` : ""}`,
     )
     .join("\n");
 
@@ -324,7 +324,7 @@ export async function handleAssessmentResult(
       admissionRef: app.id,
       outcome,
       remarks,
-      subjects: subjects.map((x) => ({ subject: x.subject, score: x.score, comment: x.comment })),
+      subjects: subjects.map((x) => ({ subject: x.subject, score: x.score, maxScore: x.maxScore, comment: x.comment })),
       logo,
       date: formatDate(new Date()),
     });

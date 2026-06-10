@@ -24,6 +24,7 @@ const ASSESSMENT_ALLOWED_EXT = [".pdf", ".xls", ".xlsx", ".csv"];
 interface SubjectInput {
   subject: string;
   score: number | null;
+  maxScore: number | null;
   comment: string | null;
   file: { category: string; type: string; path: string; name: string; size: number } | null;
 }
@@ -45,6 +46,11 @@ async function parseSubjects(
     const scoreNum =
       scoreRaw != null && String(scoreRaw).trim() !== "" ? Number(scoreRaw) : NaN;
     const score = Number.isFinite(scoreNum) ? scoreNum : null;
+
+    const maxRaw = formData.get(`max_${i}`);
+    const maxNum = maxRaw != null && String(maxRaw).trim() !== "" ? Number(maxRaw) : 100;
+    const maxScore = Number.isFinite(maxNum) && maxNum > 0 ? maxNum : 100;
+
     const comment = String(formData.get(`comment_${i}`) ?? "").trim() || null;
 
     let file: SubjectInput["file"] = null;
@@ -70,7 +76,7 @@ async function parseSubjects(
       file = { category: subject, type: f.type || "application/octet-stream", path, name: f.name, size: f.size };
     }
 
-    subjects.push({ subject, score, comment, file });
+    subjects.push({ subject, score, maxScore, comment, file });
   }
   return subjects;
 }

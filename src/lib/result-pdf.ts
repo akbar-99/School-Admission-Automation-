@@ -21,7 +21,7 @@ export interface ResultPdfInput {
   admissionRef: string;
   outcome: string; // PASS | FAIL
   remarks: string | null;
-  subjects: { subject: string; score: number | null; comment: string | null }[];
+  subjects: { subject: string; score: number | null; maxScore: number | null; comment: string | null }[];
   logo: Uint8Array | null;
   date: string; // already formatted
 }
@@ -151,7 +151,7 @@ export async function generateResultPdf(input: ResultPdfInput): Promise<Buffer> 
     zebra = !zebra;
     const baseY = y - 16;
     text(page, s.subject, cSub + 8, baseY, 10.5, bold, INK);
-    text(page, s.score != null ? `${s.score}/100` : "—", cScore, baseY, 10.5, font, INK);
+    text(page, s.score != null ? `${s.score}/${s.maxScore ?? 100}` : "—", cScore, baseY, 10.5, font, INK);
     commentLines.forEach((ln, idx) => text(page, ln, cRem, baseY - idx * 12, 9.5, font, GREY));
     y -= rowH;
     page.drawLine({ start: { x: M, y }, end: { x: right, y }, thickness: 0.5, color: LINE });
