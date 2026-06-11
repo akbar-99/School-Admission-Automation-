@@ -142,25 +142,25 @@ export default async function TeacherPage({
                       <div className="grid items-start gap-3 sm:grid-cols-[10rem_minmax(0,1fr)_14rem]">
                         <div className="space-y-1">
                           <Label htmlFor={`score-${s.id}-${i}`} className="text-xs">Score</Label>
-                          <div className="flex items-center gap-1">
-                            <Input
+                          <div className="flex h-9 w-fit items-center rounded-md border border-input bg-card px-1.5 shadow-soft transition-colors focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-ring">
+                            <input
                               id={`score-${s.id}-${i}`}
                               name={`score_${i}`}
                               type="number"
                               min={0}
                               step="1"
                               placeholder="—"
-                              className="h-9 w-16"
+                              className="h-full w-12 bg-transparent text-center text-sm tabular-nums outline-none placeholder:text-muted-foreground/70 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                             />
-                            <span className="text-muted-foreground">/</span>
-                            <Input
+                            <span className="select-none px-0.5 text-muted-foreground">/</span>
+                            <input
                               aria-label={`${subj} maximum score`}
                               name={`max_${i}`}
                               type="number"
                               min={1}
                               step="1"
                               defaultValue={100}
-                              className="h-9 w-16"
+                              className="h-full w-12 bg-transparent text-center text-sm tabular-nums outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                             />
                           </div>
                         </div>
@@ -180,7 +180,7 @@ export default async function TeacherPage({
                             name={`file_${i}`}
                             type="file"
                             accept=".pdf,.xls,.xlsx,.csv,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
-                            className="h-9 w-full"
+                            className="h-9 w-full items-center py-0 file:my-0 file:py-1"
                           />
                         </div>
                       </div>
