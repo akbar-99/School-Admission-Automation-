@@ -134,6 +134,8 @@ async function Content({
 
       {error && <Alert variant="error">{error}</Alert>}
 
+      {student && status !== "LEAD_CREATED" && <StudentDetailsCard />}
+
       {status === "LEAD_CREATED" && (
         <Card>
           <CardHeader>
@@ -399,6 +401,57 @@ async function Content({
           ) : (
             <p className="text-sm text-muted-foreground">Slot details unavailable.</p>
           )}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  async function StudentDetailsCard() {
+    if (!student) return null;
+    let sectionLabel: string | null = null;
+    if (app.section_id) {
+      const { data } = await admin
+        .from("sections")
+        .select("grade, name")
+        .eq("id", app.section_id)
+        .maybeSingle();
+      if (data) sectionLabel = `${data.grade} — Section ${data.name}`;
+    }
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Student details</CardTitle>
+          <CardDescription>The details submitted for your child&apos;s admission.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-2">
+          <Field label="Student name" value={student.full_name} />
+          <Field label="Date of birth" value={formatDate(student.dob)} />
+          <Field label="Gender" value={student.gender ?? "—"} />
+          <Field label="Category" value={app.category ?? "—"} />
+          <Field label="Class / grade" value={app.grade_applying ?? "—"} />
+          <Field label="Curriculum" value={student.curriculum ?? "—"} />
+          <Field label="Country of residence" value={student.country_of_residence ?? "—"} />
+          <Field label="Previous school" value={student.previous_school ?? "—"} />
+          <div className="sm:col-span-2">
+            <Field label="Current address" value={student.current_address ?? "—"} />
+          </div>
+          <div className="sm:col-span-2">
+            <Field label="Permanent address" value={student.permanent_address ?? "—"} />
+          </div>
+          <Field
+            label="Father"
+            value={[student.father_name, student.father_phone].filter(Boolean).join(" · ") || "—"}
+          />
+          <Field
+            label="Mother"
+            value={[student.mother_name, student.mother_phone].filter(Boolean).join(" · ") || "—"}
+          />
+          <Field label="Parent / guardian" value={parent.full_name} />
+          <Field label="Contact" value={[parent.phone, parent.email].filter(Boolean).join(" · ") || "—"} />
+          {app.admission_number && (
+            <Field label="Admission number" value={app.admission_number} mono />
+          )}
+          {sectionLabel && <Field label="Class & section" value={sectionLabel} />}
         </CardContent>
       </Card>
     );
