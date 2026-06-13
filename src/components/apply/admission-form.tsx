@@ -188,11 +188,10 @@ export function AdmissionForm({
           </div>
           {detected?.category !== "KG" && (
             <div className="space-y-1.5 sm:col-span-2">
-              <Label htmlFor="previous_school">Detail of previous school *</Label>
+              <Label htmlFor="previous_school">Detail of previous school</Label>
               <Input
                 id="previous_school"
                 name="previous_school"
-                required
                 placeholder="School name, board, last class attended"
               />
             </div>

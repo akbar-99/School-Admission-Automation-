@@ -123,11 +123,6 @@ export async function submitAdmissionForm(formData: FormData) {
     grade = classOptions.find((o) => !isKgClass(o)) ?? "G1";
   }
 
-  // Previous-school details are required for Grade applicants only (not KG).
-  if (detect.category === "GRADE" && !input.previous_school) {
-    fail(token, "Previous school details are required.");
-  }
-
   // Grade applicants must either pick an open slot or request a preferred date.
   const slotId = String(formData.get("slot_id") ?? "");
   if (detect.category === "GRADE" && !input.preferred_assessment_date && !slotId) {
