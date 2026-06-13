@@ -12,6 +12,8 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
+import { Video } from "lucide-react";
 
 interface SlotRow {
   id: string;
@@ -19,6 +21,7 @@ interface SlotRow {
   ends_at: string;
   is_open: boolean;
   application_id: string | null;
+  zoom_start_url: string | null;
   applications: {
     id: string;
     status: string;
@@ -45,7 +48,7 @@ export default async function TeacherPage({
   const { data } = await admin
     .from("assessment_slots")
     .select(
-      "id, starts_at, ends_at, is_open, application_id, applications(id, status, grade_applying, students(full_name, dob), parents(full_name, phone, email))",
+      "id, starts_at, ends_at, is_open, application_id, zoom_start_url, applications(id, status, grade_applying, students(full_name, dob), parents(full_name, phone, email))",
     )
     .eq("teacher_id", teacherId)
     .order("starts_at", { ascending: true });
@@ -128,7 +131,20 @@ export default async function TeacherPage({
                       )}
                     </div>
                   </div>
-                  <Badge tone="info">Booked</Badge>
+                  <div className="flex flex-col items-end gap-2">
+                    <Badge tone="info">Booked</Badge>
+                    {s.zoom_start_url && (
+                      <a
+                        href={s.zoom_start_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={buttonVariants({ size: "sm" })}
+                      >
+                        <Video className="size-4" />
+                        Start Zoom (host)
+                      </a>
+                    )}
+                  </div>
                 </div>
 
                 {/* Per-subject scores, comments and PDF/Excel attachments */}

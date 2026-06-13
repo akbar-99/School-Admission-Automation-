@@ -44,6 +44,20 @@ export const config = {
     retentionDays: Number(process.env.DATA_RETENTION_DAYS ?? 2555),
   },
 
+  // Zoom Server-to-Server OAuth app (school's licensed Zoom account). Used to
+  // auto-create assessment meetings hosted by the assigned teacher's own Zoom
+  // account. ZOOM_DEFAULT_HOST_EMAIL is a fallback host (e.g. an admin's Zoom
+  // login) used when a teacher has no Zoom account on the license.
+  zoom: {
+    accountId: process.env.ZOOM_ACCOUNT_ID ?? "",
+    clientId: process.env.ZOOM_CLIENT_ID ?? "",
+    clientSecret: process.env.ZOOM_CLIENT_SECRET ?? "",
+    defaultHostEmail: process.env.ZOOM_DEFAULT_HOST_EMAIL ?? "",
+    get enabled() {
+      return Boolean(this.accountId && this.clientId && this.clientSecret);
+    },
+  },
+
   razorpay: {
     keyId: process.env.RAZORPAY_KEY_ID ?? "",
     keySecret: process.env.RAZORPAY_KEY_SECRET ?? "",

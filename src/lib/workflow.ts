@@ -7,6 +7,7 @@ import { getSettings } from "@/lib/settings";
 import { logAudit } from "@/lib/audit";
 import { formatINR, formatInZone, formatDate } from "@/lib/utils";
 import { generateResultPdf } from "@/lib/result-pdf";
+import { ensureZoomForApplication } from "@/lib/zoom";
 import type { Application, Parent, Student, SubjectResult } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -185,13 +186,26 @@ export async function handleSlotBooked(
   const parent = parentRow as Parent;
 
   const when = `${formatInZone(slotInfo.starts_at, config.school.timezone)} ${config.school.timezoneLabel}`;
+
+  // Auto-create the Zoom meeting for this assessment (hosted by the teacher).
+  // Returns null if Zoom isn't configured or the call fails — emails still send.
+  const meeting = await ensureZoomForApplication(app.id);
+  const joinLine = meeting
+    ? `\n\nJoin the online assessment here at your slot time:\n${meeting.joinUrl}${
+        meeting.passcode ? `\nPasscode: ${meeting.passcode}` : ""
+      }`
+    : "";
+  const hostLine = meeting
+    ? `\n\nStart the meeting as host (do not share this link):\n${meeting.startUrl}`
+    : "";
+
   const messages: OutboundMessage[] = [
     ...multiChannel(
       {
         applicationId: app.id,
         event: "N-4",
         subject: "Assessment slot confirmed",
-        body: `Hello ${parent.full_name},\n\nYour assessment is confirmed for ${when}.`,
+        body: `Hello ${parent.full_name},\n\nYour assessment is confirmed for ${when}.${joinLine}`,
       },
       parent,
     ),
@@ -217,7 +231,7 @@ export async function handleSlotBooked(
             applicationId: app.id,
             event: "N-4",
             subject: "Assessment booked for your slot",
-            body: `A parent booked your assessment slot on ${when} (Grade ${app.grade_applying}).`,
+            body: `A parent booked your assessment slot on ${when} (Grade ${app.grade_applying}).${hostLine}`,
           },
           { email: t.email, phone: t.phone },
           ["email"],

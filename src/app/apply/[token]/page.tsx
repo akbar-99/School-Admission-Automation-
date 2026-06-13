@@ -1,4 +1,4 @@
-import { CalendarClock, BookOpen, Phone, Download } from "lucide-react";
+import { CalendarClock, BookOpen, Phone, Download, Video } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { loadApplicationByToken } from "@/lib/parent";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -16,6 +16,7 @@ import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { buttonVariants } from "@/components/ui/button";
 import type { AppStatus, SubjectResult } from "@/lib/types";
 
 export default async function ApplyPage({
@@ -376,26 +377,53 @@ async function Content({
   async function BookedSlot({ appId, parentTz }: { appId: string; parentTz: string | null }) {
     const { data: slot } = await admin
       .from("assessment_slots")
-      .select("starts_at, ends_at")
+      .select("starts_at, ends_at, zoom_join_url, zoom_passcode")
       .eq("application_id", appId)
       .maybeSingle();
     return (
       <Card>
         <CardHeader>
           <CardTitle>Assessment scheduled</CardTitle>
-          <CardDescription>Please arrive 10 minutes early.</CardDescription>
+          <CardDescription>This is an online assessment held over Zoom.</CardDescription>
         </CardHeader>
         <CardContent>
           {slot ? (
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <CalendarClock className="size-4 text-primary" />
-                {formatInZone(slot.starts_at, config.school.timezone)} {config.school.timezoneLabel}
-              </div>
-              {parentTz && parentTz !== config.school.timezone && (
-                <div className="pl-6 text-xs text-muted-foreground">
-                  Your time: {formatInZone(slot.starts_at, parentTz)}
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <CalendarClock className="size-4 text-primary" />
+                  {formatInZone(slot.starts_at, config.school.timezone)} {config.school.timezoneLabel}
                 </div>
+                {parentTz && parentTz !== config.school.timezone && (
+                  <div className="pl-6 text-xs text-muted-foreground">
+                    Your time: {formatInZone(slot.starts_at, parentTz)}
+                  </div>
+                )}
+              </div>
+              {slot.zoom_join_url ? (
+                <div className="space-y-1.5">
+                  <a
+                    href={slot.zoom_join_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={buttonVariants({ size: "sm" })}
+                  >
+                    <Video className="size-4" />
+                    Join the Zoom assessment
+                  </a>
+                  {slot.zoom_passcode && (
+                    <div className="text-xs text-muted-foreground">
+                      Passcode: <span className="font-medium text-foreground">{slot.zoom_passcode}</span>
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Join at your slot time — the teacher will admit you from the waiting room.
+                  </p>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Your Zoom link will appear here shortly and is also sent to your email.
+                </p>
               )}
             </div>
           ) : (
