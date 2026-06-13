@@ -40,6 +40,8 @@ export interface AppUser {
   full_name: string | null;
   email: string | null;
   phone: string | null;
+  // Zoom account email used to host this teacher's assessment meetings.
+  zoom_email: string | null;
   created_at: string;
   updated_at: string;
 }

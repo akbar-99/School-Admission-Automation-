@@ -13,6 +13,22 @@ const InviteSchema = z.object({
   full_name: z.string().trim().min(2, "Full name is required"),
   email: z.string().trim().email("A valid email is required"),
   role: z.enum(["marketing", "teacher", "class_teacher", "admin"]),
+  // Optional Zoom host email (assessment teachers). Defaults to the login email.
+  zoom_email: z
+    .string()
+    .trim()
+    .email("Enter a valid Zoom email")
+    .optional()
+    .or(z.literal("")),
+});
+
+const ZoomEmailSchema = z.object({
+  user_id: z.string().uuid(),
+  zoom_email: z
+    .string()
+    .trim()
+    .email("Enter a valid Zoom email")
+    .or(z.literal("")),
 });
 
 function back(msg: string, type: "ok" | "error" = "ok"): never {
@@ -29,9 +45,10 @@ export async function inviteStaff(formData: FormData) {
     full_name: formData.get("full_name"),
     email: formData.get("email"),
     role: formData.get("role"),
+    zoom_email: formData.get("zoom_email") ?? "",
   });
   if (!parsed.success) back(parsed.error.issues[0].message, "error");
-  const { full_name, email, role } = parsed.data!;
+  const { full_name, email, role, zoom_email } = parsed.data!;
 
   const admin = createSupabaseAdminClient();
 
@@ -52,7 +69,10 @@ export async function inviteStaff(formData: FormData) {
   // password is set (an auth user without this row triggers "No staff profile").
   const { error: pErr } = await admin
     .from("users")
-    .upsert({ id: data!.user!.id, role, full_name, email }, { onConflict: "id" });
+    .upsert(
+      { id: data!.user!.id, role, full_name, email, zoom_email: zoom_email || null },
+      { onConflict: "id" },
+    );
   if (pErr) back(pErr.message, "error");
 
   // Build a link to our own /auth/confirm route (verifyOtp), not Supabase's
@@ -85,4 +105,37 @@ export async function inviteStaff(formData: FormData) {
 
   revalidatePath("/admin/staff");
   back(`Invite sent to ${email}.`);
+}
+
+// Admin-only: set or clear a teacher's Zoom account email. This is the host
+// account under which their assessment meetings are created. Leave blank to
+// fall back to the teacher's login email.
+export async function setZoomEmail(formData: FormData) {
+  const { profile } = await requireRole(["admin"]);
+
+  const parsed = ZoomEmailSchema.safeParse({
+    user_id: formData.get("user_id"),
+    zoom_email: (formData.get("zoom_email") ?? "").toString().trim(),
+  });
+  if (!parsed.success) back(parsed.error.issues[0].message, "error");
+  const { user_id, zoom_email } = parsed.data!;
+
+  const admin = createSupabaseAdminClient();
+  const { error } = await admin
+    .from("users")
+    .update({ zoom_email: zoom_email || null })
+    .eq("id", user_id);
+  if (error) back(error.message, "error");
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "staff.zoom_email_set",
+    entity: "user",
+    entityId: user_id,
+    details: { zoom_email: zoom_email || null },
+  });
+
+  revalidatePath("/admin/staff");
+  back(zoom_email ? "Zoom email updated." : "Zoom email cleared.");
 }
