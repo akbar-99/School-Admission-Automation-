@@ -130,6 +130,35 @@ export default async function AdminAssessmentsPage({
     unclaimed: unclaimedCount,
   };
 
+  // Same claimed-vs-unclaimed split as above, broken down by day (school
+  // time) — always across all slots, independent of the teacher filter.
+  const dayBuckets = new Map<string, { label: string; claimed: number; unclaimed: number }>();
+  for (const s of (allSlotsData ?? []) as unknown as {
+    teacher_id: string | null;
+    claimed_by_teacher: boolean;
+    starts_at: string;
+  }[]) {
+    if (s.teacher_id !== null && !s.claimed_by_teacher) continue; // not pool-origin
+    const dateKey = toZonedInputValue(s.starts_at, schoolTz).slice(0, 10);
+    let bucket = dayBuckets.get(dateKey);
+    if (!bucket) {
+      const label = new Intl.DateTimeFormat("en-IN", {
+        weekday: "short",
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        timeZone: schoolTz,
+      }).format(new Date(s.starts_at));
+      bucket = { label, claimed: 0, unclaimed: 0 };
+      dayBuckets.set(dateKey, bucket);
+    }
+    if (s.claimed_by_teacher) bucket.claimed += 1;
+    else bucket.unclaimed += 1;
+  }
+  const dayRows = Array.from(dayBuckets.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([dateKey, bucket]) => ({ dateKey, ...bucket }));
+
   // Per-teacher activity: total slots, self-claimed count, upcoming booked
   // assessments, and how many they've conducted (results recorded) + outcomes.
   const statsByTeacher = new Map<string, TeacherStats>();
@@ -464,6 +493,33 @@ export default async function AdminAssessmentsPage({
               <Badge tone="warning">{slotSummary.unclaimed} still unclaimed</Badge>
             </div>
           </div>
+
+          {dayRows.length > 0 && (
+            <div className="mb-4 overflow-x-auto rounded-md border border-border">
+              <Table>
+                <THead>
+                  <TR>
+                    <TH>Day</TH>
+                    <TH>Claimed</TH>
+                    <TH>Unclaimed</TH>
+                  </TR>
+                </THead>
+                <TBody>
+                  {dayRows.map((d) => (
+                    <TR key={d.dateKey}>
+                      <TD className="whitespace-nowrap">{d.label}</TD>
+                      <TD>
+                        <Badge tone="success">{d.claimed}</Badge>
+                      </TD>
+                      <TD>
+                        <Badge tone="warning">{d.unclaimed}</Badge>
+                      </TD>
+                    </TR>
+                  ))}
+                </TBody>
+              </Table>
+            </div>
+          )}
 
           {slots.length === 0 ? (
             <p className="text-sm text-muted-foreground">No slots match this filter.</p>
