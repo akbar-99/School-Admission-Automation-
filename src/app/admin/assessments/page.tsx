@@ -1,6 +1,6 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { config } from "@/lib/config";
-import { formatInZone, toZonedInputValue } from "@/lib/utils";
+import { formatInZone, formatInZoneWithDay, toZonedInputValue } from "@/lib/utils";
 import { createAssessmentSlot } from "../actions";
 import { AssignAssessmentRow } from "@/components/admin/assign-assessment-row";
 import { SubmitButton } from "@/components/submit-button";
@@ -446,7 +446,7 @@ export default async function AdminAssessmentsPage({
                   return (
                     <TR key={s.id}>
                       <TD className="whitespace-nowrap">
-                        {formatInZone(s.starts_at, schoolTz)} {schoolLabel}
+                        {formatInZoneWithDay(s.starts_at, schoolTz)} {schoolLabel}
                       </TD>
                       <TD>
                         {unclaimed ? (
