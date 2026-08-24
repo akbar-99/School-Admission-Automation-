@@ -5,11 +5,50 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireRole } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { handleAssessmentResult } from "@/lib/workflow";
+import { handleAssessmentResult, notifySlotClaimed } from "@/lib/workflow";
 import { logAudit } from "@/lib/audit";
 
 // Slot creation is admin-only — see src/app/admin/actions.ts (createAssessmentSlot).
-// Teachers only conduct assessments and record results for their assigned slots.
+// Teachers conduct assessments, record results for their assigned slots, and
+// may claim open (unassigned) slots from the pool via claimAssessmentSlot below.
+
+const ClaimSlotSchema = z.object({ slot_id: z.string().uuid() });
+
+// Atomically claim an open, unassigned slot — first teacher to submit wins.
+// Mirrors the parent-facing bookSlot action (book_assessment_slot RPC).
+export async function claimAssessmentSlot(formData: FormData) {
+  const { profile } = await requireRole(["teacher"]);
+  const parsed = ClaimSlotSchema.safeParse({ slot_id: formData.get("slot_id") });
+  if (!parsed.success) {
+    redirect("/teacher?error=" + encodeURIComponent("Invalid slot."));
+  }
+  const { slot_id } = parsed.data!;
+
+  const admin = createSupabaseAdminClient();
+  const { data, error } = await admin.rpc("claim_assessment_slot", {
+    p_slot: slot_id,
+    p_teacher: profile.id,
+  });
+  if (error) {
+    redirect(
+      "/teacher?error=" +
+        encodeURIComponent("That slot was just claimed by another teacher. Please pick another."),
+    );
+  }
+  const slot = data as { slot_id: string; starts_at: string };
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "assessment.slot_claimed",
+    entity: "assessment_slot",
+    entityId: slot_id,
+    details: { starts_at: slot.starts_at },
+  });
+  await notifySlotClaimed(profile.id, { starts_at: slot.starts_at });
+  revalidatePath("/teacher");
+  redirect("/teacher?claimed=1");
+}
 
 const ResultSchema = z.object({
   application_id: z.string().uuid(),

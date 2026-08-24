@@ -8,52 +8,133 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   handlePaymentCompleted,
   handleSlotBooked,
+  notifyOpenSlotAvailable,
   notifySlotsPublished,
   notifyTeacherSlotAssigned,
 } from "@/lib/workflow";
 import { logAudit } from "@/lib/audit";
 import { config } from "@/lib/config";
-import { zonedTimeToUtcISO } from "@/lib/utils";
+import { zonedTimeToUtcISO, toZonedInputValue } from "@/lib/utils";
 
-// Admin creates an assessment slot and assigns it to a teacher.
+// ---------------------------------------------------------------------------
+// Weekly recurrence helpers — an admin picks a weekday (Monday, Tuesday…) and
+// a time rather than a single calendar date. "Weekday" is 0=Sunday..6=Saturday
+// (JS convention), evaluated in school time so DST-less IST-style zones and
+// zones with DST both resolve the same wall-clock weekday.
+// ---------------------------------------------------------------------------
+function zonedYMD(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+    .formatToParts(date)
+    .reduce<Record<string, string>>((acc, p) => {
+      acc[p.type] = p.value;
+      return acc;
+    }, {});
+  return { y: Number(parts.year), m: Number(parts.month), d: Number(parts.day) };
+}
+
+function zonedWeekday(date: Date, timeZone: string) {
+  const name = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "long" }).format(date);
+  return ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].indexOf(name);
+}
+
+// Add `days` calendar days to a Y/M/D triple (pure calendar arithmetic).
+function addDays(ymd: { y: number; m: number; d: number }, days: number) {
+  const t = Date.UTC(ymd.y, ymd.m - 1, ymd.d) + days * 86_400_000;
+  const dt = new Date(t);
+  return { y: dt.getUTCFullYear(), m: dt.getUTCMonth() + 1, d: dt.getUTCDate() };
+}
+
+// Local "YYYY-MM-DDTHH:mm" wall-clock strings (school time) for `weeks`
+// weekly occurrences of `weekday` at `time`, starting from the next one at
+// or after now.
+function weeklyOccurrences(
+  weekday: number,
+  time: string,
+  weeks: number,
+  timeZone: string,
+): string[] {
+  const now = new Date();
+  const todayYmd = zonedYMD(now, timeZone);
+  const todayWeekday = zonedWeekday(now, timeZone);
+  let deltaDays = (weekday - todayWeekday + 7) % 7;
+  if (deltaDays === 0 && time <= toZonedInputValue(now, timeZone).slice(11)) {
+    deltaDays = 7; // today's occurrence already started
+  }
+  const first = addDays(todayYmd, deltaDays);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return Array.from({ length: weeks }, (_, w) => {
+    const { y, m, d } = addDays(first, w * 7);
+    return `${y}-${pad(m)}-${pad(d)}T${time}`;
+  });
+}
+
+// Admin creates one or more assessment slots on a recurring weekday, either
+// assigned to a specific teacher (only for a single total slot) or left open
+// for any teacher to claim from the pool — e.g. "Monday 8:00 PM, 10 slots,
+// repeat 8 weeks" opens 10 slots every Monday for 8 weeks.
 const AssessmentSlotSchema = z.object({
-  starts_at: z.string().min(1, "Start time is required"),
+  weekday: z.coerce.number().int().min(0).max(6),
+  time: z.string().regex(/^\d{2}:\d{2}$/, "Pick a time"),
   duration: z.coerce.number().int().positive().max(240).default(30),
-  teacher_id: z.string().uuid("Select a teacher"),
+  quantity: z.coerce.number().int().positive().max(50).default(1),
+  weeks: z.coerce.number().int().positive().max(26).default(1),
+  teacher_id: z.string().uuid("Select a teacher").optional().or(z.literal("")),
 });
 
 export async function createAssessmentSlot(formData: FormData) {
   const { profile } = await requireRole(["admin"]);
   const parsed = AssessmentSlotSchema.safeParse({
-    starts_at: formData.get("starts_at"),
+    weekday: formData.get("weekday"),
+    time: formData.get("time"),
     duration: formData.get("duration") ?? 30,
-    teacher_id: formData.get("teacher_id"),
+    quantity: formData.get("quantity") ?? 1,
+    weeks: formData.get("weeks") ?? 1,
+    teacher_id: formData.get("teacher_id") || undefined,
   });
   if (!parsed.success) {
     redirect("/admin/assessments?error=" + encodeURIComponent(parsed.error.issues[0].message));
   }
-  const { starts_at, duration, teacher_id } = parsed.data!;
+  const { weekday, time, duration, quantity, weeks, teacher_id } = parsed.data!;
+  const total = quantity * weeks;
 
-  // The admin enters the time in school time (e.g. IST); store the true UTC instant.
-  const start = new Date(zonedTimeToUtcISO(starts_at, config.school.timezone));
-  if (Number.isNaN(start.getTime()) || start.getTime() < Date.now()) {
-    redirect("/admin/assessments?error=" + encodeURIComponent("Choose a future start time."));
+  if (teacher_id && total > 1) {
+    redirect(
+      "/admin/assessments?error=" +
+        encodeURIComponent(
+          "To open multiple slots at once, leave 'Assign teacher' as Open so teachers can each claim one.",
+        ),
+    );
   }
-  const end = new Date(start.getTime() + duration * 60_000);
+  if (total > 200) {
+    redirect(
+      "/admin/assessments?error=" +
+        encodeURIComponent("That's too many slots at once (max 200). Create in smaller batches."),
+    );
+  }
+
+  const schoolTz = config.school.timezone;
+  const occurrences = weeklyOccurrences(weekday, time, weeks, schoolTz).map((local) => {
+    const start = new Date(zonedTimeToUtcISO(local, schoolTz));
+    return { start, end: new Date(start.getTime() + duration * 60_000) };
+  });
 
   const admin = createSupabaseAdminClient();
-  const { data, error } = await admin
-    .from("assessment_slots")
-    .insert({
-      teacher_id,
+  const rows = occurrences.flatMap(({ start, end }) =>
+    Array.from({ length: quantity }, () => ({
+      teacher_id: teacher_id || null,
       starts_at: start.toISOString(),
       ends_at: end.toISOString(),
       is_open: true,
-    })
-    .select("id")
-    .single();
-  if (error) {
-    redirect("/admin/assessments?error=" + encodeURIComponent(error.message));
+    })),
+  );
+  const { data, error } = await admin.from("assessment_slots").insert(rows).select("id");
+  if (error || !data) {
+    redirect("/admin/assessments?error=" + encodeURIComponent(error?.message ?? "Could not create slots."));
   }
 
   await logAudit({
@@ -61,13 +142,37 @@ export async function createAssessmentSlot(formData: FormData) {
     actorRole: profile.role,
     action: "assessment.slot_created",
     entity: "assessment_slot",
-    entityId: data.id,
-    details: { teacher_id },
+    entityId: data[0].id,
+    details: {
+      teacher_id: teacher_id || null,
+      weekday,
+      time,
+      quantity,
+      weeks,
+      total,
+      slot_ids: data.map((d) => d.id),
+    },
   });
-  await notifyTeacherSlotAssigned(teacher_id, { starts_at: start.toISOString() });
+  const firstStart = occurrences[0].start.toISOString();
+  if (teacher_id) {
+    await notifyTeacherSlotAssigned(teacher_id, { starts_at: firstStart });
+  } else {
+    await notifyOpenSlotAvailable({ starts_at: firstStart }, quantity, weeks);
+  }
   await notifySlotsPublished();
   revalidatePath("/admin/assessments");
-  redirect("/admin/assessments?ok=" + encodeURIComponent("Slot created and assigned to the teacher."));
+  redirect(
+    "/admin/assessments?ok=" +
+      encodeURIComponent(
+        teacher_id
+          ? "Slot created and assigned to the teacher."
+          : weeks > 1
+            ? `${total} slots created (${quantity} every week for ${weeks} weeks) and opened to the teacher pool.`
+            : quantity > 1
+              ? `${quantity} slots created and opened to the teacher pool — first to claim each one gets it.`
+              : "Slot created and opened to the teacher pool — first to claim it gets it.",
+      ),
+  );
 }
 
 // Admin directly schedules a specific applicant with a teacher at a set time —

@@ -272,6 +272,51 @@ export async function notifyTeacherSlotAssigned(
 }
 
 // ---------------------------------------------------------------------------
+// Admin opened a slot to the teacher pool (no teacher pre-assigned) — let
+// every teacher know it's available to claim on a first-come basis.
+// ---------------------------------------------------------------------------
+export async function notifyOpenSlotAvailable(
+  slot: { starts_at: string },
+  quantity = 1,
+  weeks = 1,
+) {
+  const when = `${formatInZone(slot.starts_at, config.school.timezone)} ${config.school.timezoneLabel}`;
+  const body =
+    weeks > 1
+      ? `${quantity} new assessment slots starting ${when} are open in the pool every week for ${weeks} weeks — first come, first served. Claim one on your dashboard.`
+      : quantity > 1
+        ? `${quantity} new assessment slots on ${when} are open in the pool — first come, first served. Claim one on your dashboard.`
+        : `A new assessment slot on ${when} is open for any teacher to claim. First to claim it on your dashboard gets it.`;
+  await dispatch(
+    fanToStaff(await staffContacts(["teacher"]), {
+      event: "SLOT_POOL_OPENED",
+      subject: "New open assessment slot available",
+      body,
+    }),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// A teacher claimed an open slot from the pool — let admins know who has it.
+// ---------------------------------------------------------------------------
+export async function notifySlotClaimed(teacherId: string, slot: { starts_at: string }) {
+  const admin = createSupabaseAdminClient();
+  const { data: t } = await admin
+    .from("users")
+    .select("full_name, email")
+    .eq("id", teacherId)
+    .maybeSingle();
+  const when = `${formatInZone(slot.starts_at, config.school.timezone)} ${config.school.timezoneLabel}`;
+  await dispatch(
+    fanToStaff(await staffContacts(["admin"]), {
+      event: "SLOT_CLAIMED",
+      subject: "Assessment slot claimed by a teacher",
+      body: `${t?.full_name ?? t?.email ?? "A teacher"} claimed the open assessment slot on ${when}.`,
+    }),
+  );
+}
+
+// ---------------------------------------------------------------------------
 // N-5 Assessment result; N-10 on fail. Pass -> agreement (N-6).
 // ---------------------------------------------------------------------------
 export async function handleAssessmentResult(

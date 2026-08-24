@@ -3,7 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { config } from "@/lib/config";
 import { getSettings } from "@/lib/settings";
 import { formatDate, formatInZone } from "@/lib/utils";
-import { submitResult } from "./actions";
+import { submitResult, claimAssessmentSlot } from "./actions";
 import { SubmitButton } from "@/components/submit-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -31,12 +31,17 @@ interface SlotRow {
   } | null;
 }
 
+interface PoolSlotRow {
+  id: string;
+  starts_at: string;
+}
+
 export default async function TeacherPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; recorded?: string }>;
+  searchParams: Promise<{ error?: string; recorded?: string; claimed?: string }>;
 }) {
-  const { error, recorded } = await searchParams;
+  const { error, recorded, claimed } = await searchParams;
   const session = await getSessionUser();
   const teacherId = session!.profile!.id;
   const admin = createSupabaseAdminClient();
@@ -44,7 +49,7 @@ export default async function TeacherPage({
   const schoolLabel = config.school.timezoneLabel;
   const subjects = (await getSettings()).assessmentSubjectsItems;
 
-  // Only the slots assigned to this teacher by an admin.
+  // The slots assigned to this teacher (by an admin, or previously self-claimed).
   const { data } = await admin
     .from("assessment_slots")
     .select(
@@ -53,6 +58,30 @@ export default async function TeacherPage({
     .eq("teacher_id", teacherId)
     .order("starts_at", { ascending: true });
   const slots = (data ?? []) as unknown as SlotRow[];
+
+  // Open, unassigned slots any teacher can claim on a first-come basis.
+  const { data: poolData } = await admin
+    .from("assessment_slots")
+    .select("id, starts_at")
+    .is("teacher_id", null)
+    .is("application_id", null)
+    .eq("is_open", true)
+    .gt("starts_at", new Date().toISOString())
+    .order("starts_at", { ascending: true })
+    .limit(50);
+  const openPool = (poolData ?? []) as PoolSlotRow[];
+
+  // Group same-time slots so "Monday 8:00 PM, 10 slots" reads as one row
+  // with a count, rather than 10 duplicate rows. Claiming posts one specific
+  // slot id from the group; if it's taken in the meantime the RPC rejects it
+  // and the teacher can just try again from the (now smaller) group.
+  const poolGroups = Object.values(
+    openPool.reduce<Record<string, { startsAt: string; slotId: string; count: number }>>((acc, s) => {
+      const g = (acc[s.starts_at] ??= { startsAt: s.starts_at, slotId: s.id, count: 0 });
+      g.count += 1;
+      return acc;
+    }, {}),
+  ).sort((a, b) => a.startsAt.localeCompare(b.startsAt));
 
   const now = Date.now();
   const toRecord = slots.filter(
@@ -76,6 +105,42 @@ export default async function TeacherPage({
 
       {error && <Alert variant="error">{error}</Alert>}
       {recorded && <Alert variant="success">Result recorded.</Alert>}
+      {claimed && <Alert variant="success">Slot claimed — it&apos;s now on your schedule.</Alert>}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Open slots — claim one ({openPool.length})</CardTitle>
+          <CardDescription>
+            Unassigned slots any teacher can take. First to claim gets it, instantly.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {poolGroups.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No open slots in the pool right now.</p>
+          ) : (
+            <div className="space-y-2">
+              {poolGroups.map((g) => (
+                <form
+                  key={g.startsAt}
+                  action={claimAssessmentSlot}
+                  className="flex items-center justify-between rounded-md border border-border px-4 py-3"
+                >
+                  <input type="hidden" name="slot_id" value={g.slotId} />
+                  <span className="text-sm font-medium">
+                    {formatInZone(g.startsAt, schoolTz)} {schoolLabel}
+                    <span className="ml-2 font-normal text-muted-foreground">
+                      · {g.count} slot{g.count > 1 ? "s" : ""} available
+                    </span>
+                  </span>
+                  <SubmitButton size="sm" pendingText="Claiming…">
+                    Claim
+                  </SubmitButton>
+                </form>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
