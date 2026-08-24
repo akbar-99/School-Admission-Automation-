@@ -103,6 +103,26 @@ export default async function AdminAssessmentsPage({
   const slots = (slotData ?? []) as unknown as SlotRow[];
   const scheduled = slots.filter((s) => s.application_id);
 
+  // Booked vs remaining (open + in-pool) vs expired, for whatever the teacher
+  // filter above currently shows.
+  const slotCounts = slots.reduce(
+    (acc, s) => {
+      const booked = !!s.application_id;
+      const past = new Date(s.starts_at).getTime() < Date.now();
+      if (booked) acc.booked += 1;
+      else if (past) acc.expired += 1;
+      else if (s.teacher_id) acc.open += 1;
+      else acc.pool += 1;
+      return acc;
+    },
+    { booked: 0, open: 0, pool: 0, expired: 0 },
+  );
+  const slotSummary = {
+    ...slotCounts,
+    total: slots.length,
+    remaining: slotCounts.open + slotCounts.pool,
+  };
+
   // Per-teacher activity: total slots, self-claimed count, upcoming booked
   // assessments, and how many they've conducted (results recorded) + outcomes.
   const statsByTeacher = new Map<string, TeacherStats>();
@@ -421,6 +441,15 @@ export default async function AdminAssessmentsPage({
               Filter
             </Button>
           </form>
+
+          <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+            <span className="text-muted-foreground">{slotSummary.total} slots (this filter):</span>
+            <Badge tone="success">{slotSummary.booked} booked</Badge>
+            <Badge tone="info">{slotSummary.remaining} remaining</Badge>
+            <span className="text-xs text-muted-foreground">
+              ({slotSummary.open} open · {slotSummary.pool} in pool · {slotSummary.expired} expired)
+            </span>
+          </div>
 
           {slots.length === 0 ? (
             <p className="text-sm text-muted-foreground">No slots match this filter.</p>
