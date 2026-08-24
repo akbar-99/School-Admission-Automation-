@@ -117,10 +117,17 @@ export default async function AdminAssessmentsPage({
     },
     { booked: 0, open: 0, pool: 0, expired: 0 },
   );
+  // Of slots that started open (no teacher pre-assigned at creation): how many
+  // a teacher has since claimed vs how many are still sitting unclaimed.
+  const claimedCount = slots.filter((s) => s.claimed_by_teacher).length;
+  const unclaimedCount = slots.filter((s) => s.teacher_id === null).length;
+
   const slotSummary = {
     ...slotCounts,
     total: slots.length,
     remaining: slotCounts.open + slotCounts.pool,
+    claimed: claimedCount,
+    unclaimed: unclaimedCount,
   };
 
   // Per-teacher activity: total slots, self-claimed count, upcoming booked
@@ -442,13 +449,20 @@ export default async function AdminAssessmentsPage({
             </Button>
           </form>
 
-          <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
-            <span className="text-muted-foreground">{slotSummary.total} slots (this filter):</span>
-            <Badge tone="success">{slotSummary.booked} booked</Badge>
-            <Badge tone="info">{slotSummary.remaining} remaining</Badge>
-            <span className="text-xs text-muted-foreground">
-              ({slotSummary.open} open · {slotSummary.pool} in pool · {slotSummary.expired} expired)
-            </span>
+          <div className="mb-4 space-y-2 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-muted-foreground">{slotSummary.total} slots (this filter):</span>
+              <Badge tone="success">{slotSummary.booked} booked</Badge>
+              <Badge tone="info">{slotSummary.remaining} remaining</Badge>
+              <span className="text-xs text-muted-foreground">
+                ({slotSummary.open} open · {slotSummary.pool} in pool · {slotSummary.expired} expired)
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-muted-foreground">Open (pool) slots:</span>
+              <Badge tone="success">{slotSummary.claimed} claimed by teachers</Badge>
+              <Badge tone="warning">{slotSummary.unclaimed} still unclaimed</Badge>
+            </div>
           </div>
 
           {slots.length === 0 ? (
