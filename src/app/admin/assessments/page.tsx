@@ -131,13 +131,10 @@ export default async function AdminAssessmentsPage({
   };
 
   // Same claimed-vs-unclaimed split as above, broken down by day (school
-  // time) — always across all slots, independent of the teacher filter.
+  // time) — respects the same teacher filter as everything else on screen,
+  // so it never shows other teachers' numbers under a filtered view.
   const dayBuckets = new Map<string, { label: string; claimed: number; unclaimed: number }>();
-  for (const s of (allSlotsData ?? []) as unknown as {
-    teacher_id: string | null;
-    claimed_by_teacher: boolean;
-    starts_at: string;
-  }[]) {
+  for (const s of slots) {
     if (s.teacher_id !== null && !s.claimed_by_teacher) continue; // not pool-origin
     const dateKey = toZonedInputValue(s.starts_at, schoolTz).slice(0, 10);
     let bucket = dayBuckets.get(dateKey);
@@ -496,6 +493,9 @@ export default async function AdminAssessmentsPage({
 
           {dayRows.length > 0 && (
             <div className="mb-4 overflow-x-auto rounded-md border border-border">
+              <p className="border-b border-border bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground">
+                Day-wise, for this filter
+              </p>
               <Table>
                 <THead>
                   <TR>
