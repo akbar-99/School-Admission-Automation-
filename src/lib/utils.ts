@@ -36,6 +36,26 @@ export function formatInZone(value: string | Date, timeZone: string): string {
   }
 }
 
+// Same as formatInZone, but with the weekday name prefixed (e.g. "Wed, 26 Aug 2026, 8:46 pm").
+// Intl doesn't allow mixing dateStyle/timeStyle with weekday, hence the explicit fields.
+export function formatInZoneWithDay(value: string | Date, timeZone: string): string {
+  const d = typeof value === "string" ? new Date(value) : value;
+  const opts: Intl.DateTimeFormatOptions = {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  };
+  try {
+    return d.toLocaleString("en-IN", { ...opts, timeZone });
+  } catch {
+    return d.toLocaleString("en-IN", opts);
+  }
+}
+
 // Interpret a naive "YYYY-MM-DDTHH:mm" wall-clock as a time in the given IANA
 // timezone and return the matching UTC instant (ISO string). The inverse of
 // toZonedInputValue. Used when staff enter slot times in school time.

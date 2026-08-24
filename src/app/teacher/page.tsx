@@ -2,7 +2,7 @@ import { getSessionUser } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { config } from "@/lib/config";
 import { getSettings } from "@/lib/settings";
-import { formatDate, formatInZone } from "@/lib/utils";
+import { formatDate, formatInZone, formatInZoneWithDay } from "@/lib/utils";
 import { submitResult, claimAssessmentSlot } from "./actions";
 import { SubmitButton } from "@/components/submit-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -127,7 +127,7 @@ export default async function TeacherPage({
                 >
                   <input type="hidden" name="slot_id" value={g.slotId} />
                   <span className="text-sm font-medium">
-                    {formatInZone(g.startsAt, schoolTz)} {schoolLabel}
+                    {formatInZoneWithDay(g.startsAt, schoolTz)} {schoolLabel}
                     <span className="ml-2 font-normal text-muted-foreground">
                       · {g.count} slot{g.count > 1 ? "s" : ""} available
                     </span>
