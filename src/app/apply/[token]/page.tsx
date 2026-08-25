@@ -86,6 +86,7 @@ async function Content({
       .select("id, starts_at")
       .eq("is_open", true)
       .is("application_id", null)
+      .not("teacher_id", "is", null) // only slots a teacher has claimed — guarantees a Zoom host
       .gt("starts_at", new Date().toISOString())
       .order("starts_at", { ascending: true })
       .limit(50);
@@ -298,6 +299,7 @@ async function Content({
       .from("assessment_slots")
       .select("id, starts_at, ends_at")
       .eq("is_open", true)
+      .not("teacher_id", "is", null) // only slots a teacher has claimed — guarantees a Zoom host
       .gt("starts_at", new Date().toISOString())
       .order("starts_at", { ascending: true })
       .limit(50);
