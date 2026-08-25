@@ -37,8 +37,8 @@ export default function Home() {
             </h1>
             <p className="mt-6 max-w-xl text-lg leading-relaxed text-muted-foreground">
               A seamless, end-to-end admission experience — application forms,
-              age-based category detection, assessment scheduling, secure
-              payments, and automatic enrollment, in one elegant flow.
+              assessment scheduling, secure payments, and automatic
+              enrollment, in one elegant flow.
             </p>
             <div className="mt-9 flex flex-wrap gap-3">
               <Link href="/login">

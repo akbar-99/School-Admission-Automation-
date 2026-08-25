@@ -142,9 +142,7 @@ async function Content({
           <CardHeader>
             <CardTitle>Admission form</CardTitle>
             <CardDescription>
-              Tell us about your child. Category (KG / Grade) is detected
-              automatically from age as of {config.admission.year}-
-              {config.admission.ageCutoffMMDD}.
+              Tell us about your child. All classes except KG 1 require an assessment.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -156,13 +154,6 @@ async function Content({
               schoolTimezoneLabel={config.school.timezoneLabel}
               availableSlots={openSlots}
               defaultStudentName={app.lead_student_name}
-              ageConfig={{
-                year: config.admission.year,
-                cutoffMMDD: config.admission.ageCutoffMMDD,
-                kgMin: config.admission.kgMinAge,
-                kgMax: config.admission.kgMaxAge,
-                gradeMin: config.admission.gradeMinAge,
-              }}
             />
           </CardContent>
         </Card>

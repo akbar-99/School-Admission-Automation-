@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { submitAdmissionForm } from "@/app/apply/[token]/actions";
+import { needsAssessment } from "@/lib/assessment";
 import { COUNTRIES } from "@/lib/countries";
 import { PhoneField } from "@/components/apply/phone-field";
 import { SearchSelect } from "@/components/ui/search-select";
@@ -11,21 +12,6 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert } from "@/components/ui/alert";
 import { SubmitButton } from "@/components/submit-button";
-
-export interface AgeConfig {
-  year: number;
-  cutoffMMDD: string;
-  kgMin: number;
-  kgMax: number;
-  gradeMin: number;
-}
-
-function completedYears(dob: Date, asOf: Date): number {
-  let age = asOf.getFullYear() - dob.getFullYear();
-  const m = asOf.getMonth() - dob.getMonth();
-  if (m < 0 || (m === 0 && asOf.getDate() < dob.getDate())) age -= 1;
-  return age;
-}
 
 function Section({
   title,
@@ -52,7 +38,6 @@ export interface AvailableSlot {
 
 export function AdmissionForm({
   token,
-  ageConfig,
   gradeOptions,
   curriculumOptions,
   schoolTimezone,
@@ -61,7 +46,6 @@ export function AdmissionForm({
   defaultStudentName,
 }: {
   token: string;
-  ageConfig: AgeConfig;
   gradeOptions: readonly string[];
   curriculumOptions: readonly string[];
   schoolTimezone: string;
@@ -69,7 +53,7 @@ export function AdmissionForm({
   availableSlots: AvailableSlot[];
   defaultStudentName?: string | null;
 }) {
-  const [dob, setDob] = useState("");
+  const [grade, setGrade] = useState("");
   const [country, setCountry] = useState("");
   // Assessment date/time + the parent's auto-detected timezone.
   const [prefDate, setPrefDate] = useState("");
@@ -101,27 +85,9 @@ export function AdmissionForm({
   // Passport is mandatory for applicants residing outside India.
   const passportRequired = country.trim().toLowerCase() !== "india";
 
-  const detected = useMemo(() => {
-    if (!dob) return null;
-    const cutoff = new Date(`${ageConfig.year}-${ageConfig.cutoffMMDD}T00:00:00`);
-    const age = completedYears(new Date(`${dob}T00:00:00`), cutoff);
-    if (Number.isNaN(age)) return null;
-    if (age < ageConfig.kgMin)
-      return {
-        category: null as "KG" | "GRADE" | null,
-        tone: "warning" as const,
-        text: `Age ${age} at cutoff — below the minimum age of ${ageConfig.kgMin} for KG.`,
-      };
-    if (age <= ageConfig.kgMax)
-      return { category: "KG" as const, tone: "info" as const, text: `Age ${age} at cutoff — detected category: KG.` };
-    return {
-      category: "GRADE" as const,
-      tone: "info" as const,
-      text: `Age ${age} at cutoff — detected category: GRADE (assessment required).`,
-    };
-  }, [dob, ageConfig]);
-
-  const isGrade = detected?.category === "GRADE";
+  // Only "KG 1" is exempt from the mandatory assessment — driven by the class
+  // picked, not the child's age.
+  const isGrade = grade !== "" && needsAssessment(grade);
 
   return (
     <form action={submitAdmissionForm} className="space-y-6">
@@ -135,7 +101,7 @@ export function AdmissionForm({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="dob">Date of birth *</Label>
-            <Input id="dob" name="dob" type="date" required value={dob} onChange={(e) => setDob(e.target.value)} />
+            <Input id="dob" name="dob" type="date" required />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="gender">Gender *</Label>
@@ -150,7 +116,13 @@ export function AdmissionForm({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="grade">Class applying for *</Label>
-            <Select id="grade" name="grade" required defaultValue="">
+            <Select
+              id="grade"
+              name="grade"
+              required
+              value={grade}
+              onChange={(e) => setGrade(e.target.value)}
+            >
               <option value="" disabled>
                 Select…
               </option>
@@ -160,6 +132,13 @@ export function AdmissionForm({
                 </option>
               ))}
             </Select>
+            {grade && (
+              <p className="text-xs text-muted-foreground">
+                {needsAssessment(grade)
+                  ? "This class requires an assessment."
+                  : "This class does not require an assessment."}
+              </p>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="curriculum">Preferred curriculum *</Label>
@@ -186,7 +165,7 @@ export function AdmissionForm({
               options={COUNTRIES.map((c) => ({ value: c, search: c, label: c }))}
             />
           </div>
-          {detected?.category !== "KG" && (
+          {(grade === "" || needsAssessment(grade)) && (
             <div className="space-y-1.5 sm:col-span-2">
               <Label htmlFor="previous_school">Detail of previous school</Label>
               <Input
@@ -205,7 +184,6 @@ export function AdmissionForm({
             <Textarea id="permanent_address" name="permanent_address" required className="min-h-20" />
           </div>
         </div>
-        {detected && <Alert variant={detected.tone}>{detected.text}</Alert>}
       </Section>
 
       <Section title="Documents" description="PDF / JPG / PNG, max 5 MB each.">
@@ -267,7 +245,7 @@ export function AdmissionForm({
       {isGrade && (
         <Section
           title="Assessment booking"
-          description="Grade applicants require an assessment. Book an open slot for instant confirmation, or request your own preferred time and our team will confirm it."
+          description="This class requires an assessment. Book an open slot for instant confirmation, or request your own preferred time and our team will confirm it."
         >
           {hasSlots && (
             <div className="flex flex-col gap-2 sm:flex-row sm:gap-5">

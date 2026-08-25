@@ -35,10 +35,6 @@ export const config = {
 
   admission: {
     year: Number(process.env.ADMISSION_YEAR ?? 2026),
-    ageCutoffMMDD: process.env.AGE_CUTOFF_MMDD ?? "06-01",
-    kgMinAge: Number(process.env.KG_MIN_AGE ?? 3),
-    kgMaxAge: Number(process.env.KG_MAX_AGE ?? 5),
-    gradeMinAge: Number(process.env.GRADE_MIN_AGE ?? 6),
     defaultSectionCapacity: Number(process.env.DEFAULT_SECTION_CAPACITY ?? 30),
     feePaise: Number(process.env.ADMISSION_FEE_PAISE ?? 5000000),
     retentionDays: Number(process.env.DATA_RETENTION_DAYS ?? 2555),

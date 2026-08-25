@@ -1,8 +1,8 @@
 # Online School Admission Automation System
 
-Automates the full admission lifecycle — lead → application → category detection →
-assessment → agreement → Razorpay payment → enrollment → onboarding — per the SRS
-in [`docs/SRS.md`](docs/SRS.md).
+Automates the full admission lifecycle — lead → application → assessment (for all
+classes except KG 1) → agreement → Razorpay payment → enrollment → onboarding —
+per the SRS in [`docs/SRS.md`](docs/SRS.md).
 
 **Stack:** Next.js 16 (App Router) · TypeScript · Tailwind CSS v4 · Supabase
 (Postgres + Auth + Storage, RLS) · Razorpay · pluggable NotificationService.
@@ -39,10 +39,10 @@ Parents do **not** log in — they use the secure admission link (`/apply/<token
 ## End-to-end demo
 
 1. **Marketing** (`/marketing`) → create a lead → copy the admission link.
-2. **Parent** opens the link → fills the form. Category (KG/Grade) is auto-detected
-   from age at the cutoff (config `age_cutoff_mmdd`, default 1 June).
-   - **KG** → straight to agreement + payment.
-   - **Grade** → assessment required.
+2. **Parent** opens the link → fills the form and picks a class. Whether an
+   assessment is required is determined by the class, not age.
+   - **KG 1** → straight to agreement + payment.
+   - **Everything else (KG 2, G1–G8)** → assessment required.
 3. **Teacher** (`/teacher`) → open a slot. Parent books it (atomic, no double-booking).
    Teacher records Pass/Fail.
    - **Pass** → agreement + payment link sent. **Fail** → application rejected.
@@ -64,7 +64,7 @@ Parents do **not** log in — they use the secure admission link (`/apply/<token
 | ----- | ---- |
 | Supabase | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` |
 | App | `NEXT_PUBLIC_APP_URL`, `APP_SECRET`, `SETUP_SECRET` |
-| Admission rules | `ADMISSION_YEAR`, `AGE_CUTOFF_MMDD`, `KG_MIN_AGE`, `KG_MAX_AGE`, `GRADE_MIN_AGE`, `DEFAULT_SECTION_CAPACITY`, `ADMISSION_FEE_PAISE`, `DATA_RETENTION_DAYS` |
+| Admission rules | `ADMISSION_YEAR`, `DEFAULT_SECTION_CAPACITY`, `ADMISSION_FEE_PAISE`, `DATA_RETENTION_DAYS` |
 | Razorpay | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `NEXT_PUBLIC_RAZORPAY_KEY_ID` |
 | Notifications | `NOTIFY_PROVIDER` (`log`\|`live`), `RESEND_API_KEY`, `MSG91_AUTH_KEY`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID` |
 

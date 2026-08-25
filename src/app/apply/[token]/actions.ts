@@ -5,7 +5,7 @@ import { headers } from "next/headers";
 import { z } from "zod";
 import { loadApplicationByToken } from "@/lib/parent";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { detectCategory } from "@/lib/age";
+import { classCategory } from "@/lib/assessment";
 import { ensureOrderForApplication, markPaymentCompleted } from "@/lib/payments";
 import {
   handleFormSubmitted,
@@ -14,7 +14,6 @@ import {
 } from "@/lib/workflow";
 import { logAudit } from "@/lib/audit";
 import { config } from "@/lib/config";
-import { getClassOptions, isKgClass } from "@/lib/classes";
 import type { Application, DocumentRef } from "@/lib/types";
 
 const MAX_FILE = 5 * 1024 * 1024; // 5 MB (SRS FR-4a)
@@ -106,26 +105,14 @@ export async function submitAdmissionForm(formData: FormData) {
   if (!parsed.success) fail(token, parsed.error.issues[0].message);
   const input = parsed.data;
 
-  // Category detection from age at cutoff (SRS FR-7)
-  const detect = detectCategory(input.dob);
-  if (!detect.eligible) fail(token, detect.message);
-
-  // Reconcile the picked grade with the age-detected category, using the class
-  // list derived from the school's sections. A class whose name contains "KG"
-  // is a kindergarten grade. A KG-aged child keeps their KG sub-grade; a Grade-
-  // aged child keeps their G grade. Mismatches fall back to the first class of
-  // the right kind.
-  const classOptions = await getClassOptions();
-  let grade = input.grade;
-  if (detect.category === "KG") {
-    if (!isKgClass(grade)) grade = classOptions.find(isKgClass) ?? "KG 1";
-  } else if (isKgClass(grade) || !grade) {
-    grade = classOptions.find((o) => !isKgClass(o)) ?? "G1";
-  }
+  // Category (and whether an assessment is required) is driven by the class
+  // the parent picked, not age — only "KG 1" is exempt from the assessment.
+  const grade = input.grade;
+  const category = classCategory(grade);
 
   // Grade applicants must either pick an open slot or request a preferred date.
   const slotId = String(formData.get("slot_id") ?? "");
-  if (detect.category === "GRADE" && !input.preferred_assessment_date && !slotId) {
+  if (category === "GRADE" && !input.preferred_assessment_date && !slotId) {
     fail(token, "Please pick an available slot or choose a preferred assessment date.");
   }
 
@@ -183,17 +170,17 @@ export async function submitAdmissionForm(formData: FormData) {
     .from("applications")
     .update({
       student_id: studentRow.id,
-      category: detect.category,
+      category,
       grade_applying: grade,
       documents,
       consent_accepted: true,
       consent_at: new Date().toISOString(),
       preferred_assessment_date:
-        detect.category === "GRADE" ? input.preferred_assessment_date : null,
+        category === "GRADE" ? input.preferred_assessment_date : null,
       preferred_assessment_date_alt:
-        detect.category === "GRADE" ? (input.preferred_assessment_date_alt ?? null) : null,
+        category === "GRADE" ? (input.preferred_assessment_date_alt ?? null) : null,
       preferred_assessment_tz:
-        detect.category === "GRADE" ? (input.preferred_assessment_tz ?? null) : null,
+        category === "GRADE" ? (input.preferred_assessment_tz ?? null) : null,
       status: "FORM_SUBMITTED",
     })
     .eq("id", app.id)
@@ -204,14 +191,14 @@ export async function submitAdmissionForm(formData: FormData) {
     action: "application.form_submitted",
     entity: "application",
     entityId: app.id,
-    details: { category: detect.category, grade, age: detect.ageYears },
+    details: { category, grade },
   });
 
   // If the parent picked an open slot on the form, book it now (Grade only):
   // the slot is confirmed instantly and the parent, teacher and admin are all
   // notified — no separate "please schedule" step. Falls back to the normal
   // flow if the slot was just taken by someone else.
-  if (detect.category === "GRADE" && slotId) {
+  if (category === "GRADE" && slotId) {
     const { data: slot, error: bookErr } = await admin.rpc("book_assessment_slot", {
       p_slot: slotId,
       p_application: app.id,
