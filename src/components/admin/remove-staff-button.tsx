@@ -19,6 +19,7 @@ export function RemoveStaffButton({
     <form
       ref={formRef}
       action={action}
+      className="inline-flex"
       onSubmit={(e) => {
         if (!window.confirm(`Remove ${name}? They will lose access immediately.`)) {
           e.preventDefault();

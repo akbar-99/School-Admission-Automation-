@@ -118,24 +118,23 @@ export default async function StaffPage({
                   <TH>Name</TH>
                   <TH>Email (login ID)</TH>
                   <TH>Role</TH>
-                  <TH>Status</TH>
                   <TH>Zoom account</TH>
                   <TH>Added</TH>
-                  <TH>Access</TH>
+                  <TH className="text-right">Access</TH>
                 </TR>
               </THead>
               <TBody>
                 {staff.map((s) => (
                   <TR key={s.id} className={s.disabled ? "opacity-60" : undefined}>
-                    <TD className="font-medium">{s.full_name ?? "—"}</TD>
-                    <TD className="text-muted-foreground">{s.email ?? "—"}</TD>
-                    <TD>
-                      <Badge tone="info">{s.role}</Badge>
-                    </TD>
-                    <TD>
-                      <Badge tone={s.disabled ? "danger" : "success"}>
-                        {s.disabled ? "Removed" : "Active"}
-                      </Badge>
+                    <TD className="whitespace-nowrap font-medium">{s.full_name ?? "—"}</TD>
+                    <TD className="whitespace-nowrap text-muted-foreground">{s.email ?? "—"}</TD>
+                    <TD className="whitespace-nowrap">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Badge tone="info">{s.role}</Badge>
+                        <Badge tone={s.disabled ? "danger" : "success"}>
+                          {s.disabled ? "Removed" : "Active"}
+                        </Badge>
+                      </div>
                     </TD>
                     <TD>
                       {ZOOM_ROLES.includes(s.role) ? (
@@ -146,7 +145,7 @@ export default async function StaffPage({
                             type="email"
                             defaultValue={s.zoom_email ?? ""}
                             placeholder={s.email ?? "zoom@email"}
-                            className="h-9 w-52"
+                            className="h-9 w-40"
                             disabled={s.disabled}
                           />
                           <SubmitButton
@@ -165,11 +164,11 @@ export default async function StaffPage({
                     <TD className="whitespace-nowrap text-muted-foreground">
                       {formatDateTime(s.created_at)}
                     </TD>
-                    <TD>
+                    <TD className="whitespace-nowrap text-right">
                       {s.id === currentUserId ? (
                         <span className="text-xs text-muted-foreground">You</span>
                       ) : s.disabled ? (
-                        <form action={reactivateStaff}>
+                        <form action={reactivateStaff} className="inline-flex">
                           <input type="hidden" name="user_id" value={s.id} />
                           <SubmitButton size="sm" variant="outline" pendingText="…">
                             Reactivate
