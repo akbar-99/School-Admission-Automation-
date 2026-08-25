@@ -55,22 +55,12 @@ export function AdmissionForm({
 }) {
   const [grade, setGrade] = useState("");
   const [country, setCountry] = useState("");
-  // Assessment date/time + the parent's auto-detected timezone.
-  const [prefDate, setPrefDate] = useState("");
-  const [prefAlt, setPrefAlt] = useState("");
+  // The parent's auto-detected timezone, for the "your time" hint next to each slot.
   const [tz, setTz] = useState("");
-  // How the parent wants to schedule: pick an open slot, or request their own time.
   const hasSlots = availableSlots.length > 0;
-  const [mode, setMode] = useState<"slot" | "own">(hasSlots ? "slot" : "own");
   useEffect(() => {
     setTz(Intl.DateTimeFormat().resolvedOptions().timeZone);
   }, []);
-  // Convert a naive datetime-local value to a true UTC instant (browser-local).
-  const toUtc = (local: string) => {
-    if (!local) return "";
-    const d = new Date(local);
-    return Number.isNaN(d.getTime()) ? "" : d.toISOString();
-  };
   // Format the picked instant in the parent's local zone, or the school zone.
   const fmt = (local: string, timeZone?: string) => {
     if (!local) return "";
@@ -245,38 +235,14 @@ export function AdmissionForm({
       {isGrade && (
         <Section
           title="Assessment booking"
-          description="This class requires an assessment. Book an open slot for instant confirmation, or request your own preferred time and our team will confirm it."
+          description={
+            hasSlots
+              ? "This class requires an assessment. Pick a confirmed slot below — booking is instant and can't be double-booked."
+              : "This class requires an assessment. No slots are open yet — our team will reach out to schedule one once you submit."
+          }
         >
-          {hasSlots && (
-            <div className="flex flex-col gap-2 sm:flex-row sm:gap-5">
-              <label className="flex items-center gap-2 text-sm font-medium">
-                <input
-                  type="radio"
-                  name="assess_mode"
-                  value="slot"
-                  checked={mode === "slot"}
-                  onChange={() => setMode("slot")}
-                />
-                Select an available slot
-              </label>
-              <label className="flex items-center gap-2 text-sm font-medium">
-                <input
-                  type="radio"
-                  name="assess_mode"
-                  value="own"
-                  checked={mode === "own"}
-                  onChange={() => setMode("own")}
-                />
-                Request my own time
-              </label>
-            </div>
-          )}
-
-          {hasSlots && mode === "slot" ? (
+          {hasSlots ? (
             <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">
-                Pick a confirmed slot below — booking is instant and can&apos;t be double-booked.
-              </p>
               {availableSlots.map((s) => (
                 <label
                   key={s.id}
@@ -295,57 +261,10 @@ export function AdmissionForm({
               ))}
             </div>
           ) : (
-            <>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="preferred_assessment_date">Preferred date &amp; time *</Label>
-                  <Input
-                    id="preferred_assessment_date"
-                    type="datetime-local"
-                    required={isGrade && mode === "own"}
-                    value={prefDate}
-                    onChange={(e) => setPrefDate(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="preferred_assessment_date_alt">Alternate date &amp; time (optional)</Label>
-                  <Input
-                    id="preferred_assessment_date_alt"
-                    type="datetime-local"
-                    value={prefAlt}
-                    onChange={(e) => setPrefAlt(e.target.value)}
-                  />
-                </div>
-              </div>
-              {prefDate ? (
-                <Alert variant="info">
-                  <div>
-                    Your time: <strong>{fmt(prefDate)}</strong>
-                    {tz ? ` (${tz})` : ""}
-                  </div>
-                  <div>
-                    School time: <strong>{fmt(prefDate, schoolTimezone)} {schoolTimezoneLabel}</strong>
-                  </div>
-                  {prefAlt && (
-                    <div className="mt-1 text-xs">
-                      Alternate → School time:{" "}
-                      <strong>{fmt(prefAlt, schoolTimezone)} {schoolTimezoneLabel}</strong>
-                    </div>
-                  )}
-                </Alert>
-              ) : (
-                tz && (
-                  <p className="text-xs text-muted-foreground">
-                    Times are shown in your local timezone (<strong>{tz}</strong>); our team sees them
-                    in school time too.
-                  </p>
-                )
-              )}
-              {/* Submit the true UTC instant + the detected timezone. */}
-              <input type="hidden" name="preferred_assessment_date" value={toUtc(prefDate)} />
-              <input type="hidden" name="preferred_assessment_date_alt" value={toUtc(prefAlt)} />
-              <input type="hidden" name="preferred_assessment_tz" value={tz} />
-            </>
+            <Alert variant="info">
+              No assessment slots are open yet. You will be notified as soon as slots become
+              available.
+            </Alert>
           )}
         </Section>
       )}

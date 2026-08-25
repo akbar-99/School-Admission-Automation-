@@ -35,9 +35,6 @@ const FormSchema = z.object({
   mother_phone: z.string().trim().min(7, "Mother's contact number is required"),
   whatsapp: z.string().trim().min(7, "WhatsApp number is required"),
   email: z.string().trim().email("A valid email address is required"),
-  preferred_assessment_date: z.string().optional(),
-  preferred_assessment_date_alt: z.string().optional(),
-  preferred_assessment_tz: z.string().optional(),
 });
 
 function fail(token: string, message: string): never {
@@ -98,9 +95,6 @@ export async function submitAdmissionForm(formData: FormData) {
     mother_phone: formData.get("mother_phone"),
     whatsapp: formData.get("whatsapp"),
     email: formData.get("email"),
-    preferred_assessment_date: formData.get("preferred_assessment_date") || undefined,
-    preferred_assessment_date_alt: formData.get("preferred_assessment_date_alt") || undefined,
-    preferred_assessment_tz: formData.get("preferred_assessment_tz") || undefined,
   });
   if (!parsed.success) fail(token, parsed.error.issues[0].message);
   const input = parsed.data;
@@ -110,11 +104,9 @@ export async function submitAdmissionForm(formData: FormData) {
   const grade = input.grade;
   const category = classCategory(grade);
 
-  // Grade applicants must either pick an open slot or request a preferred date.
+  // Grade applicants may pick an open slot now for instant confirmation; if
+  // none is picked (or none are open yet), an admin schedules it afterward.
   const slotId = String(formData.get("slot_id") ?? "");
-  if (category === "GRADE" && !input.preferred_assessment_date && !slotId) {
-    fail(token, "Please pick an available slot or choose a preferred assessment date.");
-  }
 
   const admin = createSupabaseAdminClient();
 
@@ -175,12 +167,6 @@ export async function submitAdmissionForm(formData: FormData) {
       documents,
       consent_accepted: true,
       consent_at: new Date().toISOString(),
-      preferred_assessment_date:
-        category === "GRADE" ? input.preferred_assessment_date : null,
-      preferred_assessment_date_alt:
-        category === "GRADE" ? (input.preferred_assessment_date_alt ?? null) : null,
-      preferred_assessment_tz:
-        category === "GRADE" ? (input.preferred_assessment_tz ?? null) : null,
       status: "FORM_SUBMITTED",
     })
     .eq("id", app.id)
