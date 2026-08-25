@@ -2,9 +2,10 @@ import { getSessionUser } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { config } from "@/lib/config";
 import { getSettings } from "@/lib/settings";
-import { formatDate, formatInZone, formatInZoneWithDay } from "@/lib/utils";
+import { formatDate, formatInZone } from "@/lib/utils";
 import { submitResult, claimAssessmentSlot } from "./actions";
 import { SubmitButton } from "@/components/submit-button";
+import { OpenSlotsPool, type PoolSeries } from "@/components/teacher/open-slots-pool";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -83,6 +84,32 @@ export default async function TeacherPage({
     }, {}),
   ).sort((a, b) => a.startsAt.localeCompare(b.startsAt));
 
+  // Further group same weekday+time groups into one collapsible series, so a
+  // weekly-recurring batch (e.g. "Monday 8:30 PM" x8 weeks) reads as one row
+  // with an expand toggle instead of 8 near-identical rows.
+  const seriesMap = new Map<string, PoolSeries>();
+  for (const g of poolGroups) {
+    const d = new Date(g.startsAt);
+    const weekday = new Intl.DateTimeFormat("en-US", { weekday: "long", timeZone: schoolTz }).format(d);
+    const time = new Intl.DateTimeFormat("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+      timeZone: schoolTz,
+    }).format(d);
+    const key = `${weekday}-${time}`;
+    let series = seriesMap.get(key);
+    if (!series) {
+      series = { key, seriesLabel: `${weekday}, ${time}`, occurrences: [], totalCount: 0 };
+      seriesMap.set(key, series);
+    }
+    series.occurrences.push({ slotId: g.slotId, startsAt: g.startsAt, count: g.count });
+    series.totalCount += g.count;
+  }
+  const poolSeries = Array.from(seriesMap.values()).sort((a, b) =>
+    a.occurrences[0].startsAt.localeCompare(b.occurrences[0].startsAt),
+  );
+
   const now = Date.now();
   const toRecord = slots.filter(
     (s) => s.applications && s.applications.status === "ASSESSMENT_SCHEDULED",
@@ -115,29 +142,15 @@ export default async function TeacherPage({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {poolGroups.length === 0 ? (
+          {poolSeries.length === 0 ? (
             <p className="text-sm text-muted-foreground">No open slots in the pool right now.</p>
           ) : (
-            <div className="space-y-2">
-              {poolGroups.map((g) => (
-                <form
-                  key={g.startsAt}
-                  action={claimAssessmentSlot}
-                  className="flex items-center justify-between rounded-md border border-border px-4 py-3"
-                >
-                  <input type="hidden" name="slot_id" value={g.slotId} />
-                  <span className="text-sm font-medium">
-                    {formatInZoneWithDay(g.startsAt, schoolTz)} {schoolLabel}
-                    <span className="ml-2 font-normal text-muted-foreground">
-                      · {g.count} slot{g.count > 1 ? "s" : ""} available
-                    </span>
-                  </span>
-                  <SubmitButton size="sm" pendingText="Claiming…">
-                    Claim
-                  </SubmitButton>
-                </form>
-              ))}
-            </div>
+            <OpenSlotsPool
+              series={poolSeries}
+              schoolTz={schoolTz}
+              schoolLabel={schoolLabel}
+              claimAction={claimAssessmentSlot}
+            />
           )}
         </CardContent>
       </Card>
