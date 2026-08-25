@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { submitAdmissionForm } from "@/app/apply/[token]/actions";
 import { needsAssessment } from "@/lib/assessment";
 import { COUNTRIES } from "@/lib/countries";
+import { cn } from "@/lib/utils";
 import { PhoneField } from "@/components/apply/phone-field";
 import { SearchSelect } from "@/components/ui/search-select";
 import { Input } from "@/components/ui/input";
@@ -61,19 +63,73 @@ export function AdmissionForm({
   useEffect(() => {
     setTz(Intl.DateTimeFormat().resolvedOptions().timeZone);
   }, []);
-  // Format the picked instant in the parent's local zone, or the school zone.
-  const fmt = (local: string, timeZone?: string) => {
-    if (!local) return "";
-    const d = new Date(local);
+  // Format an instant with its weekday, in the parent's local zone or the
+  // school zone. Intl can't mix dateStyle with weekday, hence explicit fields.
+  const fmtWithDay = (iso: string, timeZone?: string) => {
+    const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return "";
     return d.toLocaleString("en-IN", {
-      dateStyle: "medium",
-      timeStyle: "short",
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
       ...(timeZone ? { timeZone } : {}),
     });
   };
   // Passport is mandatory for applicants residing outside India.
   const passportRequired = country.trim().toLowerCase() !== "india";
+
+  // Group same-time slots (e.g. an admin-opened batch of 9 at once) into a
+  // single row, then group same-weekday/time groups into one collapsible
+  // series — so a weekly-recurring batch reads as one row with an expand
+  // toggle instead of a dozen near-identical rows.
+  interface SlotOccurrence {
+    id: string;
+    startsAt: string;
+    count: number;
+  }
+  interface SlotSeries {
+    key: string;
+    label: string;
+    occurrences: SlotOccurrence[];
+  }
+  const slotSeries = useMemo<SlotSeries[]>(() => {
+    const groups = new Map<string, SlotOccurrence>();
+    for (const s of availableSlots) {
+      const g = groups.get(s.startsAt);
+      if (g) g.count += 1;
+      else groups.set(s.startsAt, { id: s.id, startsAt: s.startsAt, count: 1 });
+    }
+    const sortedGroups = Array.from(groups.values()).sort((a, b) =>
+      a.startsAt.localeCompare(b.startsAt),
+    );
+    const series = new Map<string, SlotSeries>();
+    for (const g of sortedGroups) {
+      const d = new Date(g.startsAt);
+      const weekday = new Intl.DateTimeFormat("en-US", {
+        weekday: "long",
+        timeZone: schoolTimezone,
+      }).format(d);
+      const time = new Intl.DateTimeFormat("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+        timeZone: schoolTimezone,
+      }).format(d);
+      const key = `${weekday}-${time}`;
+      let s = series.get(key);
+      if (!s) {
+        s = { key, label: `${weekday}, ${time}`, occurrences: [] };
+        series.set(key, s);
+      }
+      s.occurrences.push(g);
+    }
+    return Array.from(series.values());
+  }, [availableSlots, schoolTimezone]);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   // Only "KG 1" is exempt from the mandatory assessment — driven by the class
   // picked, not the child's age.
@@ -243,22 +299,75 @@ export function AdmissionForm({
         >
           {hasSlots ? (
             <div className="space-y-2">
-              {availableSlots.map((s) => (
-                <label
-                  key={s.id}
-                  className="flex cursor-pointer items-center gap-3 rounded-md border border-border px-3 py-2 text-sm transition-colors has-[:checked]:border-primary has-[:checked]:bg-secondary"
-                >
-                  <input type="radio" name="slot_id" value={s.id} required className="shrink-0" />
-                  <span>
-                    <span className="font-medium">
-                      {fmt(s.startsAt, schoolTimezone)} {schoolTimezoneLabel}
-                    </span>
-                    {tz && tz !== schoolTimezone && (
-                      <span className="text-muted-foreground"> · your time {fmt(s.startsAt, tz)}</span>
+              {slotSeries.map((series) => {
+                const isMulti = series.occurrences.length > 1;
+                if (!isMulti) {
+                  const o = series.occurrences[0];
+                  return (
+                    <label
+                      key={series.key}
+                      className="flex cursor-pointer items-center gap-3 rounded-md border border-border px-3 py-2 text-sm transition-colors has-[:checked]:border-primary has-[:checked]:bg-secondary"
+                    >
+                      <input type="radio" name="slot_id" value={o.id} required className="shrink-0" />
+                      <span>
+                        <span className="font-medium">
+                          {fmtWithDay(o.startsAt, schoolTimezone)} {schoolTimezoneLabel}
+                        </span>
+                        {tz && tz !== schoolTimezone && (
+                          <span className="text-muted-foreground">
+                            {" "}
+                            · your time {fmtWithDay(o.startsAt, tz)}
+                          </span>
+                        )}
+                      </span>
+                    </label>
+                  );
+                }
+
+                const isOpen = !!expanded[series.key];
+                return (
+                  <div key={series.key} className="rounded-md border border-border">
+                    <button
+                      type="button"
+                      onClick={() => setExpanded((e) => ({ ...e, [series.key]: !isOpen }))}
+                      aria-expanded={isOpen}
+                      className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-sm"
+                    >
+                      <span>
+                        <span className="font-medium">{series.label}</span>
+                        <span className="text-muted-foreground">
+                          {" "}
+                          · {series.occurrences.length} dates available
+                        </span>
+                      </span>
+                      <ChevronDown
+                        className={cn("size-4 shrink-0 transition-transform", isOpen && "rotate-180")}
+                      />
+                    </button>
+                    {isOpen && (
+                      <div className="divide-y divide-border border-t border-border">
+                        {series.occurrences.map((o) => (
+                          <label
+                            key={o.id}
+                            className="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm transition-colors has-[:checked]:bg-secondary"
+                          >
+                            <input type="radio" name="slot_id" value={o.id} required className="shrink-0" />
+                            <span>
+                              {fmtWithDay(o.startsAt, schoolTimezone)} {schoolTimezoneLabel}
+                              {tz && tz !== schoolTimezone && (
+                                <span className="text-muted-foreground">
+                                  {" "}
+                                  · your time {fmtWithDay(o.startsAt, tz)}
+                                </span>
+                              )}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
                     )}
-                  </span>
-                </label>
-              ))}
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <Alert variant="info">
