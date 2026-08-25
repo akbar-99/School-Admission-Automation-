@@ -82,7 +82,12 @@ export default async function AdminAssessmentsPage({
     { data: allSlotsData },
     { data: resultsData },
   ] = await Promise.all([
-    admin.from("users").select("id, full_name, email").eq("role", "teacher").order("full_name"),
+    admin
+      .from("users")
+      .select("id, full_name, email")
+      .eq("role", "teacher")
+      .eq("disabled", false)
+      .order("full_name"),
     admin
       .from("applications")
       .select(

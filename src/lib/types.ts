@@ -42,6 +42,8 @@ export interface AppUser {
   phone: string | null;
   // Zoom account email used to host this teacher's assessment meetings.
   zoom_email: string | null;
+  // Set when an admin removes this staff member's access (see removeStaff).
+  disabled: boolean;
   created_at: string;
   updated_at: string;
 }

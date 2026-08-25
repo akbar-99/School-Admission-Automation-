@@ -139,3 +139,92 @@ export async function setZoomEmail(formData: FormData) {
   revalidatePath("/admin/staff");
   back(zoom_email ? "Zoom email updated." : "Zoom email cleared.");
 }
+
+const StaffIdSchema = z.object({ user_id: z.string().uuid() });
+
+// Admin-only: revoke a staff member's access. Bans the auth account rather
+// than deleting it — users.id cascades from auth.users, and assessment_slots
+// / assessment_results reference users.id, so a hard delete would wipe their
+// assessment history (booked/completed slots, recorded results). Any of
+// their still-open, unclaimed slots go back to the pool.
+export async function removeStaff(formData: FormData) {
+  const { profile } = await requireRole(["admin"]);
+  const parsed = StaffIdSchema.safeParse({ user_id: formData.get("user_id") });
+  if (!parsed.success) back("Invalid staff member.", "error");
+  const { user_id } = parsed.data!;
+
+  if (user_id === profile.id) back("You can't remove your own account.", "error");
+
+  const admin = createSupabaseAdminClient();
+  const { data: target } = await admin
+    .from("users")
+    .select("role, email, full_name, disabled")
+    .eq("id", user_id)
+    .maybeSingle();
+  if (!target) back("Staff member not found.", "error");
+  if (target.disabled) back("Already removed.", "error");
+
+  if (target.role === "admin") {
+    const { count } = await admin
+      .from("users")
+      .select("id", { count: "exact", head: true })
+      .eq("role", "admin")
+      .eq("disabled", false);
+    if ((count ?? 0) <= 1) back("Can't remove the last active admin.", "error");
+  }
+
+  const { error: banErr } = await admin.auth.admin.updateUserById(user_id, {
+    ban_duration: "876000h", // effectively permanent; reactivate lifts it
+  });
+  if (banErr) back(banErr.message, "error");
+
+  await admin.from("users").update({ disabled: true }).eq("id", user_id);
+
+  // Release any not-yet-booked slots back to the open pool; leave booked/
+  // completed slots untouched as a historical record.
+  await admin
+    .from("assessment_slots")
+    .update({ teacher_id: null, claimed_by_teacher: false })
+    .eq("teacher_id", user_id)
+    .is("application_id", null);
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "staff.removed",
+    entity: "user",
+    entityId: user_id,
+    details: { email: target.email, role: target.role },
+  });
+
+  revalidatePath("/admin/staff");
+  revalidatePath("/admin/assessments");
+  back(`${target.full_name ?? target.email} removed — they can no longer sign in.`);
+}
+
+// Admin-only: restore a previously removed staff member's access.
+export async function reactivateStaff(formData: FormData) {
+  const { profile } = await requireRole(["admin"]);
+  const parsed = StaffIdSchema.safeParse({ user_id: formData.get("user_id") });
+  if (!parsed.success) back("Invalid staff member.", "error");
+  const { user_id } = parsed.data!;
+
+  const admin = createSupabaseAdminClient();
+  const { error: unbanErr } = await admin.auth.admin.updateUserById(user_id, {
+    ban_duration: "none",
+  });
+  if (unbanErr) back(unbanErr.message, "error");
+
+  await admin.from("users").update({ disabled: false }).eq("id", user_id);
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "staff.reactivated",
+    entity: "user",
+    entityId: user_id,
+  });
+
+  revalidatePath("/admin/staff");
+  back("Staff member reactivated.");
+}

@@ -1,7 +1,9 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getSessionUser } from "@/lib/auth";
 import { formatDateTime } from "@/lib/utils";
-import { inviteStaff, setZoomEmail } from "./actions";
+import { inviteStaff, setZoomEmail, removeStaff, reactivateStaff } from "./actions";
 import { SubmitButton } from "@/components/submit-button";
+import { RemoveStaffButton } from "@/components/admin/remove-staff-button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +19,7 @@ interface StaffRow {
   email: string | null;
   role: UserRole;
   zoom_email: string | null;
+  disabled: boolean;
   created_at: string;
 }
 
@@ -36,10 +39,12 @@ export default async function StaffPage({
   searchParams: Promise<{ ok?: string; error?: string }>;
 }) {
   const { ok, error } = await searchParams;
+  const session = await getSessionUser();
+  const currentUserId = session!.profile!.id;
   const admin = createSupabaseAdminClient();
   const { data } = await admin
     .from("users")
-    .select("id, full_name, email, role, zoom_email, created_at")
+    .select("id, full_name, email, role, zoom_email, disabled, created_at")
     .order("created_at", { ascending: true });
   const staff = (data ?? []) as StaffRow[];
 
@@ -111,19 +116,26 @@ export default async function StaffPage({
               <THead>
                 <TR>
                   <TH>Name</TH>
-                  <TH>Email</TH>
+                  <TH>Email (login ID)</TH>
                   <TH>Role</TH>
+                  <TH>Status</TH>
                   <TH>Zoom account</TH>
                   <TH>Added</TH>
+                  <TH>Access</TH>
                 </TR>
               </THead>
               <TBody>
                 {staff.map((s) => (
-                  <TR key={s.id}>
+                  <TR key={s.id} className={s.disabled ? "opacity-60" : undefined}>
                     <TD className="font-medium">{s.full_name ?? "—"}</TD>
                     <TD className="text-muted-foreground">{s.email ?? "—"}</TD>
                     <TD>
                       <Badge tone="info">{s.role}</Badge>
+                    </TD>
+                    <TD>
+                      <Badge tone={s.disabled ? "danger" : "success"}>
+                        {s.disabled ? "Removed" : "Active"}
+                      </Badge>
                     </TD>
                     <TD>
                       {ZOOM_ROLES.includes(s.role) ? (
@@ -135,8 +147,14 @@ export default async function StaffPage({
                             defaultValue={s.zoom_email ?? ""}
                             placeholder={s.email ?? "zoom@email"}
                             className="h-9 w-52"
+                            disabled={s.disabled}
                           />
-                          <SubmitButton size="sm" variant="outline" pendingText="…">
+                          <SubmitButton
+                            size="sm"
+                            variant="outline"
+                            pendingText="…"
+                            disabled={s.disabled || undefined}
+                          >
                             Save
                           </SubmitButton>
                         </form>
@@ -146,6 +164,24 @@ export default async function StaffPage({
                     </TD>
                     <TD className="whitespace-nowrap text-muted-foreground">
                       {formatDateTime(s.created_at)}
+                    </TD>
+                    <TD>
+                      {s.id === currentUserId ? (
+                        <span className="text-xs text-muted-foreground">You</span>
+                      ) : s.disabled ? (
+                        <form action={reactivateStaff}>
+                          <input type="hidden" name="user_id" value={s.id} />
+                          <SubmitButton size="sm" variant="outline" pendingText="…">
+                            Reactivate
+                          </SubmitButton>
+                        </form>
+                      ) : (
+                        <RemoveStaffButton
+                          action={removeStaff}
+                          userId={s.id}
+                          name={s.full_name ?? s.email ?? "this staff member"}
+                        />
+                      )}
                     </TD>
                   </TR>
                 ))}

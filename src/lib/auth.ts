@@ -61,6 +61,7 @@ export async function requireRole(roles: UserRole[]): Promise<{
   const user = await getSessionUser();
   if (!user) redirect("/login");
   if (!user.profile) redirect("/login?error=no-profile");
+  if (user.profile.disabled) redirect("/login?error=" + encodeURIComponent("Your access has been removed."));
   if (!roles.includes(user.profile.role)) {
     redirect(ROLE_HOME[user.profile.role] ?? "/login");
   }
