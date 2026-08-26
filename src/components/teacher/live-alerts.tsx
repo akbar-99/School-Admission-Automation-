@@ -11,15 +11,54 @@ interface ToastMsg {
 }
 
 interface SlotChangeRow {
+  id: string;
   application_id: string | null;
   teacher_id: string | null;
   claimed_by_teacher: boolean;
 }
 
-// Live popup + sound the instant something changes on this teacher's slots —
-// a parent books one, or an admin (re)assigns one to them — via Supabase
-// Realtime, so they don't have to keep refreshing the dashboard.
-export function TeacherLiveAlerts({ teacherId }: { teacherId: string }) {
+// A booked slot the server already knows about when the page renders — used
+// for the "catch up" pass on load, for anything that happened while the
+// teacher wasn't on the page to catch the live Realtime event.
+export interface InitialAlert {
+  id: string; // slot id — also the localStorage dedupe key
+  text: string;
+}
+
+const seenKey = (teacherId: string) => `teacher-seen-slots-${teacherId}`;
+
+function loadSeen(teacherId: string): Set<string> {
+  try {
+    const raw = window.localStorage.getItem(seenKey(teacherId));
+    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveSeen(teacherId: string, seen: Set<string>) {
+  try {
+    window.localStorage.setItem(seenKey(teacherId), JSON.stringify([...seen]));
+  } catch {
+    // localStorage unavailable (private mode, etc.) — just skip persisting.
+  }
+}
+
+// Popup + sound whenever something changes on this teacher's slots — a
+// parent books one, or an admin (re)assigns one to them. Two paths:
+// 1. Live, via Supabase Realtime, for anything that happens while this tab
+//    is open and connected.
+// 2. A "catch up" pass on mount against `initialAlerts` (computed
+//    server-side on every page load) for anything that happened while the
+//    teacher wasn't on the page — deduped per-browser via localStorage so
+//    the same booking doesn't re-alert on every subsequent visit.
+export function TeacherLiveAlerts({
+  teacherId,
+  initialAlerts = [],
+}: {
+  teacherId: string;
+  initialAlerts?: InitialAlert[];
+}) {
   const router = useRouter();
   const [toasts, setToasts] = useState<ToastMsg[]>([]);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -73,13 +112,29 @@ export function TeacherLiveAlerts({ teacherId }: { teacherId: string }) {
     }
   };
 
-  const pushToast = (text: string) => {
+  const pushToast = (text: string, opts: { refresh?: boolean } = {}) => {
     const id = ++idRef.current;
     setToasts((t) => [...t, { id, text }]);
     playChime();
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 9000);
-    router.refresh();
+    if (opts.refresh !== false) router.refresh();
   };
+
+  // Catch-up pass: anything the server already knew about on this render
+  // that this browser hasn't acknowledged yet. Runs once per mount; the page
+  // was just rendered fresh, so no need to router.refresh() here too.
+  useEffect(() => {
+    if (initialAlerts.length === 0) return;
+    const seen = loadSeen(teacherId);
+    const unseen = initialAlerts.filter((a) => !seen.has(a.id));
+    if (unseen.length === 0) return;
+    for (const a of unseen) {
+      pushToast(a.text, { refresh: false });
+      seen.add(a.id);
+    }
+    saveSeen(teacherId, seen);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teacherId]);
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -96,8 +151,14 @@ export function TeacherLiveAlerts({ teacherId }: { teacherId: string }) {
         (payload) => {
           const before = payload.old as Partial<SlotChangeRow>;
           const after = payload.new as SlotChangeRow;
+          const markSeen = () => {
+            const seen = loadSeen(teacherId);
+            seen.add(after.id);
+            saveSeen(teacherId, seen);
+          };
           if (!before.application_id && after.application_id) {
             pushToast("A parent just booked one of your assessment slots.");
+            markSeen();
           } else if (
             before.teacher_id !== teacherId &&
             after.teacher_id === teacherId &&

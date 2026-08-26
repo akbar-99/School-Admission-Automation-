@@ -129,9 +129,17 @@ export default async function TeacherPage({
     (s) => s.applications && s.applications.status !== "ASSESSMENT_SCHEDULED",
   );
 
+  // "Catch up" alerts for the live-popup component — anything already
+  // booked by the time this page rendered, so a teacher who wasn't on the
+  // page for the live Realtime event still gets notified on their next visit.
+  const initialAlerts = toRecord.map((s) => ({
+    id: s.id,
+    text: `${s.applications?.students?.full_name ?? "A parent"} booked your assessment slot on ${formatInZone(s.starts_at, schoolTz)} ${schoolLabel}.`,
+  }));
+
   return (
     <div className="space-y-6">
-      <TeacherLiveAlerts teacherId={teacherId} />
+      <TeacherLiveAlerts teacherId={teacherId} initialAlerts={initialAlerts} />
       <div>
         <h1 className="font-display text-3xl font-semibold tracking-tight">My assessments</h1>
         <p className="text-muted-foreground">
