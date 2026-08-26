@@ -84,19 +84,20 @@ export async function generateAdmissionsReportPdf(input: AdmissionsReportPdfInpu
 
   // ---- Table ----
   const cols: {
-    key: keyof AdmissionsReportRow | "status" | "createdAt" | "section";
+    key: keyof AdmissionsReportRow | "status" | "createdAt" | "section" | "category";
     label: string;
     x: number;
     w: number;
   }[] = [
-    { key: "studentName", label: "STUDENT", x: M, w: 140 },
-    { key: "parentName", label: "PARENT", x: M + 140, w: 120 },
-    { key: "parentPhone", label: "PHONE", x: M + 260, w: 85 },
-    { key: "gradeApplying", label: "GRADE", x: M + 345, w: 55 },
-    { key: "status", label: "STATUS", x: M + 400, w: 130 },
-    { key: "admissionNumber", label: "ADM. NO.", x: M + 530, w: 100 },
-    { key: "section", label: "SECTION", x: M + 630, w: 70 },
-    { key: "createdAt", label: "CREATED", x: M + 700, w: right - (M + 700) },
+    { key: "studentName", label: "STUDENT", x: M, w: 120 },
+    { key: "parentName", label: "PARENT", x: M + 120, w: 100 },
+    { key: "parentPhone", label: "PHONE", x: M + 220, w: 75 },
+    { key: "category", label: "CATEGORY", x: M + 295, w: 55 },
+    { key: "gradeApplying", label: "GRADE", x: M + 350, w: 45 },
+    { key: "status", label: "STATUS", x: M + 395, w: 110 },
+    { key: "admissionNumber", label: "ADM. NO.", x: M + 505, w: 90 },
+    { key: "section", label: "SECTION", x: M + 595, w: 60 },
+    { key: "createdAt", label: "CREATED", x: M + 655, w: right - (M + 655) },
   ];
 
   const headerRow = (yy: number) => {
@@ -128,6 +129,8 @@ export async function generateAdmissionsReportPdf(input: AdmissionsReportPdfInpu
           return fmtDate(r.createdAt);
         case "gradeApplying":
           return r.gradeApplying ?? "—";
+        case "category":
+          return r.category ?? "—";
         case "admissionNumber":
           return r.admissionNumber ?? "—";
         case "section":
