@@ -170,72 +170,78 @@ export default async function AdminOverview({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form
-            action="/admin"
-            method="get"
-            className="mb-4 flex flex-wrap items-end gap-3 border-b border-border pb-4"
-          >
-            <div className="space-y-1.5">
-              <Label htmlFor="status">Status</Label>
-              <Select id="status" name="status" defaultValue={filters.status ?? ""} className="w-48">
-                <option value="">All statuses</option>
-                {(Object.keys(STATUS_LABEL) as AppStatus[]).map((s) => (
-                  <option key={s} value={s}>
-                    {STATUS_LABEL[s]}
-                  </option>
-                ))}
-              </Select>
+          <form action="/admin" method="get" className="mb-4 space-y-4 border-b border-border pb-4">
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="status">Status</Label>
+                <Select id="status" name="status" defaultValue={filters.status ?? ""} className="w-48">
+                  <option value="">All statuses</option>
+                  {(Object.keys(STATUS_LABEL) as AppStatus[]).map((s) => (
+                    <option key={s} value={s}>
+                      {STATUS_LABEL[s]}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="category">Category</Label>
+                <Select id="category" name="category" defaultValue={filters.category ?? ""} className="w-28">
+                  <option value="">All</option>
+                  <option value="KG">KG</option>
+                  <option value="GRADE">Grade</option>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="grade">Grade</Label>
+                <Select id="grade" name="grade" defaultValue={filters.grade ?? ""} className="w-28">
+                  <option value="">All</option>
+                  {classOptions.map((g) => (
+                    <option key={g} value={g}>
+                      {g}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="from">Created from</Label>
+                <Input id="from" name="from" type="date" defaultValue={filters.from ?? ""} className="w-40" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="to">Created to</Label>
+                <Input id="to" name="to" type="date" defaultValue={filters.to ?? ""} className="w-40" />
+              </div>
+              <div className="flex items-center gap-2">
+                <Button type="submit" variant="outline">
+                  Filter
+                </Button>
+                {hasFilters && (
+                  <Link href="/admin" className={buttonVariants({ variant: "ghost" })}>
+                    Clear
+                  </Link>
+                )}
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="category">Category</Label>
-              <Select id="category" name="category" defaultValue={filters.category ?? ""} className="w-28">
-                <option value="">All</option>
-                <option value="KG">KG</option>
-                <option value="GRADE">Grade</option>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="grade">Grade</Label>
-              <Select id="grade" name="grade" defaultValue={filters.grade ?? ""} className="w-28">
-                <option value="">All</option>
-                {classOptions.map((g) => (
-                  <option key={g} value={g}>
-                    {g}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="from">Created from</Label>
-              <Input id="from" name="from" type="date" defaultValue={filters.from ?? ""} className="w-40" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="to">Created to</Label>
-              <Input id="to" name="to" type="date" defaultValue={filters.to ?? ""} className="w-40" />
-            </div>
-            <Button type="submit" variant="outline">
-              Filter
-            </Button>
-            {hasFilters && (
-              <Link href="/admin" className={buttonVariants({ variant: "ghost" })}>
-                Clear
-              </Link>
-            )}
-            <div className="ml-auto flex items-center gap-2">
-              <a
-                href={`/api/admin/export/pdf${exportQuery ? `?${exportQuery}` : ""}`}
-                className={buttonVariants({ variant: "outline", size: "sm" })}
-              >
-                <FileDown className="size-4" />
-                Export PDF
-              </a>
-              <a
-                href={`/api/admin/export/excel${exportQuery ? `?${exportQuery}` : ""}`}
-                className={buttonVariants({ variant: "outline", size: "sm" })}
-              >
-                <FileSpreadsheet className="size-4" />
-                Export Excel
-              </a>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
+              <p className="text-xs text-muted-foreground">
+                Export: <span className="font-medium text-foreground">{describeFilters(filters)}</span>
+              </p>
+              <div className="flex items-center gap-2">
+                <a
+                  href={`/api/admin/export/pdf${exportQuery ? `?${exportQuery}` : ""}`}
+                  className={buttonVariants({ variant: "outline", size: "sm" })}
+                >
+                  <FileDown className="size-4" />
+                  Export PDF
+                </a>
+                <a
+                  href={`/api/admin/export/excel${exportQuery ? `?${exportQuery}` : ""}`}
+                  className={buttonVariants({ variant: "outline", size: "sm" })}
+                >
+                  <FileSpreadsheet className="size-4" />
+                  Export Excel
+                </a>
+              </div>
             </div>
           </form>
 
