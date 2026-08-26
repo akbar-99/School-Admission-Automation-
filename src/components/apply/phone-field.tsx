@@ -57,7 +57,7 @@ export function PhoneField({
   const combined = digits ? `${dial}${digits}` : "";
 
   return (
-    <div className="flex gap-2">
+    <div className="flex min-w-[14rem] gap-2">
       <SearchSelect
         ariaLabel="Country code"
         value={iso}
@@ -75,7 +75,7 @@ export function PhoneField({
         value={number}
         onChange={(e) => setNumber(e.target.value)}
         placeholder={placeholder}
-        className="flex-1"
+        className="min-w-[6rem] flex-1"
       />
       <input type="hidden" name={name} value={combined} />
     </div>
