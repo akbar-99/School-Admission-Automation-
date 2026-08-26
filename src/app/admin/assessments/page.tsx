@@ -4,6 +4,7 @@ import { formatInZone, formatInZoneWithDay, toZonedInputValue } from "@/lib/util
 import { needsAssessment } from "@/lib/assessment";
 import { createAssessmentSlot, reassignSlotTeacher, generateZoomLink } from "../actions";
 import { AssignAssessmentRow } from "@/components/admin/assign-assessment-row";
+import { AdminUnavailableAlerts } from "@/components/admin/unavailable-alerts";
 import { SubmitButton } from "@/components/submit-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -130,6 +131,12 @@ export default async function AdminAssessmentsPage({
   const slots = (slotData ?? []) as unknown as SlotRow[];
   const scheduled = slots.filter((s) => s.application_id);
   const unavailableSlots = (unavailableData ?? []) as unknown as UnavailableRow[];
+  const unavailableInitialAlerts = unavailableSlots.map((s) => ({
+    id: s.id,
+    text: `${s.users?.full_name ?? s.users?.email ?? "A teacher"} can't attend the assessment${
+      s.applications?.students?.full_name ? ` for ${s.applications.students.full_name}` : ""
+    } on ${formatInZoneWithDay(s.starts_at, schoolTz)} ${schoolLabel}.`,
+  }));
 
   // Booked vs remaining (open + in-pool) vs expired, for whatever the teacher
   // filter above currently shows.
@@ -225,6 +232,7 @@ export default async function AdminAssessmentsPage({
 
   return (
     <div className="space-y-6">
+      <AdminUnavailableAlerts initialAlerts={unavailableInitialAlerts} />
       <div>
         <h1 className="font-display text-3xl font-semibold tracking-tight">Assessments</h1>
         <p className="text-muted-foreground">
