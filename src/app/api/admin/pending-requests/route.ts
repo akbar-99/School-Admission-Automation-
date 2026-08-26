@@ -1,9 +1,10 @@
 import { getSessionUser } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { needsAssessment } from "@/lib/assessment";
 
 export const dynamic = "force-dynamic";
 
-// Count of Grade applicants awaiting an assessment slot (the "Assessment
+// Count of applicants awaiting an assessment slot (the "Assessment
 // requests" list). Polled by the admin dashboard to alert on new requests.
 export async function GET() {
   const session = await getSessionUser();
@@ -11,10 +12,10 @@ export async function GET() {
     return Response.json({ error: "forbidden" }, { status: 403 });
   }
   const admin = createSupabaseAdminClient();
-  const { count } = await admin
+  const { data } = await admin
     .from("applications")
-    .select("id", { count: "exact", head: true })
-    .eq("category", "GRADE")
+    .select("grade_applying")
     .eq("status", "FORM_SUBMITTED");
-  return Response.json({ count: count ?? 0 });
+  const count = (data ?? []).filter((r) => needsAssessment(r.grade_applying ?? "")).length;
+  return Response.json({ count });
 }

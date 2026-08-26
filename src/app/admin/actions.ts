@@ -16,6 +16,7 @@ import {
 import { logAudit } from "@/lib/audit";
 import { config } from "@/lib/config";
 import { zonedTimeToUtcISO, toZonedInputValue } from "@/lib/utils";
+import { needsAssessment } from "@/lib/assessment";
 
 // ---------------------------------------------------------------------------
 // Weekly recurrence helpers — an admin picks a weekday (Monday, Tuesday…) and
@@ -208,10 +209,10 @@ export async function assignAssessment(formData: FormData) {
   const admin = createSupabaseAdminClient();
   const { data: app } = await admin
     .from("applications")
-    .select("status, category")
+    .select("status, grade_applying")
     .eq("id", application_id)
     .maybeSingle();
-  if (!app || app.category !== "GRADE" || app.status !== "FORM_SUBMITTED") {
+  if (!app || !needsAssessment(app.grade_applying ?? "") || app.status !== "FORM_SUBMITTED") {
     redirect(
       "/admin/assessments?error=" +
         encodeURIComponent("This applicant is no longer awaiting scheduling."),

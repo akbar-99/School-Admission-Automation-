@@ -1,6 +1,7 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { config } from "@/lib/config";
 import { formatInZone, formatInZoneWithDay, toZonedInputValue } from "@/lib/utils";
+import { needsAssessment } from "@/lib/assessment";
 import { createAssessmentSlot, reassignSlotTeacher } from "../actions";
 import { AssignAssessmentRow } from "@/components/admin/assign-assessment-row";
 import { SubmitButton } from "@/components/submit-button";
@@ -103,7 +104,6 @@ export default async function AdminAssessmentsPage({
       .select(
         "id, grade_applying, preferred_assessment_date, preferred_assessment_date_alt, preferred_assessment_tz, students(full_name), parents(full_name, phone)",
       )
-      .eq("category", "GRADE")
       .eq("status", "FORM_SUBMITTED")
       .order("preferred_assessment_date", { ascending: true }),
     slotQuery,
@@ -123,7 +123,9 @@ export default async function AdminAssessmentsPage({
       .order("starts_at", { ascending: true }),
   ]);
   const teachers = (teacherData ?? []) as TeacherRow[];
-  const requests = (requestData ?? []) as unknown as RequestRow[];
+  const requests = ((requestData ?? []) as unknown as RequestRow[]).filter((r) =>
+    needsAssessment(r.grade_applying ?? ""),
+  );
   const slots = (slotData ?? []) as unknown as SlotRow[];
   const scheduled = slots.filter((s) => s.application_id);
   const unavailableSlots = (unavailableData ?? []) as unknown as UnavailableRow[];

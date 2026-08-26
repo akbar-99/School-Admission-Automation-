@@ -5,6 +5,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { config, CURRICULUM_OPTIONS } from "@/lib/config";
 import { getSettings } from "@/lib/settings";
 import { getClassOptions } from "@/lib/classes";
+import { needsAssessment } from "@/lib/assessment";
 import { formatDateTime, formatINR, formatDate, formatInZone } from "@/lib/utils";
 import { bookSlot, acceptAgreement } from "./actions";
 import { AdmissionForm } from "@/components/apply/admission-form";
@@ -96,7 +97,7 @@ async function Content({
   // Assessment result (subject-wise), shown to the parent once recorded.
   let assessmentResult: { outcome: string; remarks: string | null } | null = null;
   let subjectResults: (SubjectResult & { url: string | null })[] = [];
-  if (app.category === "GRADE") {
+  if (needsAssessment(app.grade_applying ?? "")) {
     const { data: resultRow } = await admin
       .from("assessment_results")
       .select("outcome, remarks, subjects")
@@ -160,7 +161,7 @@ async function Content({
         </Card>
       )}
 
-      {status === "FORM_SUBMITTED" && app.category === "GRADE" && (
+      {status === "FORM_SUBMITTED" && needsAssessment(app.grade_applying ?? "") && (
         <SlotPicker
           token={token}
           requestedDate={app.preferred_assessment_date}
@@ -168,7 +169,7 @@ async function Content({
         />
       )}
 
-      {status === "FORM_SUBMITTED" && app.category === "KG" && (
+      {status === "FORM_SUBMITTED" && !needsAssessment(app.grade_applying ?? "") && (
         <InfoCard title="Application received" tone="info">
           Your application is being processed. You will receive the admission
           agreement and payment link shortly.

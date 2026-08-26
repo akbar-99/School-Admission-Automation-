@@ -5,7 +5,7 @@ import { headers } from "next/headers";
 import { z } from "zod";
 import { loadApplicationByToken } from "@/lib/parent";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { classCategory } from "@/lib/assessment";
+import { classCategory, needsAssessment } from "@/lib/assessment";
 import { ensureOrderForApplication, markPaymentCompleted } from "@/lib/payments";
 import {
   handleFormSubmitted,
@@ -99,10 +99,12 @@ export async function submitAdmissionForm(formData: FormData) {
   if (!parsed.success) fail(token, parsed.error.issues[0].message);
   const input = parsed.data;
 
-  // Category (and whether an assessment is required) is driven by the class
-  // the parent picked, not age — only "KG 1" is exempt from the assessment.
+  // Category (KG/GRADE) is a name-based label; whether an assessment is
+  // required is a separate rule — only "KG 1" is exempt, so e.g. "KG 2" is
+  // labeled "KG" but still requires an assessment. Neither is age-based.
   const grade = input.grade;
   const category = classCategory(grade);
+  const assessmentRequired = needsAssessment(grade);
 
   // Grade applicants may pick an open slot now for instant confirmation; if
   // none is picked (or none are open yet), an admin schedules it afterward.
@@ -180,11 +182,12 @@ export async function submitAdmissionForm(formData: FormData) {
     details: { category, grade },
   });
 
-  // If the parent picked an open slot on the form, book it now (Grade only):
-  // the slot is confirmed instantly and the parent, teacher and admin are all
-  // notified — no separate "please schedule" step. Falls back to the normal
-  // flow if the slot was just taken by someone else.
-  if (category === "GRADE" && slotId) {
+  // If the parent picked an open slot on the form, book it now (only for
+  // classes that require an assessment): the slot is confirmed instantly and
+  // the parent, teacher and admin are all notified — no separate "please
+  // schedule" step. Falls back to the normal flow if the slot was just taken
+  // by someone else.
+  if (assessmentRequired && slotId) {
     const { data: slot, error: bookErr } = await admin.rpc("book_assessment_slot", {
       p_slot: slotId,
       p_application: app.id,
@@ -270,7 +273,7 @@ export async function bookSlot(formData: FormData) {
   const { bundle } = await loadApplicationByToken(token);
   if (!bundle) fail(token, "This admission link is invalid or expired.");
   const app = bundle.application;
-  if (app.category !== "GRADE" || app.status !== "FORM_SUBMITTED") {
+  if (!needsAssessment(app.grade_applying ?? "") || app.status !== "FORM_SUBMITTED") {
     redirect(`/apply/${token}`);
   }
 

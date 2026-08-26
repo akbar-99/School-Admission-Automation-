@@ -8,6 +8,7 @@ import { logAudit } from "@/lib/audit";
 import { formatINR, formatInZone, formatDate } from "@/lib/utils";
 import { generateResultPdf } from "@/lib/result-pdf";
 import { ensureZoomForApplication } from "@/lib/zoom";
+import { needsAssessment } from "@/lib/assessment";
 import type { Application, Parent, Student, SubjectResult } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -95,13 +96,13 @@ export async function handleFormSubmitted(appId: string) {
         applicationId: app.id,
         event: "N-2",
         subject: "Application received",
-        body: `Hello ${parent.full_name},\n\nWe have received your admission application. Category detected: ${app.category}. We will be in touch with the next steps.`,
+        body: `Hello ${parent.full_name},\n\nWe have received your admission application for ${app.grade_applying}. We will be in touch with the next steps.`,
       },
       parent,
     ),
   );
 
-  if (app.category === "KG") {
+  if (!needsAssessment(app.grade_applying ?? "")) {
     // KG: straight to agreement
     messages.push(
       ...fanToStaff(await staffContacts(["admin"]), {
@@ -142,12 +143,12 @@ export async function handleFormSubmitted(appId: string) {
 // ---------------------------------------------------------------------------
 export async function notifySlotsPublished() {
   const admin = createSupabaseAdminClient();
-  const { data: pending } = await admin
+  const { data: pendingAll } = await admin
     .from("applications")
-    .select("id, parent_id, access_token, category, status")
-    .eq("category", "GRADE")
+    .select("id, parent_id, access_token, grade_applying, status")
     .eq("status", "FORM_SUBMITTED");
-  if (!pending || pending.length === 0) return;
+  const pending = (pendingAll ?? []).filter((a) => needsAssessment(a.grade_applying ?? ""));
+  if (pending.length === 0) return;
 
   const messages: OutboundMessage[] = [];
   for (const a of pending) {

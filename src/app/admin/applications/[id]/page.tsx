@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert } from "@/components/ui/alert";
 import { deleteApplication } from "../../actions";
+import { needsAssessment } from "@/lib/assessment";
 import type { Application, Student, Parent, Payment, SubjectResult } from "@/lib/types";
 
 const DOC_LABEL: Record<string, string> = {
@@ -96,7 +97,7 @@ export default async function ApplicationDetailPage({
     }),
   );
 
-  const isGrade = app.category === "GRADE";
+  const isGrade = needsAssessment(app.grade_applying ?? "");
   const schoolTz = config.school.timezone;
   const schoolLabel = config.school.timezoneLabel;
 

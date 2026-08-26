@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { formatDateTime } from "@/lib/utils";
 import { resolveSeat } from "./actions";
 import { getClassOptions } from "@/lib/classes";
+import { needsAssessment } from "@/lib/assessment";
 import {
   describeFilters,
   fetchAdmissionsReportRows,
@@ -105,7 +106,7 @@ export default async function AdminOverview({
   ];
   const needsAdmin = allRows.filter((r) => r.status === "NEEDS_ADMIN");
   const pendingRequests = allRows.filter(
-    (r) => r.status === "FORM_SUBMITTED" && r.category === "GRADE",
+    (r) => r.status === "FORM_SUBMITTED" && needsAssessment(r.grade_applying ?? ""),
   ).length;
 
   return (
