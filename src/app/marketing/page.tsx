@@ -6,6 +6,7 @@ import { createLead } from "./actions";
 import { describeFilters, parseAdmissionsFilters } from "@/lib/admissions-report";
 import { StatusBadge } from "@/components/status-badge";
 import { CopyButton } from "@/components/copy-button";
+import { PhoneField } from "@/components/apply/phone-field";
 import { SubmitButton } from "@/components/submit-button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -123,7 +124,7 @@ export default async function MarketingPage({
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="phone">Phone number *</Label>
-              <Input id="phone" name="phone" type="tel" required />
+              <PhoneField id="phone" name="phone" required />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="email">Email</Label>
