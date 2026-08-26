@@ -30,7 +30,7 @@ function fanToStaff(
   contacts: { email: string | null; phone: string | null }[],
   base: Omit<OutboundMessage, "channel" | "recipient">,
 ): OutboundMessage[] {
-  return contacts.flatMap((c) => multiChannel(base, c, ["email"]));
+  return contacts.flatMap((c) => multiChannel(base, c, ["email", "whatsapp"]));
 }
 
 // ---------------------------------------------------------------------------
@@ -236,7 +236,7 @@ export async function handleSlotBooked(
             body: `A parent booked your assessment slot on ${when} (Grade ${app.grade_applying}).${hostLine}`,
           },
           { email: t.email, phone: t.phone },
-          ["email"],
+          ["email", "whatsapp"],
         ),
       );
     }
@@ -300,7 +300,7 @@ export async function backfillZoomLink(appId: string): Promise<boolean> {
             body: `The Zoom meeting for your assessment on ${when} (Grade ${app.grade_applying}) is ready.\n\nStart as host:\n${meeting.startUrl}`,
           },
           { email: t.email, phone: t.phone },
-          ["email"],
+          ["email", "whatsapp"],
         ),
       );
     }
@@ -332,7 +332,7 @@ export async function notifyTeacherSlotAssigned(
         body: `An assessment slot on ${when} has been assigned to you. It will appear on your dashboard.`,
       },
       { email: t.email, phone: t.phone },
-      ["email"],
+      ["email", "whatsapp"],
     ),
   );
 }
@@ -438,7 +438,7 @@ export async function notifySlotReassigned(input: {
             body: `Your assessment on ${when} has been reassigned to another teacher. It's been removed from your dashboard.`,
           },
           { email: old.email, phone: old.phone },
-          ["email"],
+          ["email", "whatsapp"],
         ),
       );
     }
@@ -458,7 +458,7 @@ export async function notifySlotReassigned(input: {
           body: `An assessment on ${when} has been reassigned to you. Check your dashboard for details.`,
         },
         { email: newT.email, phone: newT.phone },
-        ["email"],
+        ["email", "whatsapp"],
       ),
     );
   }

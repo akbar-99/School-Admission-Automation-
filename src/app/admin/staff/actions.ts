@@ -13,6 +13,8 @@ const InviteSchema = z.object({
   full_name: z.string().trim().min(2, "Full name is required"),
   email: z.string().trim().email("A valid email is required"),
   role: z.enum(["marketing", "teacher", "class_teacher", "admin"]),
+  // WhatsApp-capable phone, in international format (e.g. 9199...). Optional.
+  phone: z.string().trim().min(7, "Enter a valid phone number").optional().or(z.literal("")),
   // Optional Zoom host email (assessment teachers). Defaults to the login email.
   zoom_email: z
     .string()
@@ -31,6 +33,11 @@ const ZoomEmailSchema = z.object({
     .or(z.literal("")),
 });
 
+const PhoneSchema = z.object({
+  user_id: z.string().uuid(),
+  phone: z.string().trim().min(7, "Enter a valid phone number").or(z.literal("")),
+});
+
 function back(msg: string, type: "ok" | "error" = "ok"): never {
   redirect(`/admin/staff?${type}=${encodeURIComponent(msg)}`);
 }
@@ -45,10 +52,11 @@ export async function inviteStaff(formData: FormData) {
     full_name: formData.get("full_name"),
     email: formData.get("email"),
     role: formData.get("role"),
+    phone: formData.get("phone") ?? "",
     zoom_email: formData.get("zoom_email") ?? "",
   });
   if (!parsed.success) back(parsed.error.issues[0].message, "error");
-  const { full_name, email, role, zoom_email } = parsed.data!;
+  const { full_name, email, role, phone, zoom_email } = parsed.data!;
 
   const admin = createSupabaseAdminClient();
 
@@ -70,7 +78,7 @@ export async function inviteStaff(formData: FormData) {
   const { error: pErr } = await admin
     .from("users")
     .upsert(
-      { id: data!.user!.id, role, full_name, email, zoom_email: zoom_email || null },
+      { id: data!.user!.id, role, full_name, email, phone: phone || null, zoom_email: zoom_email || null },
       { onConflict: "id" },
     );
   if (pErr) back(pErr.message, "error");
@@ -138,6 +146,37 @@ export async function setZoomEmail(formData: FormData) {
 
   revalidatePath("/admin/staff");
   back(zoom_email ? "Zoom email updated." : "Zoom email cleared.");
+}
+
+// Admin-only: set or clear a staff member's WhatsApp-capable phone number.
+export async function setStaffPhone(formData: FormData) {
+  const { profile } = await requireRole(["admin"]);
+
+  const parsed = PhoneSchema.safeParse({
+    user_id: formData.get("user_id"),
+    phone: (formData.get("phone") ?? "").toString().trim(),
+  });
+  if (!parsed.success) back(parsed.error.issues[0].message, "error");
+  const { user_id, phone } = parsed.data!;
+
+  const admin = createSupabaseAdminClient();
+  const { error } = await admin
+    .from("users")
+    .update({ phone: phone || null })
+    .eq("id", user_id);
+  if (error) back(error.message, "error");
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "staff.phone_set",
+    entity: "user",
+    entityId: user_id,
+    details: { phone: phone || null },
+  });
+
+  revalidatePath("/admin/staff");
+  back(phone ? "Phone number updated." : "Phone number cleared.");
 }
 
 const StaffIdSchema = z.object({ user_id: z.string().uuid() });

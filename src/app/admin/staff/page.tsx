@@ -1,7 +1,7 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getSessionUser } from "@/lib/auth";
 import { formatDateTime } from "@/lib/utils";
-import { inviteStaff, setZoomEmail, removeStaff, reactivateStaff } from "./actions";
+import { inviteStaff, setZoomEmail, setStaffPhone, removeStaff, reactivateStaff } from "./actions";
 import { SubmitButton } from "@/components/submit-button";
 import { RemoveStaffButton } from "@/components/admin/remove-staff-button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -17,6 +17,7 @@ interface StaffRow {
   id: string;
   full_name: string | null;
   email: string | null;
+  phone: string | null;
   role: UserRole;
   zoom_email: string | null;
   disabled: boolean;
@@ -44,7 +45,7 @@ export default async function StaffPage({
   const admin = createSupabaseAdminClient();
   const { data } = await admin
     .from("users")
-    .select("id, full_name, email, role, zoom_email, disabled, created_at")
+    .select("id, full_name, email, phone, role, zoom_email, disabled, created_at")
     .order("created_at", { ascending: true });
   const staff = (data ?? []) as StaffRow[];
 
@@ -53,7 +54,8 @@ export default async function StaffPage({
       <div>
         <h1 className="font-display text-3xl font-semibold tracking-tight">Staff accounts</h1>
         <p className="text-muted-foreground">
-          Invite marketing, teachers, and admins. They&apos;ll get an email to set their own password.
+          Invite marketing, teachers, and admins. They&apos;ll get an email to set their own
+          password. Add a phone number to also reach them on WhatsApp.
         </p>
       </div>
 
@@ -91,6 +93,13 @@ export default async function StaffPage({
               </Select>
             </div>
             <div className="space-y-1.5">
+              <Label htmlFor="phone">Phone (WhatsApp)</Label>
+              <Input id="phone" name="phone" type="tel" placeholder="+91 9XXXXXXXXX" />
+              <p className="text-xs text-muted-foreground">
+                Optional — used to send them WhatsApp notifications alongside email.
+              </p>
+            </div>
+            <div className="space-y-1.5">
               <Label htmlFor="zoom_email">Zoom account email</Label>
               <Input id="zoom_email" name="zoom_email" type="email" placeholder="Defaults to login email" />
               <p className="text-xs text-muted-foreground">
@@ -118,6 +127,7 @@ export default async function StaffPage({
                   <TH>Name</TH>
                   <TH>Email (login ID)</TH>
                   <TH>Role</TH>
+                  <TH>Phone (WhatsApp)</TH>
                   <TH>Zoom account</TH>
                   <TH>Added</TH>
                   <TH className="text-right">Access</TH>
@@ -135,6 +145,27 @@ export default async function StaffPage({
                           {s.disabled ? "Removed" : "Active"}
                         </Badge>
                       </div>
+                    </TD>
+                    <TD>
+                      <form action={setStaffPhone} className="flex items-center gap-1.5">
+                        <input type="hidden" name="user_id" value={s.id} />
+                        <Input
+                          name="phone"
+                          type="tel"
+                          defaultValue={s.phone ?? ""}
+                          placeholder="+91 9XXXXXXXXX"
+                          className="h-9 w-36"
+                          disabled={s.disabled}
+                        />
+                        <SubmitButton
+                          size="sm"
+                          variant="outline"
+                          pendingText="…"
+                          disabled={s.disabled || undefined}
+                        >
+                          Save
+                        </SubmitButton>
+                      </form>
                     </TD>
                     <TD>
                       {ZOOM_ROLES.includes(s.role) ? (
