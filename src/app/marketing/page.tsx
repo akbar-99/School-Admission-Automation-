@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { applyUrl } from "@/lib/parent";
 import { formatDateTime } from "@/lib/utils";
@@ -8,9 +9,11 @@ import { SubmitButton } from "@/components/submit-button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import { Alert } from "@/components/ui/alert";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
-import type { AppStatus } from "@/lib/types";
+import { STATUS_LABEL, type AppStatus } from "@/lib/types";
 
 interface Row {
   id: string;
@@ -24,19 +27,60 @@ interface Row {
   students: { full_name: string } | null;
 }
 
+function isoDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+function daysAgo(n: number): Date {
+  return new Date(Date.now() - n * 86_400_000);
+}
+
 export default async function MarketingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ created?: string; error?: string }>;
+  searchParams: Promise<{
+    created?: string;
+    error?: string;
+    status?: string;
+    from?: string;
+    to?: string;
+  }>;
 }) {
-  const { created, error } = await searchParams;
+  const { created, error, status, from, to } = await searchParams;
+  const hasFilters = Boolean(status || from || to);
   const admin = createSupabaseAdminClient();
-  const { data } = await admin
+
+  let query = admin
     .from("applications")
-    .select("id, status, category, grade_applying, lead_student_name, access_token, created_at, parents(full_name, phone, email), students(full_name)")
+    .select(
+      "id, status, category, grade_applying, lead_student_name, access_token, created_at, parents(full_name, phone, email), students(full_name)",
+    )
     .order("created_at", { ascending: false })
     .limit(100);
+  if (status) query = query.eq("status", status);
+  if (from) query = query.gte("created_at", `${from}T00:00:00`);
+  if (to) query = query.lte("created_at", `${to}T23:59:59`);
+
+  const { data } = await query;
   const rows = (data ?? []) as unknown as Row[];
+
+  // Quick date-range presets — each preserves the current status filter.
+  const presetHref = (f: string, t: string) => {
+    const params = new URLSearchParams();
+    if (status) params.set("status", status);
+    params.set("from", f);
+    params.set("to", t);
+    return `/marketing?${params.toString()}`;
+  };
+  const today = isoDate(new Date());
+  const presets = [
+    { label: "Today", href: presetHref(today, today) },
+    { label: "Last 7 days", href: presetHref(isoDate(daysAgo(6)), today) },
+    { label: "Last 30 days", href: presetHref(isoDate(daysAgo(29)), today) },
+    {
+      label: "This month",
+      href: presetHref(isoDate(new Date(new Date().getFullYear(), new Date().getMonth(), 1)), today),
+    },
+  ];
 
   return (
     <div className="space-y-6">
@@ -95,8 +139,54 @@ export default async function MarketingPage({
           <CardTitle>All leads ({rows.length})</CardTitle>
         </CardHeader>
         <CardContent>
+          <div className="mb-4 space-y-3 border-b border-border pb-4">
+            <form action="/marketing" method="get" className="flex flex-wrap items-end gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="status">Status</Label>
+                <Select id="status" name="status" defaultValue={status ?? ""} className="w-48">
+                  <option value="">All statuses</option>
+                  {(Object.keys(STATUS_LABEL) as AppStatus[]).map((s) => (
+                    <option key={s} value={s}>
+                      {STATUS_LABEL[s]}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="from">Created from</Label>
+                <Input id="from" name="from" type="date" defaultValue={from ?? ""} className="w-40" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="to">Created to</Label>
+                <Input id="to" name="to" type="date" defaultValue={to ?? ""} className="w-40" />
+              </div>
+              <Button type="submit" variant="outline">
+                Filter
+              </Button>
+              {hasFilters && (
+                <Link href="/marketing" className={buttonVariants({ variant: "ghost" })}>
+                  Clear
+                </Link>
+              )}
+            </form>
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-muted-foreground">Quick range:</span>
+              {presets.map((p) => (
+                <Link
+                  key={p.label}
+                  href={p.href}
+                  className={buttonVariants({ variant: "outline", size: "sm" })}
+                >
+                  {p.label}
+                </Link>
+              ))}
+            </div>
+          </div>
+
           {rows.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No leads yet.</p>
+            <p className="text-sm text-muted-foreground">
+              {hasFilters ? "No leads match this filter." : "No leads yet."}
+            </p>
           ) : (
             <Table>
               <THead>
