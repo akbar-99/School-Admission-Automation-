@@ -6,6 +6,7 @@ import { formatDate, formatInZone } from "@/lib/utils";
 import { submitResult, claimAssessmentSlot, reportUnavailable } from "./actions";
 import { SubmitButton } from "@/components/submit-button";
 import { OpenSlotsPool, type PoolSeries } from "@/components/teacher/open-slots-pool";
+import { TeacherLiveAlerts } from "@/components/teacher/live-alerts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -130,6 +131,7 @@ export default async function TeacherPage({
 
   return (
     <div className="space-y-6">
+      <TeacherLiveAlerts teacherId={teacherId} />
       <div>
         <h1 className="font-display text-3xl font-semibold tracking-tight">My assessments</h1>
         <p className="text-muted-foreground">
