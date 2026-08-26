@@ -104,6 +104,7 @@ export default async function MarketingPage({
                   <TH>Parent</TH>
                   <TH>Student</TH>
                   <TH>Category</TH>
+                  <TH>Grade</TH>
                   <TH>Status</TH>
                   <TH>Created</TH>
                   <TH>Link</TH>
@@ -118,6 +119,7 @@ export default async function MarketingPage({
                     </TD>
                     <TD>{r.students?.full_name ?? r.lead_student_name ?? "—"}</TD>
                     <TD>{r.category ?? "—"}</TD>
+                    <TD>{r.grade_applying ?? "—"}</TD>
                     <TD>
                       <StatusBadge status={r.status} />
                     </TD>
