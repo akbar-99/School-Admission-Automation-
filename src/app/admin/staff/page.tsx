@@ -96,9 +96,6 @@ export default async function StaffPage({
             <div className="space-y-1.5">
               <Label htmlFor="phone">Phone (WhatsApp)</Label>
               <PhoneField id="phone" name="phone" placeholder="9XXXXXXXXX" />
-              <p className="text-xs text-muted-foreground">
-                Optional — used to send them WhatsApp notifications alongside email.
-              </p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="zoom_email">Zoom account email</Label>
