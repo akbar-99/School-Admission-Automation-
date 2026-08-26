@@ -4,6 +4,7 @@ import { formatDateTime } from "@/lib/utils";
 import { inviteStaff, setZoomEmail, setStaffPhone, removeStaff, reactivateStaff } from "./actions";
 import { SubmitButton } from "@/components/submit-button";
 import { RemoveStaffButton } from "@/components/admin/remove-staff-button";
+import { PhoneField } from "@/components/apply/phone-field";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -94,7 +95,7 @@ export default async function StaffPage({
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="phone">Phone (WhatsApp)</Label>
-              <Input id="phone" name="phone" type="tel" placeholder="+91 9XXXXXXXXX" />
+              <PhoneField id="phone" name="phone" placeholder="9XXXXXXXXX" />
               <p className="text-xs text-muted-foreground">
                 Optional — used to send them WhatsApp notifications alongside email.
               </p>
@@ -149,13 +150,11 @@ export default async function StaffPage({
                     <TD>
                       <form action={setStaffPhone} className="flex items-center gap-1.5">
                         <input type="hidden" name="user_id" value={s.id} />
-                        <Input
+                        <PhoneField
+                          id={`phone-${s.id}`}
                           name="phone"
-                          type="tel"
                           defaultValue={s.phone ?? ""}
-                          placeholder="+91 9XXXXXXXXX"
-                          className="h-9 w-36"
-                          disabled={s.disabled}
+                          placeholder="9XXXXXXXXX"
                         />
                         <SubmitButton
                           size="sm"
