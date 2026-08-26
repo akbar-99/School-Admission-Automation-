@@ -246,6 +246,70 @@ export async function handleSlotBooked(
 }
 
 // ---------------------------------------------------------------------------
+// Backfill a Zoom meeting for a slot that was booked before Zoom was
+// configured (or whose earlier create attempt failed) — idempotent via
+// ensureZoomForApplication. Notifies the parent (join link) and teacher
+// (host link) once it's ready. Returns false if Zoom still isn't
+// configured/reachable, so the caller can show an error instead of a
+// silent no-op.
+// ---------------------------------------------------------------------------
+export async function backfillZoomLink(appId: string): Promise<boolean> {
+  const admin = createSupabaseAdminClient();
+  const { data: slot } = await admin
+    .from("assessment_slots")
+    .select("starts_at, teacher_id")
+    .eq("application_id", appId)
+    .maybeSingle();
+  if (!slot) return false;
+
+  const meeting = await ensureZoomForApplication(appId);
+  if (!meeting) return false;
+
+  const { data: appRow } = await admin.from("applications").select("*").eq("id", appId).single();
+  const app = appRow as Application;
+  const { data: parentRow } = await admin.from("parents").select("*").eq("id", app.parent_id).single();
+  const parent = parentRow as Parent;
+  const when = `${formatInZone(slot.starts_at, config.school.timezone)} ${config.school.timezoneLabel}`;
+
+  const messages: OutboundMessage[] = [
+    ...multiChannel(
+      {
+        applicationId: app.id,
+        event: "ZOOM_LINK_READY",
+        subject: "Your assessment Zoom link is ready",
+        body: `Hello ${parent.full_name},\n\nHere's the online meeting link for your assessment on ${when}:\n${meeting.joinUrl}${
+          meeting.passcode ? `\nPasscode: ${meeting.passcode}` : ""
+        }`,
+      },
+      parent,
+    ),
+  ];
+  if (slot.teacher_id) {
+    const { data: t } = await admin
+      .from("users")
+      .select("email, phone")
+      .eq("id", slot.teacher_id)
+      .maybeSingle();
+    if (t) {
+      messages.push(
+        ...multiChannel(
+          {
+            applicationId: app.id,
+            event: "ZOOM_LINK_READY",
+            subject: "Zoom link ready for your assessment",
+            body: `The Zoom meeting for your assessment on ${when} (Grade ${app.grade_applying}) is ready.\n\nStart as host:\n${meeting.startUrl}`,
+          },
+          { email: t.email, phone: t.phone },
+          ["email"],
+        ),
+      );
+    }
+  }
+  await dispatch(messages);
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // Admin assigned a new slot to a teacher — let the teacher know.
 // ---------------------------------------------------------------------------
 export async function notifyTeacherSlotAssigned(

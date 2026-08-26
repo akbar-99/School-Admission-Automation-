@@ -2,7 +2,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { config } from "@/lib/config";
 import { formatInZone, formatInZoneWithDay, toZonedInputValue } from "@/lib/utils";
 import { needsAssessment } from "@/lib/assessment";
-import { createAssessmentSlot, reassignSlotTeacher } from "../actions";
+import { createAssessmentSlot, reassignSlotTeacher, generateZoomLink } from "../actions";
 import { AssignAssessmentRow } from "@/components/admin/assign-assessment-row";
 import { SubmitButton } from "@/components/submit-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,6 +38,7 @@ interface SlotRow {
   teacher_id: string | null;
   claimed_by_teacher: boolean;
   unavailable_reported: boolean;
+  zoom_join_url: string | null;
   users: { full_name: string | null; email: string | null } | null;
   applications: {
     status: string;
@@ -76,7 +77,7 @@ export default async function AdminAssessmentsPage({
   let slotQuery = admin
     .from("assessment_slots")
     .select(
-      "id, starts_at, is_open, application_id, teacher_id, claimed_by_teacher, unavailable_reported, users(full_name, email), applications(status, grade_applying, students(full_name), parents(full_name, phone))",
+      "id, starts_at, is_open, application_id, teacher_id, claimed_by_teacher, unavailable_reported, zoom_join_url, users(full_name, email), applications(status, grade_applying, students(full_name), parents(full_name, phone))",
     )
     .order("starts_at", { ascending: true });
   if (teacherFilter === "unclaimed") {
@@ -451,6 +452,14 @@ export default async function AdminAssessmentsPage({
                     {formatInZone(s.starts_at, schoolTz)} {schoolLabel}
                   </span>
                   <StatusBadge status={(s.applications?.status ?? "ASSESSMENT_SCHEDULED") as AppStatus} />
+                  {!s.zoom_join_url && s.applications?.status !== "ASSESSMENT_COMPLETED" && (
+                    <form action={generateZoomLink}>
+                      <input type="hidden" name="application_id" value={s.application_id!} />
+                      <SubmitButton size="sm" variant="outline" pendingText="Creating…">
+                        Generate Zoom link
+                      </SubmitButton>
+                    </form>
+                  )}
                 </div>
               </div>
             ))

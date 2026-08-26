@@ -6,6 +6,7 @@ import { z } from "zod";
 import { requireRole } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
+  backfillZoomLink,
   handlePaymentCompleted,
   handleSlotBooked,
   notifyOpenSlotAvailable,
@@ -326,6 +327,31 @@ export async function reassignSlotTeacher(formData: FormData) {
   revalidatePath("/admin/assessments");
   revalidatePath("/teacher");
   redirect("/admin/assessments?ok=" + encodeURIComponent("Slot reassigned and everyone notified."));
+}
+
+// Backfill a Zoom meeting for a booked assessment that doesn't have one yet
+// (e.g. it was booked before Zoom was configured). Idempotent, notifies the
+// parent + teacher once the link is ready.
+const ZoomBackfillSchema = z.object({ application_id: z.string().uuid() });
+
+export async function generateZoomLink(formData: FormData) {
+  await requireRole(["admin"]);
+  const parsed = ZoomBackfillSchema.safeParse({ application_id: formData.get("application_id") });
+  if (!parsed.success) {
+    redirect("/admin/assessments?error=" + encodeURIComponent("Invalid application."));
+  }
+  const ok = await backfillZoomLink(parsed.data!.application_id);
+  revalidatePath("/admin/assessments");
+  revalidatePath("/teacher");
+  redirect(
+    "/admin/assessments?" +
+      (ok
+        ? "ok=" + encodeURIComponent("Zoom link created and sent to the parent and teacher.")
+        : "error=" +
+          encodeURIComponent(
+            "Couldn't create a Zoom meeting — check ZOOM_* is configured and the teacher's Zoom account.",
+          )),
+  );
 }
 
 // Permanently delete one applicant and all their records. Frees their seat if
