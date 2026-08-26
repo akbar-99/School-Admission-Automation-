@@ -9,6 +9,7 @@ import { formatINR, formatInZone, formatDate } from "@/lib/utils";
 import { generateResultPdf } from "@/lib/result-pdf";
 import { ensureZoomForApplication } from "@/lib/zoom";
 import { needsAssessment } from "@/lib/assessment";
+import { fetchSchoolLogo } from "@/lib/school-logo";
 import type { Application, Parent, Student, SubjectResult } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -484,13 +485,7 @@ export async function handleAssessmentResult(
       : null;
     const st = studentRow as { full_name?: string; dob?: string } | null;
     const s = await getSettings();
-    let logo: Uint8Array | null = null;
-    try {
-      const res = await fetch(`${config.appUrl}/broadway-logo.png`);
-      if (res.ok) logo = new Uint8Array(await res.arrayBuffer());
-    } catch {
-      /* logo is optional */
-    }
+    const logo = await fetchSchoolLogo();
     const pdf = await generateResultPdf({
       schoolName: s.schoolName,
       schoolPhone: s.schoolPhone,
