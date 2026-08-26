@@ -3,6 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { applyUrl } from "@/lib/parent";
 import { formatDateTime } from "@/lib/utils";
 import { createLead } from "./actions";
+import { describeFilters, parseAdmissionsFilters } from "@/lib/admissions-report";
 import { StatusBadge } from "@/components/status-badge";
 import { CopyButton } from "@/components/copy-button";
 import { SubmitButton } from "@/components/submit-button";
@@ -13,6 +14,7 @@ import { Select } from "@/components/ui/select";
 import { Alert } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
+import { FileDown, FileSpreadsheet } from "lucide-react";
 import { STATUS_LABEL, type AppStatus } from "@/lib/types";
 
 interface Row {
@@ -81,6 +83,10 @@ export default async function MarketingPage({
       href: presetHref(isoDate(new Date(new Date().getFullYear(), new Date().getMonth(), 1)), today),
     },
   ];
+  const exportQuery = new URLSearchParams(
+    Object.entries({ status, from, to }).filter(([, v]) => v) as [string, string][],
+  ).toString();
+  const filterSummary = describeFilters(parseAdmissionsFilters({ status, from, to }));
 
   return (
     <div className="space-y-6">
@@ -180,6 +186,27 @@ export default async function MarketingPage({
                   {p.label}
                 </Link>
               ))}
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
+              <p className="text-xs text-muted-foreground">
+                Export: <span className="font-medium text-foreground">{filterSummary}</span>
+              </p>
+              <div className="flex items-center gap-2">
+                <a
+                  href={`/api/marketing/export/pdf${exportQuery ? `?${exportQuery}` : ""}`}
+                  className={buttonVariants({ variant: "outline", size: "sm" })}
+                >
+                  <FileDown className="size-4" />
+                  Export PDF
+                </a>
+                <a
+                  href={`/api/marketing/export/excel${exportQuery ? `?${exportQuery}` : ""}`}
+                  className={buttonVariants({ variant: "outline", size: "sm" })}
+                >
+                  <FileSpreadsheet className="size-4" />
+                  Export Excel
+                </a>
+              </div>
             </div>
           </div>
 
