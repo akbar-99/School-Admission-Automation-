@@ -9,6 +9,7 @@ import {
   handlePaymentCompleted,
   handleSlotBooked,
   notifyOpenSlotAvailable,
+  notifySlotReassigned,
   notifySlotsPublished,
   notifyTeacherSlotAssigned,
 } from "@/lib/workflow";
@@ -250,6 +251,80 @@ export async function assignAssessment(formData: FormData) {
   redirect(
     "/admin/assessments?ok=" + encodeURIComponent("Assessment scheduled and everyone notified."),
   );
+}
+
+// Move a slot (claimed-but-unbooked, or already booked) to a different
+// teacher — e.g. the assigned teacher reported they can't attend. For a
+// booked slot the Zoom meeting is regenerated under the new teacher and the
+// parent is notified with the refreshed link.
+const ReassignSchema = z.object({
+  slot_id: z.string().uuid(),
+  teacher_id: z.string().uuid("Select a teacher"),
+});
+
+export async function reassignSlotTeacher(formData: FormData) {
+  const { profile } = await requireRole(["admin"]);
+  const parsed = ReassignSchema.safeParse({
+    slot_id: formData.get("slot_id"),
+    teacher_id: formData.get("teacher_id"),
+  });
+  if (!parsed.success) {
+    redirect("/admin/assessments?error=" + encodeURIComponent(parsed.error.issues[0].message));
+  }
+  const { slot_id, teacher_id: newTeacherId } = parsed.data!;
+
+  const admin = createSupabaseAdminClient();
+  const { data: slot } = await admin
+    .from("assessment_slots")
+    .select("id, teacher_id, starts_at, application_id")
+    .eq("id", slot_id)
+    .maybeSingle();
+  if (!slot) {
+    redirect("/admin/assessments?error=" + encodeURIComponent("Slot not found."));
+  }
+  if (slot!.teacher_id === newTeacherId) {
+    redirect("/admin/assessments?error=" + encodeURIComponent("Already assigned to that teacher."));
+  }
+
+  await admin
+    .from("assessment_slots")
+    .update({
+      teacher_id: newTeacherId,
+      claimed_by_teacher: false, // admin-assigned, not self-claimed
+      unavailable_reported: false,
+      unavailable_reported_at: null,
+      // Force the Zoom meeting to regenerate under the new host.
+      ...(slot!.application_id
+        ? {
+            zoom_meeting_id: null,
+            zoom_join_url: null,
+            zoom_start_url: null,
+            zoom_passcode: null,
+            zoom_created_at: null,
+          }
+        : {}),
+    })
+    .eq("id", slot_id);
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "assessment.slot_reassigned",
+    entity: "assessment_slot",
+    entityId: slot_id,
+    details: { from_teacher_id: slot!.teacher_id, to_teacher_id: newTeacherId },
+  });
+
+  await notifySlotReassigned({
+    slotStartsAt: slot!.starts_at,
+    oldTeacherId: slot!.teacher_id,
+    newTeacherId,
+    applicationId: slot!.application_id,
+  });
+
+  revalidatePath("/admin/assessments");
+  revalidatePath("/teacher");
+  redirect("/admin/assessments?ok=" + encodeURIComponent("Slot reassigned and everyone notified."));
 }
 
 // Permanently delete one applicant and all their records. Frees their seat if

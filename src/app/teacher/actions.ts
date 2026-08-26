@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireRole } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { handleAssessmentResult, notifySlotClaimed } from "@/lib/workflow";
+import { handleAssessmentResult, notifySlotClaimed, notifyTeacherUnavailable } from "@/lib/workflow";
 import { logAudit } from "@/lib/audit";
 
 // Slot creation is admin-only — see src/app/admin/actions.ts (createAssessmentSlot).
@@ -48,6 +48,82 @@ export async function claimAssessmentSlot(formData: FormData) {
   await notifySlotClaimed(profile.id, { starts_at: slot.starts_at });
   revalidatePath("/teacher");
   redirect("/teacher?claimed=1");
+}
+
+const ReportUnavailableSchema = z.object({ slot_id: z.string().uuid() });
+
+// A teacher can't make a slot on their dashboard. If it isn't booked yet
+// (still awaiting a parent), it's simply released back to the open pool for
+// any other teacher to claim. If it's already booked with an applicant, it
+// stays assigned but gets flagged for an admin to reassign — the booking
+// itself can't just be dropped.
+export async function reportUnavailable(formData: FormData) {
+  const { profile } = await requireRole(["teacher"]);
+  const parsed = ReportUnavailableSchema.safeParse({ slot_id: formData.get("slot_id") });
+  if (!parsed.success) {
+    redirect("/teacher?error=" + encodeURIComponent("Invalid slot."));
+  }
+  const { slot_id } = parsed.data!;
+
+  const admin = createSupabaseAdminClient();
+  const { data: slot } = await admin
+    .from("assessment_slots")
+    .select(
+      "id, teacher_id, starts_at, application_id, applications(students(full_name))",
+    )
+    .eq("id", slot_id)
+    .maybeSingle();
+  if (!slot || slot.teacher_id !== profile.id) {
+    redirect("/teacher?error=" + encodeURIComponent("That slot isn't assigned to you."));
+  }
+  if (new Date(slot.starts_at).getTime() < Date.now()) {
+    redirect("/teacher?error=" + encodeURIComponent("That slot has already passed."));
+  }
+
+  if (!slot.application_id) {
+    // Not booked yet — just release it back to the pool.
+    await admin
+      .from("assessment_slots")
+      .update({ teacher_id: null, claimed_by_teacher: false })
+      .eq("id", slot_id);
+    await logAudit({
+      actorId: profile.id,
+      actorRole: profile.role,
+      action: "assessment.slot_released",
+      entity: "assessment_slot",
+      entityId: slot_id,
+    });
+    revalidatePath("/teacher");
+    revalidatePath("/admin/assessments");
+    redirect("/teacher?released=1");
+  }
+
+  // Already booked — flag it for admin to reassign; don't touch the booking.
+  await admin
+    .from("assessment_slots")
+    .update({ unavailable_reported: true, unavailable_reported_at: new Date().toISOString() })
+    .eq("id", slot_id);
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "assessment.unavailable_reported",
+    entity: "assessment_slot",
+    entityId: slot_id,
+  });
+
+  const students = slot.applications as unknown as
+    | { students: { full_name: string | null } | null }
+    | { students: { full_name: string | null } | null }[]
+    | null;
+  const studentName = Array.isArray(students)
+    ? (students[0]?.students?.full_name ?? null)
+    : (students?.students?.full_name ?? null);
+  await notifyTeacherUnavailable(profile.id, { starts_at: slot.starts_at, studentName });
+
+  revalidatePath("/teacher");
+  revalidatePath("/admin/assessments");
+  redirect("/teacher?reported=1");
 }
 
 const ResultSchema = z.object({

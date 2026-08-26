@@ -3,7 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { config } from "@/lib/config";
 import { getSettings } from "@/lib/settings";
 import { formatDate, formatInZone } from "@/lib/utils";
-import { submitResult, claimAssessmentSlot } from "./actions";
+import { submitResult, claimAssessmentSlot, reportUnavailable } from "./actions";
 import { SubmitButton } from "@/components/submit-button";
 import { OpenSlotsPool, type PoolSeries } from "@/components/teacher/open-slots-pool";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,6 +23,7 @@ interface SlotRow {
   is_open: boolean;
   application_id: string | null;
   zoom_start_url: string | null;
+  unavailable_reported: boolean;
   applications: {
     id: string;
     status: string;
@@ -40,9 +41,15 @@ interface PoolSlotRow {
 export default async function TeacherPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; recorded?: string; claimed?: string }>;
+  searchParams: Promise<{
+    error?: string;
+    recorded?: string;
+    claimed?: string;
+    reported?: string;
+    released?: string;
+  }>;
 }) {
-  const { error, recorded, claimed } = await searchParams;
+  const { error, recorded, claimed, reported, released } = await searchParams;
   const session = await getSessionUser();
   const teacherId = session!.profile!.id;
   const admin = createSupabaseAdminClient();
@@ -54,7 +61,7 @@ export default async function TeacherPage({
   const { data } = await admin
     .from("assessment_slots")
     .select(
-      "id, starts_at, ends_at, is_open, application_id, zoom_start_url, applications(id, status, grade_applying, students(full_name, dob), parents(full_name, phone, email))",
+      "id, starts_at, ends_at, is_open, application_id, zoom_start_url, unavailable_reported, applications(id, status, grade_applying, students(full_name, dob), parents(full_name, phone, email))",
     )
     .eq("teacher_id", teacherId)
     .order("starts_at", { ascending: true });
@@ -133,6 +140,10 @@ export default async function TeacherPage({
       {error && <Alert variant="error">{error}</Alert>}
       {recorded && <Alert variant="success">Result recorded.</Alert>}
       {claimed && <Alert variant="success">Slot claimed — it&apos;s now on your schedule.</Alert>}
+      {reported && (
+        <Alert variant="success">Reported — the admin has been notified to reassign it.</Alert>
+      )}
+      {released && <Alert variant="success">Slot released back to the open pool.</Alert>}
 
       <Card>
         <CardHeader>
@@ -165,10 +176,10 @@ export default async function TeacherPage({
             <p className="text-sm text-muted-foreground">No assessments awaiting a result.</p>
           ) : (
             toRecord.map((s) => (
+              <div key={s.id} className="space-y-3 rounded-md border border-border p-4">
               <form
-                key={s.id}
                 action={submitResult}
-                className="space-y-3 rounded-md border border-border p-4"
+                className="space-y-3"
               >
                 <input type="hidden" name="application_id" value={s.application_id!} />
                 <input type="hidden" name="slot_id" value={s.id} />
@@ -211,6 +222,9 @@ export default async function TeacherPage({
                   </div>
                   <div className="flex flex-col items-end gap-2">
                     <Badge tone="info">Booked</Badge>
+                    {s.unavailable_reported && (
+                      <Badge tone="warning">Reported — awaiting reassignment</Badge>
+                    )}
                     {s.zoom_start_url && (
                       <a
                         href={s.zoom_start_url}
@@ -299,6 +313,15 @@ export default async function TeacherPage({
                   Record result
                 </SubmitButton>
               </form>
+              {!s.unavailable_reported && (
+                <form action={reportUnavailable}>
+                  <input type="hidden" name="slot_id" value={s.id} />
+                  <SubmitButton size="sm" variant="outline" pendingText="Reporting…">
+                    Can&apos;t attend — notify admin
+                  </SubmitButton>
+                </form>
+              )}
+              </div>
             ))
           )}
         </CardContent>
@@ -320,7 +343,15 @@ export default async function TeacherPage({
                   className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm"
                 >
                   <span>{formatInZone(s.starts_at, schoolTz)} {schoolLabel}</span>
-                  <Badge tone="info">Open</Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge tone="info">Open</Badge>
+                    <form action={reportUnavailable}>
+                      <input type="hidden" name="slot_id" value={s.id} />
+                      <SubmitButton size="sm" variant="outline" pendingText="…">
+                        Can&apos;t attend
+                      </SubmitButton>
+                    </form>
+                  </div>
                 </div>
               ))
             )}

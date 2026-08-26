@@ -317,6 +317,124 @@ export async function notifySlotClaimed(teacherId: string, slot: { starts_at: st
 }
 
 // ---------------------------------------------------------------------------
+// A teacher reported they can't attend a booked assessment — admins need to
+// reassign it to another teacher.
+// ---------------------------------------------------------------------------
+export async function notifyTeacherUnavailable(
+  teacherId: string,
+  slot: { starts_at: string; studentName?: string | null },
+) {
+  const admin = createSupabaseAdminClient();
+  const { data: t } = await admin
+    .from("users")
+    .select("full_name, email")
+    .eq("id", teacherId)
+    .maybeSingle();
+  const when = `${formatInZone(slot.starts_at, config.school.timezone)} ${config.school.timezoneLabel}`;
+  const who = slot.studentName ? ` for ${slot.studentName}` : "";
+  await dispatch(
+    fanToStaff(await staffContacts(["admin"]), {
+      event: "SLOT_UNAVAILABLE",
+      subject: "Teacher unavailable — assessment needs reassignment",
+      body: `${t?.full_name ?? t?.email ?? "A teacher"} reported they can't attend the assessment${who} on ${when}. Please reassign it to another teacher.`,
+    }),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Admin reassigned a booked/claimed slot to a different teacher — tell the
+// outgoing teacher, the new teacher, and (if booked) the parent with the
+// refreshed Zoom link.
+// ---------------------------------------------------------------------------
+export async function notifySlotReassigned(input: {
+  slotStartsAt: string;
+  oldTeacherId: string | null;
+  newTeacherId: string;
+  applicationId: string | null;
+}) {
+  const admin = createSupabaseAdminClient();
+  const when = `${formatInZone(input.slotStartsAt, config.school.timezone)} ${config.school.timezoneLabel}`;
+
+  const messages: OutboundMessage[] = [];
+
+  if (input.oldTeacherId) {
+    const { data: old } = await admin
+      .from("users")
+      .select("email, phone")
+      .eq("id", input.oldTeacherId)
+      .maybeSingle();
+    if (old) {
+      messages.push(
+        ...multiChannel(
+          {
+            event: "SLOT_REASSIGNED",
+            subject: "Assessment reassigned away from you",
+            body: `Your assessment on ${when} has been reassigned to another teacher. It's been removed from your dashboard.`,
+          },
+          { email: old.email, phone: old.phone },
+          ["email"],
+        ),
+      );
+    }
+  }
+
+  const { data: newT } = await admin
+    .from("users")
+    .select("email, phone")
+    .eq("id", input.newTeacherId)
+    .maybeSingle();
+  if (newT) {
+    messages.push(
+      ...multiChannel(
+        {
+          event: "SLOT_REASSIGNED",
+          subject: "Assessment reassigned to you",
+          body: `An assessment on ${when} has been reassigned to you. Check your dashboard for details.`,
+        },
+        { email: newT.email, phone: newT.phone },
+        ["email"],
+      ),
+    );
+  }
+
+  if (input.applicationId) {
+    // Regenerate the Zoom meeting under the new teacher before notifying the
+    // parent, so the confirmation carries a working link.
+    const meeting = await ensureZoomForApplication(input.applicationId);
+    const { data: appRow } = await admin
+      .from("applications")
+      .select("*")
+      .eq("id", input.applicationId)
+      .single();
+    const app = appRow as Application;
+    const { data: parentRow } = await admin
+      .from("parents")
+      .select("*")
+      .eq("id", app.parent_id)
+      .single();
+    const parent = parentRow as Parent;
+    const joinLine = meeting
+      ? `\n\nJoin the online assessment here at your slot time:\n${meeting.joinUrl}${
+          meeting.passcode ? `\nPasscode: ${meeting.passcode}` : ""
+        }`
+      : "";
+    messages.push(
+      ...multiChannel(
+        {
+          applicationId: app.id,
+          event: "SLOT_REASSIGNED",
+          subject: "Your assessment teacher has changed",
+          body: `Hello ${parent.full_name},\n\nYour assessment on ${when} is still confirmed, with a different teacher.${joinLine}`,
+        },
+        parent,
+      ),
+    );
+  }
+
+  await dispatch(messages);
+}
+
+// ---------------------------------------------------------------------------
 // N-5 Assessment result; N-10 on fail. Pass -> agreement (N-6).
 // ---------------------------------------------------------------------------
 export async function handleAssessmentResult(

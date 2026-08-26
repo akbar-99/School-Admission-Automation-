@@ -1,7 +1,7 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { config } from "@/lib/config";
 import { formatInZone, formatInZoneWithDay, toZonedInputValue } from "@/lib/utils";
-import { createAssessmentSlot } from "../actions";
+import { createAssessmentSlot, reassignSlotTeacher } from "../actions";
 import { AssignAssessmentRow } from "@/components/admin/assign-assessment-row";
 import { SubmitButton } from "@/components/submit-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,6 +36,7 @@ interface SlotRow {
   application_id: string | null;
   teacher_id: string | null;
   claimed_by_teacher: boolean;
+  unavailable_reported: boolean;
   users: { full_name: string | null; email: string | null } | null;
   applications: {
     status: string;
@@ -43,6 +44,14 @@ interface SlotRow {
     students: { full_name: string } | null;
     parents: { full_name: string; phone: string } | null;
   } | null;
+}
+interface UnavailableRow {
+  id: string;
+  starts_at: string;
+  teacher_id: string | null;
+  application_id: string | null;
+  users: { full_name: string | null; email: string | null } | null;
+  applications: { students: { full_name: string } | null } | null;
 }
 interface TeacherStats {
   totalSlots: number;
@@ -66,7 +75,7 @@ export default async function AdminAssessmentsPage({
   let slotQuery = admin
     .from("assessment_slots")
     .select(
-      "id, starts_at, is_open, application_id, teacher_id, claimed_by_teacher, users(full_name, email), applications(status, grade_applying, students(full_name), parents(full_name, phone))",
+      "id, starts_at, is_open, application_id, teacher_id, claimed_by_teacher, unavailable_reported, users(full_name, email), applications(status, grade_applying, students(full_name), parents(full_name, phone))",
     )
     .order("starts_at", { ascending: true });
   if (teacherFilter === "unclaimed") {
@@ -81,6 +90,7 @@ export default async function AdminAssessmentsPage({
     { data: slotData },
     { data: allSlotsData },
     { data: resultsData },
+    { data: unavailableData },
   ] = await Promise.all([
     admin
       .from("users")
@@ -102,11 +112,21 @@ export default async function AdminAssessmentsPage({
       .from("assessment_slots")
       .select("teacher_id, claimed_by_teacher, application_id, starts_at, applications(status)"),
     admin.from("assessment_results").select("teacher_id, outcome"),
+    // Also unfiltered — a "can't attend" report needs to stay visible regardless
+    // of whatever teacher filter is currently applied to the table below.
+    admin
+      .from("assessment_slots")
+      .select(
+        "id, starts_at, teacher_id, application_id, users(full_name, email), applications(students(full_name))",
+      )
+      .eq("unavailable_reported", true)
+      .order("starts_at", { ascending: true }),
   ]);
   const teachers = (teacherData ?? []) as TeacherRow[];
   const requests = (requestData ?? []) as unknown as RequestRow[];
   const slots = (slotData ?? []) as unknown as SlotRow[];
   const scheduled = slots.filter((s) => s.application_id);
+  const unavailableSlots = (unavailableData ?? []) as unknown as UnavailableRow[];
 
   // Booked vs remaining (open + in-pool) vs expired, for whatever the teacher
   // filter above currently shows.
@@ -211,6 +231,55 @@ export default async function AdminAssessmentsPage({
 
       {ok && <Alert variant="success">{ok}</Alert>}
       {error && <Alert variant="error">{error}</Alert>}
+
+      {unavailableSlots.length > 0 && (
+        <Card className="border-warning/40">
+          <CardHeader>
+            <CardTitle>Needs reassignment ({unavailableSlots.length})</CardTitle>
+            <CardDescription>
+              Teachers reported they can&apos;t attend these — pick a replacement teacher for each.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {unavailableSlots.map((s) => (
+              <form
+                key={s.id}
+                action={reassignSlotTeacher}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-sm"
+              >
+                <input type="hidden" name="slot_id" value={s.id} />
+                <div>
+                  <span className="font-medium">
+                    {formatInZoneWithDay(s.starts_at, schoolTz)} {schoolLabel}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {" "}
+                    · was {s.users?.full_name ?? s.users?.email ?? "unassigned"}
+                    {s.applications?.students?.full_name && ` · ${s.applications.students.full_name}`}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Select name="teacher_id" required defaultValue="" className="h-9 w-48">
+                    <option value="" disabled>
+                      New teacher…
+                    </option>
+                    {teachers
+                      .filter((t) => t.id !== s.teacher_id)
+                      .map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.full_name ?? t.email}
+                        </option>
+                      ))}
+                  </Select>
+                  <SubmitButton size="sm" pendingText="Reassigning…">
+                    Reassign
+                  </SubmitButton>
+                </div>
+              </form>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
@@ -537,6 +606,7 @@ export default async function AdminAssessmentsPage({
                   <TH>Assigned via</TH>
                   <TH>Status</TH>
                   <TH>Applicant</TH>
+                  <TH>Reassign</TH>
                 </TR>
               </THead>
               <TBody>
@@ -561,6 +631,11 @@ export default async function AdminAssessmentsPage({
                             {s.users?.email && (
                               <div className="text-xs text-muted-foreground">{s.users.email}</div>
                             )}
+                            {s.unavailable_reported && (
+                              <Badge tone="warning" className="mt-1">
+                                Can&apos;t attend
+                              </Badge>
+                            )}
                           </div>
                         )}
                       </TD>
@@ -577,6 +652,30 @@ export default async function AdminAssessmentsPage({
                               {s.applications.parents?.phone && ` · ${s.applications.parents.phone}`}
                             </div>
                           </div>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TD>
+                      <TD>
+                        {s.teacher_id && !past ? (
+                          <form action={reassignSlotTeacher} className="flex items-center gap-1.5">
+                            <input type="hidden" name="slot_id" value={s.id} />
+                            <Select name="teacher_id" required defaultValue="" className="h-9 w-36">
+                              <option value="" disabled>
+                                New teacher…
+                              </option>
+                              {teachers
+                                .filter((t) => t.id !== s.teacher_id)
+                                .map((t) => (
+                                  <option key={t.id} value={t.id}>
+                                    {t.full_name ?? t.email}
+                                  </option>
+                                ))}
+                            </Select>
+                            <SubmitButton size="sm" variant="outline" pendingText="…">
+                              Move
+                            </SubmitButton>
+                          </form>
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}
