@@ -8,6 +8,7 @@ export interface AdmissionsReportFilters {
   grade?: string;
   from?: string; // YYYY-MM-DD, inclusive
   to?: string; // YYYY-MM-DD, inclusive
+  createdBy?: string; // restrict to leads created by this staff user (marketing scoping)
 }
 
 export interface AdmissionsReportRow {
@@ -72,6 +73,7 @@ export async function fetchAdmissionsReportRows(
   if (filters.grade) query = query.eq("grade_applying", filters.grade);
   if (filters.from) query = query.gte("created_at", `${filters.from}T00:00:00`);
   if (filters.to) query = query.lte("created_at", `${filters.to}T23:59:59`);
+  if (filters.createdBy) query = query.eq("created_by", filters.createdBy);
 
   const { data } = await query;
   return ((data ?? []) as unknown as {

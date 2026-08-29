@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 // Marketing/admin: Excel export of the (filtered) leads list — same filters
 // as the All leads table on /marketing.
 export async function GET(request: Request) {
-  await requireRole(["marketing", "admin"]);
+  const { profile } = await requireRole(["marketing", "admin"]);
 
   const url = new URL(request.url);
   const filters = parseAdmissionsFilters({
@@ -21,6 +21,8 @@ export async function GET(request: Request) {
     from: url.searchParams.get("from") ?? undefined,
     to: url.searchParams.get("to") ?? undefined,
   });
+  // Marketing only exports leads they created themselves; admin exports all.
+  if (profile.role === "marketing") filters.createdBy = profile.id;
 
   const [rows, settings, logo] = await Promise.all([
     fetchAdmissionsReportRows(filters, 5000),

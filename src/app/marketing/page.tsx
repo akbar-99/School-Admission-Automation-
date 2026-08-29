@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { requireRole } from "@/lib/auth";
 import { applyUrl } from "@/lib/parent";
 import { formatDateTime } from "@/lib/utils";
 import { createLead } from "./actions";
@@ -50,6 +51,9 @@ export default async function MarketingPage({
 }) {
   const { created, error, status, from, to } = await searchParams;
   const hasFilters = Boolean(status || from || to);
+  const { profile } = await requireRole(["marketing", "admin"]);
+  // Marketing only sees leads they created themselves; admin sees everything.
+  const scopedToOwn = profile.role === "marketing";
   const admin = createSupabaseAdminClient();
 
   let query = admin
@@ -59,6 +63,7 @@ export default async function MarketingPage({
     )
     .order("created_at", { ascending: false })
     .limit(100);
+  if (scopedToOwn) query = query.eq("created_by", profile.id);
   if (status) query = query.eq("status", status);
   if (from) query = query.gte("created_at", `${from}T00:00:00`);
   if (to) query = query.lte("created_at", `${to}T23:59:59`);
@@ -143,7 +148,7 @@ export default async function MarketingPage({
 
       <Card>
         <CardHeader>
-          <CardTitle>All leads ({rows.length})</CardTitle>
+          <CardTitle>{scopedToOwn ? "Your leads" : "All leads"} ({rows.length})</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="mb-4 space-y-3 border-b border-border pb-4">
