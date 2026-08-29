@@ -23,10 +23,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Signature verification failed" }, { status: 400 });
   }
 
-  await markPaymentCompleted({
+  const result = await markPaymentCompleted({
     orderId: body.orderId,
     paymentId: body.paymentId,
     signature: body.signature,
   });
+  if (!result.ok && result.reason === "db_error") {
+    return NextResponse.json({ error: "Internal error, please retry" }, { status: 500 });
+  }
   return NextResponse.json({ ok: true });
 }

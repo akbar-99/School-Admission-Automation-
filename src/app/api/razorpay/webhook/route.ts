@@ -26,9 +26,16 @@ export async function POST(request: Request) {
   const orderId = entity?.order_id;
 
   if (event.event === "payment.captured" && orderId) {
-    await markPaymentCompleted({ orderId, paymentId: entity?.id, signature });
+    const result = await markPaymentCompleted({ orderId, paymentId: entity?.id, signature });
+    if (!result.ok && result.reason === "db_error") {
+      // Transient failure on our end — ask Razorpay to retry.
+      return NextResponse.json({ error: "Internal error, please retry" }, { status: 500 });
+    }
   } else if (event.event === "payment.failed" && orderId) {
-    await markPaymentFailed(orderId, entity?.error_description);
+    const result = await markPaymentFailed(orderId, entity?.error_description);
+    if (!result.ok && result.reason === "db_error") {
+      return NextResponse.json({ error: "Internal error, please retry" }, { status: 500 });
+    }
   }
 
   return NextResponse.json({ ok: true });
