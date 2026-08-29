@@ -251,6 +251,9 @@ async function Content({
                   token={token}
                   amountLabel={formatINR(settings.feePaise)}
                   razorpayEnabled={config.razorpay.enabled}
+                  allowMockPayment={
+                    !config.razorpay.enabled && process.env.NODE_ENV !== "production"
+                  }
                   razorpayKeyId={config.razorpay.publicKeyId}
                   parentName={parent.full_name}
                   parentEmail={parent.email}

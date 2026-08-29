@@ -17,6 +17,7 @@ export function PayPanel({
   token,
   amountLabel,
   razorpayEnabled,
+  allowMockPayment,
   razorpayKeyId,
   parentName,
   parentEmail,
@@ -25,6 +26,7 @@ export function PayPanel({
   token: string;
   amountLabel: string;
   razorpayEnabled: boolean;
+  allowMockPayment: boolean;
   razorpayKeyId: string;
   parentName: string;
   parentEmail: string | null;
@@ -86,7 +88,7 @@ export function PayPanel({
           {busy && <Loader2 className="animate-spin" />}
           Pay {amountLabel} with Razorpay
         </Button>
-      ) : (
+      ) : allowMockPayment ? (
         <form action={mockCompletePayment}>
           <input type="hidden" name="token" value={token} />
           <Alert variant="info" className="mb-3">
@@ -98,6 +100,11 @@ export function PayPanel({
             Simulate successful payment ({amountLabel})
           </SubmitButton>
         </form>
+      ) : (
+        <Alert variant="error">
+          Online payment is temporarily unavailable. Please contact the school to
+          complete your admission.
+        </Alert>
       )}
     </div>
   );

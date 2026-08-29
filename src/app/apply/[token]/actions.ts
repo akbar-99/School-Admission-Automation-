@@ -296,10 +296,12 @@ export async function bookSlot(formData: FormData) {
   redirect(`/apply/${token}`);
 }
 
-// Dev/mock payment completion — only when Razorpay keys are not configured.
-// In production the webhook (signature-verified) is the source of truth.
+// Dev/mock payment completion — only outside production, and only when
+// Razorpay keys are not configured. In production the webhook
+// (signature-verified) is the only way a payment is ever marked completed.
 export async function mockCompletePayment(formData: FormData) {
   const token = String(formData.get("token") ?? "");
+  if (process.env.NODE_ENV === "production") fail(token, "Use the Razorpay checkout to pay.");
   if (config.razorpay.enabled) fail(token, "Use the Razorpay checkout to pay.");
 
   const { bundle } = await loadApplicationByToken(token);
