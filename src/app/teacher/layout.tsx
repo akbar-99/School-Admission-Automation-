@@ -11,7 +11,10 @@ export default async function TeacherLayout({
     <DashboardShell
       roleLabel="Assessment Teacher"
       userName={profile.full_name ?? profile.email ?? "Teacher"}
-      nav={[{ href: "/teacher", label: "Assessments" }]}
+      nav={[
+        { href: "/teacher", label: "Assessments" },
+        { href: "/teacher/history", label: "Assessment history" },
+      ]}
     >
       {children}
     </DashboardShell>
