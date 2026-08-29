@@ -9,12 +9,16 @@ export function cn(...inputs: ClassValue[]) {
 export const ZOOM_LINK_LEAD_MINUTES = 30;
 
 // Whether a Zoom join/start link should be clickable right now — from
-// ZOOM_LINK_LEAD_MINUTES before the slot starts onward (including once it's
-// in progress or past; the meeting itself, not this check, is what actually
-// ends it).
-export function isZoomLinkActive(startsAt: string | Date): boolean {
+// ZOOM_LINK_LEAD_MINUTES before the slot starts through its scheduled end
+// time (if known). Past the end time it goes back to inactive — the real
+// Zoom meeting is over regardless of what this button says, so there's no
+// point leaving it live.
+export function isZoomLinkActive(startsAt: string | Date, endsAt?: string | Date | null): boolean {
+  const now = Date.now();
   const startMs = new Date(startsAt).getTime();
-  return Date.now() >= startMs - ZOOM_LINK_LEAD_MINUTES * 60_000;
+  if (now < startMs - ZOOM_LINK_LEAD_MINUTES * 60_000) return false;
+  if (endsAt && now > new Date(endsAt).getTime()) return false;
+  return true;
 }
 
 // Timers past this get skipped rather than scheduled anywhere in the app —

@@ -12,6 +12,7 @@ import { ZOOM_LINK_LEAD_MINUTES, MAX_SCHEDULABLE_TIMER_MS } from "@/lib/utils";
 // MAX_SCHEDULABLE_TIMER_MS.
 export function ZoomLinkGate({
   startsAt,
+  endsAt,
   href,
   label,
   initialActive,
@@ -19,6 +20,7 @@ export function ZoomLinkGate({
   children,
 }: {
   startsAt: string;
+  endsAt?: string | null;
   href: string;
   label: string;
   initialActive: boolean;
@@ -29,6 +31,11 @@ export function ZoomLinkGate({
 
   useEffect(() => {
     if (active) return;
+    // Already past the slot's end — nothing to schedule, this one just stays
+    // inactive. Without this check, a slot with initialActive=false *because*
+    // it's over would still compute a start-based delay of "already past" below
+    // and wrongly flip itself back on.
+    if (endsAt && Date.now() > new Date(endsAt).getTime()) return;
     const activationMs = new Date(startsAt).getTime() - ZOOM_LINK_LEAD_MINUTES * 60_000;
     const delay = activationMs - Date.now();
     if (delay <= 0) {
@@ -38,7 +45,7 @@ export function ZoomLinkGate({
     if (delay > MAX_SCHEDULABLE_TIMER_MS) return;
     const timer = setTimeout(() => setActive(true), delay);
     return () => clearTimeout(timer);
-  }, [active, startsAt]);
+  }, [active, startsAt, endsAt]);
 
   if (active) {
     return (
@@ -52,17 +59,19 @@ export function ZoomLinkGate({
     );
   }
 
+  const isOver = endsAt ? Date.now() > new Date(endsAt).getTime() : false;
+
   return (
     <div className="space-y-1.5">
       <span
         aria-disabled="true"
-        title={`Available ${ZOOM_LINK_LEAD_MINUTES} minutes before the slot`}
+        title={isOver ? "This slot has ended" : `Available ${ZOOM_LINK_LEAD_MINUTES} minutes before the slot`}
         className={buttonVariants({ size: "sm", variant: "outline" }) + " pointer-events-none opacity-50"}
       >
         <Video className="size-4" />
         {label}
       </span>
-      {inactiveHint && <p className="text-xs text-muted-foreground">{inactiveHint}</p>}
+      {!isOver && inactiveHint && <p className="text-xs text-muted-foreground">{inactiveHint}</p>}
     </div>
   );
 }

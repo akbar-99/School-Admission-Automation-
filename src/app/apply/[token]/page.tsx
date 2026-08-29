@@ -420,9 +420,10 @@ async function Content({
               {slot.zoom_join_url ? (
                 <ZoomLinkGate
                   startsAt={slot.starts_at}
+                  endsAt={slot.ends_at}
                   href={slot.zoom_join_url}
                   label="Join the Zoom assessment"
-                  initialActive={isZoomLinkActive(slot.starts_at)}
+                  initialActive={isZoomLinkActive(slot.starts_at, slot.ends_at)}
                   inactiveHint={`The join link becomes active ${ZOOM_LINK_LEAD_MINUTES} minutes before your slot.`}
                 >
                   {slot.zoom_passcode && (

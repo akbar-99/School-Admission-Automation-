@@ -238,15 +238,17 @@ export default async function TeacherPage({
                   </div>
                   <div className="flex flex-col items-end gap-2">
                     <Badge tone="info">Booked</Badge>
+                    {new Date(s.starts_at).getTime() < now && <Badge tone="danger">Overdue</Badge>}
                     {s.unavailable_reported && (
                       <Badge tone="warning">Reported — awaiting reassignment</Badge>
                     )}
                     {s.zoom_start_url && (
                       <ZoomLinkGate
                         startsAt={s.starts_at}
+                        endsAt={s.ends_at}
                         href={s.zoom_start_url}
                         label="Start Zoom (host)"
-                        initialActive={isZoomLinkActive(s.starts_at)}
+                        initialActive={isZoomLinkActive(s.starts_at, s.ends_at)}
                       />
                     )}
                   </div>
