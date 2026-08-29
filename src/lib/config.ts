@@ -19,7 +19,12 @@ export const config = {
   // injected `VERCEL_PROJECT_PRODUCTION_URL` / `VERCEL_URL`, then localhost.
   // Trailing slashes are stripped.
   appUrl: resolveAppUrl(),
-  appSecret: process.env.APP_SECRET ?? "dev-insecure-secret",
+  appSecret: (() => {
+    if (!process.env.APP_SECRET && process.env.NODE_ENV === "production") {
+      throw new Error("APP_SECRET must be set in production");
+    }
+    return process.env.APP_SECRET ?? "dev-insecure-secret";
+  })(),
 
   supabase: {
     url: process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
@@ -85,7 +90,7 @@ export const config = {
     },
   },
 
-  setupSecret: process.env.SETUP_SECRET ?? process.env.APP_SECRET ?? "setup",
+  setupSecret: process.env.SETUP_SECRET ?? "",
 } as const;
 
 // Fallback class list used only when no sections exist yet. Normally the

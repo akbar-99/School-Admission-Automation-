@@ -17,20 +17,35 @@ npm run dev            # http://localhost:3000 (or next free port)
 ```
 
 The Supabase schema for project `cqvjnblrevscoxhbnifo` is already applied
-(`supabase/migrations/`). To (re)seed the demo staff accounts:
+(`supabase/migrations/`). `/api/setup` is local-dev-only (it 404s in production
+unless `ALLOW_SETUP_ROUTE` is set) and needs `SETUP_SECRET` plus one password env
+var per role — nothing is hardcoded and nothing is echoed back. Set in
+`.env.local`:
 
 ```
-GET /api/setup?secret=<SETUP_SECRET>     # SETUP_SECRET is in .env.local
+SETUP_SECRET=<pick a random value>
+SETUP_ADMIN_PASSWORD=<pick a password>
+SETUP_MARKETING_PASSWORD=<pick a password>
+SETUP_TEACHER_PASSWORD=<pick a password>
+SETUP_CLASS_TEACHER_PASSWORD=<pick a password>
+```
+
+Then seed (any role whose password env var isn't set is skipped, not defaulted):
+
+```
+GET /api/setup?secret=<SETUP_SECRET>
 ```
 
 ### Demo staff logins (`/login`)
 
-| Role          | Email                          | Password        |
-| ------------- | ------------------------------ | --------------- |
-| Admin         | `admin@admission.local`        | `Admin@12345`   |
-| Marketing     | `marketing@admission.local`    | `Market@12345`  |
-| Teacher       | `teacher@admission.local`      | `Teacher@12345` |
-| Class teacher | `classteacher@admission.local` | `Class@12345`   |
+| Role          | Email                           |
+| ------------- | -------------------------------- |
+| Admin         | `admin@admission.local`          |
+| Marketing     | `marketing@admission.local`      |
+| Teacher       | `teacher@admission.local`        |
+| Class teacher | `classteacher@admission.local`   |
+
+(Password is whatever you set in `SETUP_*_PASSWORD` above.)
 
 Parents do **not** log in — they use the secure admission link (`/apply/<token>`).
 

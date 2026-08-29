@@ -5,20 +5,24 @@ import type { UserRole } from "@/lib/types";
 
 interface DemoUser {
   email: string;
-  password: string;
+  passwordEnvVar: string;
   role: UserRole;
   full_name: string;
 }
 
+// Passwords are never hardcoded and never echoed back — set them yourself in
+// .env.local before seeding, the same way you'd set any other secret.
 const DEMO_USERS: DemoUser[] = [
-  { email: "admin@admission.local", password: "Admin@12345", role: "admin", full_name: "Admin User" },
-  { email: "marketing@admission.local", password: "Market@12345", role: "marketing", full_name: "Marketing Team" },
-  { email: "teacher@admission.local", password: "Teacher@12345", role: "teacher", full_name: "Assessment Teacher" },
-  { email: "classteacher@admission.local", password: "Class@12345", role: "class_teacher", full_name: "Class Teacher" },
+  { email: "admin@admission.local", passwordEnvVar: "SETUP_ADMIN_PASSWORD", role: "admin", full_name: "Admin User" },
+  { email: "marketing@admission.local", passwordEnvVar: "SETUP_MARKETING_PASSWORD", role: "marketing", full_name: "Marketing Team" },
+  { email: "teacher@admission.local", passwordEnvVar: "SETUP_TEACHER_PASSWORD", role: "teacher", full_name: "Assessment Teacher" },
+  { email: "classteacher@admission.local", passwordEnvVar: "SETUP_CLASS_TEACHER_PASSWORD", role: "class_teacher", full_name: "Class Teacher" },
 ];
 
-// One-time setup: seed demo staff accounts (auth users + role profiles).
-// Guarded by SETUP_SECRET. Trigger with: GET /api/setup?secret=<SETUP_SECRET>
+// One-time local-dev setup: seed demo staff accounts (auth users + role
+// profiles). Disabled in production unless ALLOW_SETUP_ROUTE is explicitly
+// set. Guarded by SETUP_SECRET (no default — must be set, or every request
+// is rejected). Trigger with: GET /api/setup?secret=<SETUP_SECRET>
 export async function GET(request: Request) {
   const secret = new URL(request.url).searchParams.get("secret");
   return run(secret);
@@ -32,7 +36,10 @@ export async function POST(request: Request) {
 }
 
 async function run(secret: string | null) {
-  if (!secret || secret !== config.setupSecret) {
+  if (process.env.NODE_ENV === "production" && !process.env.ALLOW_SETUP_ROUTE) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  if (!config.setupSecret || !secret || secret !== config.setupSecret) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const admin = createSupabaseAdminClient();
@@ -40,11 +47,17 @@ async function run(secret: string | null) {
   const results: { email: string; role: UserRole; status: string }[] = [];
 
   for (const u of DEMO_USERS) {
+    const password = process.env[u.passwordEnvVar];
+    if (!password) {
+      results.push({ email: u.email, role: u.role, status: `skipped (set ${u.passwordEnvVar})` });
+      continue;
+    }
+
     let userId: string | null = null;
 
     const created = await admin.auth.admin.createUser({
       email: u.email,
-      password: u.password,
+      password,
       email_confirm: true,
     });
 
@@ -74,8 +87,7 @@ async function run(secret: string | null) {
 
   return NextResponse.json({
     ok: true,
-    message: "Demo staff ready. Sign in at /login.",
-    credentials: DEMO_USERS.map((u) => ({ email: u.email, password: u.password, role: u.role })),
+    message: "Demo staff ready (where a password env var was set). Sign in at /login.",
     results,
   });
 }
