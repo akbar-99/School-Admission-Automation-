@@ -100,6 +100,10 @@ export const config = {
   },
 
   setupSecret: process.env.SETUP_SECRET ?? "",
+  // Shared secret for the polling reminder route (/api/cron/assessment-reminders),
+  // since it's triggered by an external pinger rather than a request from a
+  // signed-in user. No default — unset means the route rejects everything.
+  cronSecret: process.env.CRON_SECRET ?? "",
 } as const;
 
 // Fallback class list used only when no sections exist yet. Normally the

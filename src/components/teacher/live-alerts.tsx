@@ -1,6 +1,6 @@
 "use client";
 
-import { LiveAlerts, type InitialAlert } from "@/components/live-alerts";
+import { LiveAlerts, type InitialAlert, type ScheduledAlert } from "@/components/live-alerts";
 
 interface SlotChangeRow {
   id: string;
@@ -14,14 +14,17 @@ interface SlotChangeRow {
 export function TeacherLiveAlerts({
   teacherId,
   initialAlerts = [],
+  scheduledAlerts = [],
 }: {
   teacherId: string;
   initialAlerts?: InitialAlert[];
+  scheduledAlerts?: ScheduledAlert[];
 }) {
   return (
     <LiveAlerts
       storageKey={`teacher-${teacherId}`}
       initialAlerts={initialAlerts}
+      scheduledAlerts={scheduledAlerts}
       subscribe={(supabase, push) =>
         supabase
           .channel(`teacher-slots-${teacherId}`)

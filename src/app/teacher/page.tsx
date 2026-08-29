@@ -132,9 +132,20 @@ export default async function TeacherPage({
     text: `${s.applications?.students?.full_name ?? "A parent"} booked your assessment slot on ${formatInZone(s.starts_at, schoolTz)} ${schoolLabel}.`,
   }));
 
+  // "Starts in 10 minutes" popups for each upcoming booked assessment still
+  // in the future — fires live in the browser at the right instant, no
+  // refresh needed (see ScheduledAlert in live-alerts.tsx).
+  const scheduledAlerts = toRecord
+    .filter((s) => new Date(s.starts_at).getTime() > now)
+    .map((s) => ({
+      id: `reminder-${s.id}`,
+      at: new Date(new Date(s.starts_at).getTime() - 10 * 60_000).toISOString(),
+      text: `Your assessment with ${s.applications?.students?.full_name ?? "an applicant"} starts in 10 minutes.`,
+    }));
+
   return (
     <div className="space-y-6">
-      <TeacherLiveAlerts teacherId={teacherId} initialAlerts={initialAlerts} />
+      <TeacherLiveAlerts teacherId={teacherId} initialAlerts={initialAlerts} scheduledAlerts={scheduledAlerts} />
       <div>
         <h1 className="font-display text-3xl font-semibold tracking-tight">My assessments</h1>
         <p className="text-muted-foreground">

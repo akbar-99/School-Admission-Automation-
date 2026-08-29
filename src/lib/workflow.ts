@@ -310,6 +310,76 @@ export async function backfillZoomLink(appId: string): Promise<boolean> {
 }
 
 // ---------------------------------------------------------------------------
+// 10-minutes-before reminder — fired by the polling cron route
+// (/api/cron/assessment-reminders), once per slot (guarded there by
+// assessment_slots.reminder_sent so a slot is never reminded twice). Notifies
+// the parent and the assigned teacher; by this point the Zoom link is already
+// active (it opens 30 minutes early), so it's safe to include.
+// ---------------------------------------------------------------------------
+export async function notifyAssessmentReminder(slot: {
+  application_id: string;
+  teacher_id: string | null;
+  starts_at: string;
+  zoom_join_url: string | null;
+  zoom_passcode: string | null;
+  zoom_start_url: string | null;
+}) {
+  const admin = createSupabaseAdminClient();
+  const { data: appRow } = await admin
+    .from("applications")
+    .select("*")
+    .eq("id", slot.application_id)
+    .maybeSingle();
+  if (!appRow) return;
+  const app = appRow as Application;
+  const { data: parentRow } = await admin.from("parents").select("*").eq("id", app.parent_id).maybeSingle();
+  if (!parentRow) return;
+  const parent = parentRow as Parent;
+
+  const when = `${formatInZone(slot.starts_at, config.school.timezone)} ${config.school.timezoneLabel}`;
+  const joinLine = slot.zoom_join_url
+    ? `\n\nJoin here:\n${slot.zoom_join_url}${slot.zoom_passcode ? `\nPasscode: ${slot.zoom_passcode}` : ""}`
+    : "";
+
+  const messages: OutboundMessage[] = [
+    ...multiChannel(
+      {
+        applicationId: app.id,
+        event: "ASSESSMENT_REMINDER",
+        subject: "Your assessment starts in 10 minutes",
+        body: `Hello ${parent.full_name},\n\nYour assessment starts in 10 minutes, at ${when}.${joinLine}`,
+      },
+      parent,
+    ),
+  ];
+
+  if (slot.teacher_id) {
+    const { data: t } = await admin
+      .from("users")
+      .select("email, phone")
+      .eq("id", slot.teacher_id)
+      .maybeSingle();
+    if (t) {
+      const hostLine = slot.zoom_start_url ? `\n\nStart as host:\n${slot.zoom_start_url}` : "";
+      messages.push(
+        ...multiChannel(
+          {
+            applicationId: app.id,
+            event: "ASSESSMENT_REMINDER",
+            subject: "Your assessment starts in 10 minutes",
+            body: `Hello,\n\nYour assessment${app.grade_applying ? ` with a Grade ${app.grade_applying} applicant` : ""} starts in 10 minutes, at ${when}.${hostLine}`,
+          },
+          { email: t.email, phone: t.phone },
+          ["email", "whatsapp"],
+        ),
+      );
+    }
+  }
+
+  await dispatch(messages);
+}
+
+// ---------------------------------------------------------------------------
 // Admin assigned a new slot to a teacher — let the teacher know.
 // ---------------------------------------------------------------------------
 export async function notifyTeacherSlotAssigned(

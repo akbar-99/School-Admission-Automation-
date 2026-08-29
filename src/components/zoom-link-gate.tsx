@@ -3,20 +3,13 @@
 import { useEffect, useState } from "react";
 import { Video } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
-import { ZOOM_LINK_LEAD_MINUTES } from "@/lib/utils";
-
-// Timers past this get skipped rather than scheduled — setTimeout silently
-// fires immediately in browsers once the delay exceeds the ~24.8-day 32-bit
-// signed int limit, and slots in this app are routinely booked weeks out.
-// A tab realistically won't stay open across that gap anyway; the next page
-// load will just re-evaluate from the server and render the right state.
-const MAX_SCHEDULABLE_MS = 12 * 60 * 60 * 1000; // 12 hours
+import { ZOOM_LINK_LEAD_MINUTES, MAX_SCHEDULABLE_TIMER_MS } from "@/lib/utils";
 
 // Renders the Zoom join/start link as a real link once active, or a
 // disabled placeholder before that — matching whatever the server decided
 // at render time (`initialActive`), then flips live in the browser at the
 // exact activation instant with no page refresh needed, for waits under
-// MAX_SCHEDULABLE_MS.
+// MAX_SCHEDULABLE_TIMER_MS.
 export function ZoomLinkGate({
   startsAt,
   href,
@@ -42,7 +35,7 @@ export function ZoomLinkGate({
       setActive(true);
       return;
     }
-    if (delay > MAX_SCHEDULABLE_MS) return;
+    if (delay > MAX_SCHEDULABLE_TIMER_MS) return;
     const timer = setTimeout(() => setActive(true), delay);
     return () => clearTimeout(timer);
   }, [active, startsAt]);

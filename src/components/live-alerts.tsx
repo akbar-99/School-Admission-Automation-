@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, X } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { MAX_SCHEDULABLE_TIMER_MS } from "@/lib/utils";
 import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 
 interface ToastMsg {
@@ -16,6 +17,17 @@ interface ToastMsg {
 // on the page to catch the live Realtime event.
 export interface InitialAlert {
   id: string; // dedupe key, e.g. a slot id
+  text: string;
+}
+
+// A future, one-off alert (e.g. "your assessment starts in 10 minutes") to
+// pop at a specific instant while this tab is open — no Realtime event
+// involved. Only scheduled for waits under MAX_SCHEDULABLE_TIMER_MS; an
+// already-past `at` is skipped rather than fired immediately (there's
+// nothing to "catch up" on for a forward-looking reminder like this).
+export interface ScheduledAlert {
+  id: string; // dedupe key, shares the same seen-set as InitialAlert
+  at: string; // ISO instant to fire at
   text: string;
 }
 
@@ -56,11 +68,13 @@ function saveSeen(storageKey: string, seen: Set<string>) {
 export function LiveAlerts({
   storageKey,
   initialAlerts = [],
+  scheduledAlerts = [],
   subscribe,
 }: {
   storageKey: string;
   initialAlerts?: InitialAlert[];
-  subscribe: (
+  scheduledAlerts?: ScheduledAlert[];
+  subscribe?: (
     supabase: SupabaseClient,
     push: (text: string, seenId?: string) => void,
   ) => RealtimeChannel;
@@ -156,6 +170,7 @@ export function LiveAlerts({
   }, [storageKey]);
 
   useEffect(() => {
+    if (!subscribe) return;
     const supabase = createSupabaseBrowserClient();
     const channel = subscribe(supabase, pushAndMarkSeen);
     return () => {
@@ -163,6 +178,28 @@ export function LiveAlerts({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageKey]);
+
+  // Forward-looking timers: schedule each not-yet-seen alert to pop at its
+  // own instant. Skips anything already past (nothing to catch up on for a
+  // reminder) or further out than MAX_SCHEDULABLE_TIMER_MS (setTimeout fires
+  // immediately past its ~24.8-day 32-bit limit — a page realistically won't
+  // stay open that long anyway; a later page load re-schedules correctly).
+  useEffect(() => {
+    if (scheduledAlerts.length === 0) return;
+    const seen = loadSeen(storageKey);
+    const timers = scheduledAlerts
+      .filter((a) => !seen.has(a.id))
+      .map((a) => {
+        const delay = new Date(a.at).getTime() - Date.now();
+        if (delay <= 0 || delay > MAX_SCHEDULABLE_TIMER_MS) return null;
+        return setTimeout(() => pushAndMarkSeen(a.text, a.id), delay);
+      })
+      .filter((t): t is ReturnType<typeof setTimeout> => t !== null);
+    return () => {
+      timers.forEach(clearTimeout);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageKey, scheduledAlerts]);
 
   if (toasts.length === 0) return null;
 

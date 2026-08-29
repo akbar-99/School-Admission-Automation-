@@ -17,6 +17,14 @@ export function isZoomLinkActive(startsAt: string | Date): boolean {
   return Date.now() >= startMs - ZOOM_LINK_LEAD_MINUTES * 60_000;
 }
 
+// Timers past this get skipped rather than scheduled anywhere in the app —
+// browsers silently fire setTimeout immediately once its delay exceeds the
+// ~24.8-day 32-bit signed int limit, and this app routinely schedules things
+// (Zoom activation, assessment reminders) for slots booked weeks out. A tab
+// realistically won't stay open across that gap anyway; the next real page
+// load / server check re-evaluates from scratch.
+export const MAX_SCHEDULABLE_TIMER_MS = 12 * 60 * 60 * 1000; // 12 hours
+
 export function formatINR(paise: number): string {
   return new Intl.NumberFormat("en-IN", {
     style: "currency",

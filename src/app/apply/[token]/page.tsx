@@ -1,6 +1,7 @@
 import { CalendarClock, BookOpen, Phone, Download } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { ZoomLinkGate } from "@/components/zoom-link-gate";
+import { LiveAlerts } from "@/components/live-alerts";
 import { loadApplicationByToken } from "@/lib/parent";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { config, CURRICULUM_OPTIONS } from "@/lib/config";
@@ -386,6 +387,18 @@ async function Content({
       .maybeSingle();
     return (
       <Card>
+        {slot && new Date(slot.starts_at).getTime() > Date.now() && (
+          <LiveAlerts
+            storageKey={`parent-${appId}`}
+            scheduledAlerts={[
+              {
+                id: `reminder-${appId}`,
+                at: new Date(new Date(slot.starts_at).getTime() - 10 * 60_000).toISOString(),
+                text: "Your assessment starts in 10 minutes.",
+              },
+            ]}
+          />
+        )}
         <CardHeader>
           <CardTitle>Assessment scheduled</CardTitle>
           <CardDescription>This is an online assessment held over Zoom.</CardDescription>
