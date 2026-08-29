@@ -20,7 +20,16 @@ export const config = {
   // Trailing slashes are stripped.
   appUrl: resolveAppUrl(),
   appSecret: (() => {
-    if (!process.env.APP_SECRET && process.env.NODE_ENV === "production") {
+    // Server-only guard: config.ts has no "server-only" marker (config.supabase.url/
+    // anonKey are legitimately read from client components), so this whole module gets
+    // bundled into client code too. There, process.env.APP_SECRET is always stripped to
+    // undefined (it isn't NEXT_PUBLIC_), so without the `typeof window` check this threw
+    // unconditionally in every production page load, regardless of the real server env.
+    if (
+      typeof window === "undefined" &&
+      !process.env.APP_SECRET &&
+      process.env.NODE_ENV === "production"
+    ) {
       throw new Error("APP_SECRET must be set in production");
     }
     return process.env.APP_SECRET ?? "dev-insecure-secret";
