@@ -2,6 +2,7 @@ import "server-only";
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { logAudit } from "@/lib/audit";
 import type { AppUser, UserRole } from "@/lib/types";
 
 export interface SessionUser {
@@ -61,8 +62,24 @@ export async function requireRole(roles: UserRole[]): Promise<{
   const user = await getSessionUser();
   if (!user) redirect("/login");
   if (!user.profile) redirect("/login?error=no-profile");
-  if (user.profile.disabled) redirect("/login?error=" + encodeURIComponent("Your access has been removed."));
+  if (user.profile.disabled) {
+    await logAudit({
+      actorId: user.profile.id,
+      actorRole: user.profile.role,
+      action: "access.denied",
+      entity: "auth",
+      details: { reason: "disabled", requiredRoles: roles },
+    });
+    redirect("/login?error=" + encodeURIComponent("Your access has been removed."));
+  }
   if (!roles.includes(user.profile.role)) {
+    await logAudit({
+      actorId: user.profile.id,
+      actorRole: user.profile.role,
+      action: "access.denied",
+      entity: "auth",
+      details: { reason: "role_mismatch", requiredRoles: roles },
+    });
     redirect(ROLE_HOME[user.profile.role] ?? "/login");
   }
   return { user, profile: user.profile };
