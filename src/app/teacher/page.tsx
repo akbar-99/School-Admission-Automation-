@@ -7,6 +7,7 @@ import { submitResult, claimAssessmentSlot, reportUnavailable } from "./actions"
 import { SubmitButton } from "@/components/submit-button";
 import { OpenSlotsPool, type PoolSeries } from "@/components/teacher/open-slots-pool";
 import { TeacherLiveAlerts } from "@/components/teacher/live-alerts";
+import { AssessmentOutcomeChart } from "@/components/teacher/assessment-outcome-chart";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -67,6 +68,16 @@ export default async function TeacherPage({
     .eq("teacher_id", teacherId)
     .order("starts_at", { ascending: true });
   const slots = (data ?? []) as unknown as SlotRow[];
+
+  // This teacher's own recorded outcomes, for the pass/fail chart below —
+  // the authoritative source (not inferred from the applicant's current
+  // downstream status, which can move for reasons unrelated to the result).
+  const { data: resultsData } = await admin
+    .from("assessment_results")
+    .select("outcome")
+    .eq("teacher_id", teacherId);
+  const passCount = (resultsData ?? []).filter((r) => r.outcome === "PASS").length;
+  const failCount = (resultsData ?? []).filter((r) => r.outcome === "FAIL").length;
 
   // Open, unassigned slots any teacher can claim on a first-come basis.
   const { data: poolData } = await admin
@@ -337,42 +348,44 @@ export default async function TeacherPage({
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Your upcoming slots ({upcoming.length})</CardTitle>
-            <CardDescription>Assigned by admin, awaiting a parent booking.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {upcoming.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No upcoming slots assigned to you.</p>
-            ) : (
-              upcoming.map((s) => (
-                <div
-                  key={s.id}
-                  className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm"
-                >
-                  <span>{formatInZone(s.starts_at, schoolTz)} {schoolLabel}</span>
-                  <div className="flex items-center gap-2">
-                    <Badge tone="info">Open</Badge>
-                    <form action={reportUnavailable}>
-                      <input type="hidden" name="slot_id" value={s.id} />
-                      <SubmitButton size="sm" variant="outline" pendingText="…">
-                        Can&apos;t attend
-                      </SubmitButton>
-                    </form>
-                  </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Your upcoming slots ({upcoming.length})</CardTitle>
+          <CardDescription>Assigned by admin, awaiting a parent booking.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {upcoming.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No upcoming slots assigned to you.</p>
+          ) : (
+            upcoming.map((s) => (
+              <div
+                key={s.id}
+                className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm"
+              >
+                <span>{formatInZone(s.starts_at, schoolTz)} {schoolLabel}</span>
+                <div className="flex items-center gap-2">
+                  <Badge tone="info">Open</Badge>
+                  <form action={reportUnavailable}>
+                    <input type="hidden" name="slot_id" value={s.id} />
+                    <SubmitButton size="sm" variant="outline" pendingText="…">
+                      Can&apos;t attend
+                    </SubmitButton>
+                  </form>
                 </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>History ({history.length})</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
+      <Card>
+        <CardHeader>
+          <CardTitle>Assessment history ({history.length})</CardTitle>
+          <CardDescription>Every assessment you&apos;ve conducted, and your pass/fail record.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <AssessmentOutcomeChart pass={passCount} fail={failCount} />
+          <div className="space-y-2 border-t border-border pt-4">
             {history.length === 0 ? (
               <p className="text-sm text-muted-foreground">No past assessments.</p>
             ) : (
@@ -389,9 +402,9 @@ export default async function TeacherPage({
                 </div>
               ))
             )}
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
