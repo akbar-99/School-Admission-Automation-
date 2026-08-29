@@ -2,11 +2,12 @@ import { getSessionUser } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { config } from "@/lib/config";
 import { getSettings } from "@/lib/settings";
-import { formatDate, formatInZone, isZoomLinkActive, ZOOM_LINK_LEAD_MINUTES } from "@/lib/utils";
+import { formatDate, formatInZone, isZoomLinkActive } from "@/lib/utils";
 import { submitResult, claimAssessmentSlot, reportUnavailable } from "./actions";
 import { SubmitButton } from "@/components/submit-button";
 import { OpenSlotsPool, type PoolSeries } from "@/components/teacher/open-slots-pool";
 import { TeacherLiveAlerts } from "@/components/teacher/live-alerts";
+import { ZoomLinkGate } from "@/components/zoom-link-gate";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,8 +15,6 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
-import { Video } from "lucide-react";
 
 interface SlotRow {
   id: string;
@@ -231,27 +230,14 @@ export default async function TeacherPage({
                     {s.unavailable_reported && (
                       <Badge tone="warning">Reported — awaiting reassignment</Badge>
                     )}
-                    {s.zoom_start_url &&
-                      (isZoomLinkActive(s.starts_at) ? (
-                        <a
-                          href={s.zoom_start_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className={buttonVariants({ size: "sm" })}
-                        >
-                          <Video className="size-4" />
-                          Start Zoom (host)
-                        </a>
-                      ) : (
-                        <span
-                          aria-disabled="true"
-                          title={`Available ${ZOOM_LINK_LEAD_MINUTES} minutes before the slot`}
-                          className={buttonVariants({ size: "sm", variant: "outline" }) + " pointer-events-none opacity-50"}
-                        >
-                          <Video className="size-4" />
-                          Start Zoom (host)
-                        </span>
-                      ))}
+                    {s.zoom_start_url && (
+                      <ZoomLinkGate
+                        startsAt={s.starts_at}
+                        href={s.zoom_start_url}
+                        label="Start Zoom (host)"
+                        initialActive={isZoomLinkActive(s.starts_at)}
+                      />
+                    )}
                   </div>
                 </div>
 

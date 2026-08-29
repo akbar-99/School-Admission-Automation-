@@ -1,5 +1,6 @@
-import { CalendarClock, BookOpen, Phone, Download, Video } from "lucide-react";
+import { CalendarClock, BookOpen, Phone, Download } from "lucide-react";
 import { Logo } from "@/components/logo";
+import { ZoomLinkGate } from "@/components/zoom-link-gate";
 import { loadApplicationByToken } from "@/lib/parent";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { config, CURRICULUM_OPTIONS } from "@/lib/config";
@@ -24,7 +25,6 @@ import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { buttonVariants } from "@/components/ui/button";
 import type { AppStatus, SubjectResult } from "@/lib/types";
 
 export default async function ApplyPage({
@@ -405,40 +405,22 @@ async function Content({
                 )}
               </div>
               {slot.zoom_join_url ? (
-                isZoomLinkActive(slot.starts_at) ? (
-                  <div className="space-y-1.5">
-                    <a
-                      href={slot.zoom_join_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={buttonVariants({ size: "sm" })}
-                    >
-                      <Video className="size-4" />
-                      Join the Zoom assessment
-                    </a>
-                    {slot.zoom_passcode && (
-                      <div className="text-xs text-muted-foreground">
-                        Passcode: <span className="font-medium text-foreground">{slot.zoom_passcode}</span>
-                      </div>
-                    )}
-                    <p className="text-xs text-muted-foreground">
-                      Join at your slot time — the teacher will admit you from the waiting room.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-1.5">
-                    <span
-                      aria-disabled="true"
-                      className={buttonVariants({ size: "sm", variant: "outline" }) + " pointer-events-none opacity-50"}
-                    >
-                      <Video className="size-4" />
-                      Join the Zoom assessment
-                    </span>
-                    <p className="text-xs text-muted-foreground">
-                      The join link becomes active {ZOOM_LINK_LEAD_MINUTES} minutes before your slot.
-                    </p>
-                  </div>
-                )
+                <ZoomLinkGate
+                  startsAt={slot.starts_at}
+                  href={slot.zoom_join_url}
+                  label="Join the Zoom assessment"
+                  initialActive={isZoomLinkActive(slot.starts_at)}
+                  inactiveHint={`The join link becomes active ${ZOOM_LINK_LEAD_MINUTES} minutes before your slot.`}
+                >
+                  {slot.zoom_passcode && (
+                    <div className="text-xs text-muted-foreground">
+                      Passcode: <span className="font-medium text-foreground">{slot.zoom_passcode}</span>
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Join at your slot time — the teacher will admit you from the waiting room.
+                  </p>
+                </ZoomLinkGate>
               ) : (
                 <p className="text-xs text-muted-foreground">
                   Your Zoom link will appear here shortly and is also sent to your email.
