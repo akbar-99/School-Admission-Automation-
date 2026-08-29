@@ -13,6 +13,7 @@ export default async function MarketingLayout({
       userName={profile.full_name ?? profile.email ?? "Marketing"}
       nav={[
         { href: "/marketing", label: "Leads" },
+        { href: "/marketing/performance", label: "Your performance" },
         { href: "/marketing/seats", label: "Seat availability" },
       ]}
     >

@@ -8,7 +8,12 @@ import { Label } from "@/components/ui/label";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MarketingPerformancePie } from "@/components/admin/marketing-performance-chart";
-import type { AppStatus } from "@/lib/types";
+import {
+  computeMarketingStatsByCreator,
+  conversionLabel,
+  EMPTY_MARKETING_STATS,
+  type MarketingStatsRow,
+} from "@/lib/marketing-stats";
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -16,43 +21,6 @@ function isoDate(d: Date): string {
 function daysAgo(n: number): Date {
   return new Date(Date.now() - n * 86_400_000);
 }
-
-// Statuses that mean a lead reached at least this funnel stage. Derived from
-// the status machine (0002_functions.sql): once a lead leaves LEAD_CREATED /
-// FORM_SUBMITTED it never goes back, so the current status alone tells us
-// whether a milestone was ever reached — no history lookup needed.
-// One known simplification: a lead that reached AGREEMENT_SENT or
-// PAYMENT_COMPLETED but was later rejected from NEEDS_ADMIN (seat
-// unavailable) ends up as REJECTED and isn't counted in these milestones,
-// even though it did pass through them.
-const REACHED_AGREEMENT = new Set<AppStatus>([
-  "AGREEMENT_SENT",
-  "PAYMENT_PENDING",
-  "PAYMENT_FAILED",
-  "ABANDONED",
-  "PAYMENT_COMPLETED",
-  "NEEDS_ADMIN",
-  "ENROLLED",
-]);
-const REACHED_PAYMENT = new Set<AppStatus>(["PAYMENT_COMPLETED", "NEEDS_ADMIN", "ENROLLED"]);
-
-interface Stats {
-  leads: number;
-  formSubmitted: number;
-  agreementSent: number;
-  paymentCompleted: number;
-  enrolled: number;
-  revenuePaise: number;
-}
-
-const EMPTY_STATS: Stats = {
-  leads: 0,
-  formSubmitted: 0,
-  agreementSent: 0,
-  paymentCompleted: 0,
-  enrolled: 0,
-  revenuePaise: 0,
-};
 
 export default async function MarketingPerformancePage({
   searchParams,
@@ -79,36 +47,11 @@ export default async function MarketingPerformancePage({
   if (from) query = query.gte("created_at", `${from}T00:00:00`);
   if (to) query = query.lte("created_at", `${to}T23:59:59`);
   const { data: appsData } = await query;
-
-  const statsByStaff = new Map<string, Stats>();
-  const statsFor = (id: string) => {
-    let s = statsByStaff.get(id);
-    if (!s) {
-      s = { ...EMPTY_STATS };
-      statsByStaff.set(id, s);
-    }
-    return s;
-  };
-
-  for (const row of (appsData ?? []) as unknown as {
-    status: AppStatus;
-    created_by: string;
-    payments: { amount: number; status: string }[] | null;
-  }[]) {
-    const s = statsFor(row.created_by);
-    s.leads += 1;
-    if (row.status !== "LEAD_CREATED") s.formSubmitted += 1;
-    if (REACHED_AGREEMENT.has(row.status)) s.agreementSent += 1;
-    if (REACHED_PAYMENT.has(row.status)) s.paymentCompleted += 1;
-    if (row.status === "ENROLLED") s.enrolled += 1;
-    for (const p of row.payments ?? []) {
-      if (p.status === "completed") s.revenuePaise += p.amount;
-    }
-  }
+  const statsByStaff = computeMarketingStatsByCreator((appsData ?? []) as unknown as MarketingStatsRow[]);
 
   const totals = staff.reduce(
     (acc, m) => {
-      const s = statsByStaff.get(m.id) ?? EMPTY_STATS;
+      const s = statsByStaff.get(m.id) ?? EMPTY_MARKETING_STATS;
       acc.leads += s.leads;
       acc.enrolled += s.enrolled;
       acc.revenuePaise += s.revenuePaise;
@@ -170,7 +113,7 @@ export default async function MarketingPerformancePage({
             data={staff.map((m) => ({
               id: m.id,
               name: m.full_name ?? m.email ?? "—",
-              leads: (statsByStaff.get(m.id) ?? EMPTY_STATS).leads,
+              leads: (statsByStaff.get(m.id) ?? EMPTY_MARKETING_STATS).leads,
             }))}
           />
         </CardContent>
@@ -238,8 +181,8 @@ export default async function MarketingPerformancePage({
               </THead>
               <TBody>
                 {staff.map((m) => {
-                  const s = statsByStaff.get(m.id) ?? EMPTY_STATS;
-                  const conversion = s.leads > 0 ? `${((s.enrolled / s.leads) * 100).toFixed(1)}%` : "—";
+                  const s = statsByStaff.get(m.id) ?? EMPTY_MARKETING_STATS;
+                  const conversion = conversionLabel(s);
                   return (
                     <TR key={m.id}>
                       <TD>
