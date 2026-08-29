@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import crypto from "node:crypto";
 import { z } from "zod";
 import { requireRole } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -351,6 +352,50 @@ export async function generateZoomLink(formData: FormData) {
           encodeURIComponent(
             "Couldn't create a Zoom meeting — check ZOOM_* is configured and the teacher's Zoom account.",
           )),
+  );
+}
+
+// Regenerate a parent's admission-link token — the only way to revoke a
+// specific link early (e.g. it was forwarded or leaked) without deleting the
+// application. The old link stops working immediately; resets the 14-day
+// expiry from now.
+const RotateTokenSchema = z.object({ application_id: z.string().uuid() });
+
+export async function rotateAccessToken(formData: FormData) {
+  const { profile } = await requireRole(["admin"]);
+  const parsed = RotateTokenSchema.safeParse({
+    application_id: formData.get("application_id"),
+  });
+  if (!parsed.success) {
+    redirect("/admin?error=" + encodeURIComponent("Invalid application."));
+  }
+  const { application_id } = parsed.data!;
+
+  const admin = createSupabaseAdminClient();
+  const { error } = await admin
+    .from("applications")
+    .update({
+      access_token: crypto.randomBytes(24).toString("hex"),
+      token_expires_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+    })
+    .eq("id", application_id);
+  if (error) {
+    redirect(`/admin/applications/${application_id}?error=` + encodeURIComponent(error.message));
+  }
+
+  // Never write the token itself into the audit trail.
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "application.token_rotated",
+    entity: "application",
+    entityId: application_id,
+  });
+
+  revalidatePath(`/admin/applications/${application_id}`);
+  redirect(
+    `/admin/applications/${application_id}?ok=` +
+      encodeURIComponent("Access link regenerated — the old link no longer works."),
   );
 }
 

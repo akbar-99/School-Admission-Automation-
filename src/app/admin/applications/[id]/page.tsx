@@ -3,15 +3,17 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Download } from "lucide-react";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { config } from "@/lib/config";
+import { applyUrl } from "@/lib/parent";
 import { formatDateTime, formatDate, formatINR, formatInZone } from "@/lib/utils";
 import { StatusBadge } from "@/components/status-badge";
 import { PrintButton } from "@/components/print-button";
 import { SubmitButton } from "@/components/submit-button";
+import { CopyButton } from "@/components/copy-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert } from "@/components/ui/alert";
-import { deleteApplication } from "../../actions";
+import { deleteApplication, rotateAccessToken } from "../../actions";
 import { needsAssessment } from "@/lib/assessment";
 import type { Application, Student, Parent, Payment, SubjectResult } from "@/lib/types";
 
@@ -25,10 +27,10 @@ export default async function ApplicationDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; ok?: string }>;
 }) {
   const { id } = await params;
-  const { error } = await searchParams;
+  const { error, ok } = await searchParams;
   const admin = createSupabaseAdminClient();
 
   const { data: appRow } = await admin.from("applications").select("*").eq("id", id).maybeSingle();
@@ -130,6 +132,11 @@ export default async function ApplicationDetailPage({
       {error && (
         <Alert variant="error" className="print:hidden">
           {error}
+        </Alert>
+      )}
+      {ok && (
+        <Alert variant="success" className="print:hidden">
+          {ok}
         </Alert>
       )}
 
@@ -275,6 +282,31 @@ export default async function ApplicationDetailPage({
               </div>
             ))
           )}
+        </CardContent>
+      </Card>
+
+      <Card className="print:hidden">
+        <CardHeader>
+          <CardTitle>Parent access link</CardTitle>
+          <CardDescription>
+            This is the parent&apos;s only sign-in — anyone holding the link can act as
+            them. If a link has been forwarded or leaked, regenerate it below; the old
+            link stops working immediately.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="break-all rounded-md border border-border bg-muted/40 px-3 py-2 font-mono text-xs">
+              {applyUrl(app.access_token)}
+            </span>
+            <CopyButton value={applyUrl(app.access_token)} />
+          </div>
+          <form action={rotateAccessToken}>
+            <input type="hidden" name="application_id" value={app.id} />
+            <SubmitButton variant="outline" size="sm" pendingText="Regenerating…">
+              Regenerate link
+            </SubmitButton>
+          </form>
         </CardContent>
       </Card>
 
