@@ -5,6 +5,18 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+// How long before a slot's start time its Zoom link becomes usable.
+export const ZOOM_LINK_LEAD_MINUTES = 30;
+
+// Whether a Zoom join/start link should be clickable right now — from
+// ZOOM_LINK_LEAD_MINUTES before the slot starts onward (including once it's
+// in progress or past; the meeting itself, not this check, is what actually
+// ends it).
+export function isZoomLinkActive(startsAt: string | Date): boolean {
+  const startMs = new Date(startsAt).getTime();
+  return Date.now() >= startMs - ZOOM_LINK_LEAD_MINUTES * 60_000;
+}
+
 export function formatINR(paise: number): string {
   return new Intl.NumberFormat("en-IN", {
     style: "currency",

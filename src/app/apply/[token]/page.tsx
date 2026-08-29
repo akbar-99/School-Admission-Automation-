@@ -6,7 +6,14 @@ import { config, CURRICULUM_OPTIONS } from "@/lib/config";
 import { getSettings } from "@/lib/settings";
 import { getClassOptions } from "@/lib/classes";
 import { needsAssessment } from "@/lib/assessment";
-import { formatDateTime, formatINR, formatDate, formatInZone } from "@/lib/utils";
+import {
+  formatDateTime,
+  formatINR,
+  formatDate,
+  formatInZone,
+  isZoomLinkActive,
+  ZOOM_LINK_LEAD_MINUTES,
+} from "@/lib/utils";
 import { bookSlot, acceptAgreement } from "./actions";
 import { AdmissionForm } from "@/components/apply/admission-form";
 import { PayPanel } from "@/components/apply/pay-panel";
@@ -398,25 +405,40 @@ async function Content({
                 )}
               </div>
               {slot.zoom_join_url ? (
-                <div className="space-y-1.5">
-                  <a
-                    href={slot.zoom_join_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={buttonVariants({ size: "sm" })}
-                  >
-                    <Video className="size-4" />
-                    Join the Zoom assessment
-                  </a>
-                  {slot.zoom_passcode && (
-                    <div className="text-xs text-muted-foreground">
-                      Passcode: <span className="font-medium text-foreground">{slot.zoom_passcode}</span>
-                    </div>
-                  )}
-                  <p className="text-xs text-muted-foreground">
-                    Join at your slot time — the teacher will admit you from the waiting room.
-                  </p>
-                </div>
+                isZoomLinkActive(slot.starts_at) ? (
+                  <div className="space-y-1.5">
+                    <a
+                      href={slot.zoom_join_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={buttonVariants({ size: "sm" })}
+                    >
+                      <Video className="size-4" />
+                      Join the Zoom assessment
+                    </a>
+                    {slot.zoom_passcode && (
+                      <div className="text-xs text-muted-foreground">
+                        Passcode: <span className="font-medium text-foreground">{slot.zoom_passcode}</span>
+                      </div>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      Join at your slot time — the teacher will admit you from the waiting room.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    <span
+                      aria-disabled="true"
+                      className={buttonVariants({ size: "sm", variant: "outline" }) + " pointer-events-none opacity-50"}
+                    >
+                      <Video className="size-4" />
+                      Join the Zoom assessment
+                    </span>
+                    <p className="text-xs text-muted-foreground">
+                      The join link becomes active {ZOOM_LINK_LEAD_MINUTES} minutes before your slot.
+                    </p>
+                  </div>
+                )
               ) : (
                 <p className="text-xs text-muted-foreground">
                   Your Zoom link will appear here shortly and is also sent to your email.
