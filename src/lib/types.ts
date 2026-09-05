@@ -104,6 +104,10 @@ export interface Application {
   agreement_ip: string | null;
   section_id: string | null;
   admission_number: string | null;
+  erp_status: "pending" | "no_mapping" | "send_failed" | "synced";
+  erp_class_name: string | null;
+  erp_student_id: string | null;
+  erp_warning: string | null;
   access_token: string;
   token_expires_at: string;
   created_by: string | null;
@@ -115,6 +119,8 @@ export interface Section {
   id: string;
   grade: string;
   name: string;
+  batch: string | null;
+  erp_class_name: string | null;
   capacity: number;
   filled: number;
   created_at: string;

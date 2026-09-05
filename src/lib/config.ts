@@ -68,6 +68,16 @@ export const config = {
     },
   },
 
+  // School ERP admission-sync webhooks (already built and deployed on the
+  // ERP side; this app only calls them). The two endpoint URLs are fixed and
+  // live in src/lib/erp.ts, not here — only the shared secret is an env var.
+  erp: {
+    secret: process.env.ERP_ADMISSIONS_SECRET ?? "",
+    get enabled() {
+      return Boolean(this.secret);
+    },
+  },
+
   razorpay: {
     keyId: process.env.RAZORPAY_KEY_ID ?? "",
     keySecret: process.env.RAZORPAY_KEY_SECRET ?? "",

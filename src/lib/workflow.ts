@@ -8,6 +8,7 @@ import { logAudit } from "@/lib/audit";
 import { formatINR, formatInZone, formatDate } from "@/lib/utils";
 import { generateResultPdf } from "@/lib/result-pdf";
 import { ensureZoomForApplication } from "@/lib/zoom";
+import { sendErpAdmission } from "@/lib/erp";
 import { needsAssessment } from "@/lib/assessment";
 import { fetchSchoolLogo } from "@/lib/school-logo";
 import type { Application, Parent, Student, SubjectResult } from "@/lib/types";
@@ -708,6 +709,199 @@ export async function handleAssessmentResult(
 }
 
 // ---------------------------------------------------------------------------
+// ERP integration — after enrollment, look up the exact ERP class_name
+// configured on the section this app already assigned (Admin → Sections),
+// and notify the ERP so the student record exists there automatically.
+// This app's own sections decide the division (enroll_application's existing
+// fill-order, unchanged) — the ERP has no say in that decision, only in
+// which of its own class names each section corresponds to. Additive and
+// independent of the enrollment notifications: never throws — any failure
+// here is logged and flagged for admin review (Admin → ERP) rather than
+// surfaced to the parent, since enrollment itself already succeeded by the
+// time this runs.
+// ---------------------------------------------------------------------------
+export async function syncEnrollmentToErp(app: Application, parent: Parent, admissionNumber: string) {
+  if (!config.erp.enabled) return;
+  const admin = createSupabaseAdminClient();
+
+  try {
+    const { data: section } = await admin
+      .from("sections")
+      .select("erp_class_name")
+      .eq("id", app.section_id)
+      .maybeSingle();
+
+    if (!section?.erp_class_name) {
+      await admin.from("applications").update({ erp_status: "no_mapping" }).eq("id", app.id);
+      await logAudit({
+        action: "erp.no_mapping",
+        entity: "application",
+        entityId: app.id,
+        details: { section_id: app.section_id },
+      });
+      await dispatch(
+        fanToStaff(await staffContacts(["admin"]), {
+          applicationId: app.id,
+          event: "ERP_NO_MAPPING",
+          subject: "ERP sync needs attention: no class mapping",
+          body: `${admissionNumber} can't sync to the ERP yet — the assigned section has no ERP class name set. Configure it under Admin → Sections, then retry under Admin → ERP.`,
+        }),
+      );
+      return;
+    }
+
+    const className = section.erp_class_name;
+    // Recorded before the send attempt so a crash mid-send still leaves a
+    // retryable record with the class already resolved.
+    await admin
+      .from("applications")
+      .update({ erp_status: "send_failed", erp_class_name: className })
+      .eq("id", app.id);
+
+    const { data: studentRow } = await admin
+      .from("students")
+      .select("*")
+      .eq("id", app.student_id)
+      .maybeSingle();
+    const student = studentRow as Student | null;
+    const { academicTermStart } = await getSettings();
+
+    const result = await sendErpAdmission({
+      admission_id: app.id,
+      student_id: admissionNumber,
+      full_name: student?.full_name ?? parent.full_name,
+      class_name: className,
+      email: parent.email,
+      phone: parent.phone,
+      gender: student?.gender ?? null,
+      date_of_birth: student?.dob ?? null,
+      address: student?.current_address ?? student?.permanent_address ?? null,
+      parent_name: parent.full_name,
+      parent_phone: parent.phone,
+      parent_email: parent.email,
+      joining_date: academicTermStart,
+    });
+
+    if (!result.ok) {
+      console.error("[erp] admission send failed", result.error);
+      await logAudit({
+        action: "erp.send_failed",
+        entity: "application",
+        entityId: app.id,
+        details: { error: result.error, class_name: className },
+      });
+      await dispatch(
+        fanToStaff(await staffContacts(["admin"]), {
+          applicationId: app.id,
+          event: "ERP_SEND_FAILED",
+          subject: "ERP sync failed",
+          body: `${admissionNumber} was assigned ERP class "${className}" but the ERP webhook call failed. Retry under Admin → ERP.`,
+        }),
+      );
+      return;
+    }
+
+    await admin
+      .from("applications")
+      .update({ erp_status: "synced", erp_student_id: result.erpStudentId, erp_warning: result.warning })
+      .eq("id", app.id);
+    await logAudit({
+      action: "erp.synced",
+      entity: "application",
+      entityId: app.id,
+      details: { class_name: className, warning: result.warning },
+    });
+
+    if (result.warning) {
+      await dispatch(
+        fanToStaff(await staffContacts(["admin"]), {
+          applicationId: app.id,
+          event: "ERP_WARNING",
+          subject: "ERP sync warning",
+          body: `${admissionNumber} synced to the ERP, but it returned a warning: ${result.warning}`,
+        }),
+      );
+    }
+  } catch (err) {
+    console.error("[erp] syncEnrollmentToErp threw unexpectedly", err);
+  }
+}
+
+// Admin "Retry" for erp_status = 'no_mapping' — re-checks the section's ERP
+// class name (an admin should have just set it under Admin → Sections) and
+// runs the send from scratch.
+export async function retryErpSync(appId: string): Promise<void> {
+  const admin = createSupabaseAdminClient();
+  const { data: appRow } = await admin.from("applications").select("*").eq("id", appId).maybeSingle();
+  if (!appRow) return;
+  const app = appRow as Application;
+  if (!app.admission_number) return; // not actually enrolled yet — nothing to sync
+  const { data: parentRow } = await admin.from("parents").select("*").eq("id", app.parent_id).maybeSingle();
+  if (!parentRow) return;
+  await syncEnrollmentToErp(app, parentRow as Parent, app.admission_number);
+}
+
+// Admin "Retry" for erp_status = 'send_failed' — a seat was already claimed
+// (erp_class_name is set); this must only re-send that same class to the
+// ERP, never call claim_erp_seat again, or the student would consume two
+// seats in the local tally.
+export async function resendErpAdmission(appId: string): Promise<void> {
+  const admin = createSupabaseAdminClient();
+  const { data: appRow } = await admin.from("applications").select("*").eq("id", appId).maybeSingle();
+  if (!appRow) return;
+  const app = appRow as Application;
+  if (!app.admission_number || !app.erp_class_name) return;
+  const { data: parentRow } = await admin.from("parents").select("*").eq("id", app.parent_id).maybeSingle();
+  if (!parentRow) return;
+  const parent = parentRow as Parent;
+  const { data: studentRow } = await admin
+    .from("students")
+    .select("*")
+    .eq("id", app.student_id)
+    .maybeSingle();
+  const student = studentRow as Student | null;
+  const { academicTermStart } = await getSettings();
+
+  const result = await sendErpAdmission({
+    admission_id: app.id,
+    student_id: app.admission_number,
+    full_name: student?.full_name ?? parent.full_name,
+    class_name: app.erp_class_name,
+    email: parent.email,
+    phone: parent.phone,
+    gender: student?.gender ?? null,
+    date_of_birth: student?.dob ?? null,
+    address: student?.current_address ?? student?.permanent_address ?? null,
+    parent_name: parent.full_name,
+    parent_phone: parent.phone,
+    parent_email: parent.email,
+    joining_date: academicTermStart,
+  });
+
+  if (!result.ok) {
+    console.error("[erp] resend failed", result.error);
+    await logAudit({
+      action: "erp.send_failed",
+      entity: "application",
+      entityId: app.id,
+      details: { error: result.error, class_name: app.erp_class_name, retry: true },
+    });
+    return;
+  }
+
+  await admin
+    .from("applications")
+    .update({ erp_status: "synced", erp_student_id: result.erpStudentId, erp_warning: result.warning })
+    .eq("id", app.id);
+  await logAudit({
+    action: "erp.synced",
+    entity: "application",
+    entityId: app.id,
+    details: { class_name: app.erp_class_name, warning: result.warning, retry: true },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Payment completed -> enrollment (N-7, N-8) or NEEDS_ADMIN (N-9)
 // ---------------------------------------------------------------------------
 export async function handlePaymentCompleted(
@@ -802,5 +996,6 @@ export async function handlePaymentCompleted(
   ]);
 
   await logAudit({ action: "enrollment.completed", entity: "application", entityId: app.id, details: res });
+  await syncEnrollmentToErp(app, parent, res.admission_number!);
   return { ...res, status: "ENROLLED" as const };
 }

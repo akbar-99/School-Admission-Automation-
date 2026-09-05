@@ -54,8 +54,16 @@ export default async function SectionsPage({
               <Input id="name" name="name" placeholder="C" className="w-24" required />
             </div>
             <div className="space-y-1.5">
+              <Label htmlFor="batch">Batch (KG only)</Label>
+              <Input id="batch" name="batch" placeholder="DAHLIA" className="w-32" />
+            </div>
+            <div className="space-y-1.5">
               <Label htmlFor="capacity">Capacity</Label>
               <Input id="capacity" name="capacity" type="number" defaultValue={30} className="w-28" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="erp_class_name">ERP class name</Label>
+              <Input id="erp_class_name" name="erp_class_name" placeholder="STAGE 5 A" className="w-40" />
             </div>
             <SubmitButton pendingText="Creating…">Add section</SubmitButton>
           </form>
@@ -74,10 +82,21 @@ export default async function SectionsPage({
               return (
                 <div key={s.id} className="rounded-md border border-border p-3">
                   <div className="flex items-center justify-between">
-                    <div className="font-medium">Section {s.name}</div>
+                    <div className="font-medium">
+                      Section {s.name}
+                      {s.batch && <span className="font-normal text-muted-foreground"> — {s.batch}</span>}
+                    </div>
                     <div className="text-sm text-muted-foreground">
                       {s.filled} / {s.capacity} seats {full && "· full"}
                     </div>
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    ERP class:{" "}
+                    {s.erp_class_name ? (
+                      <span className="font-medium text-foreground">{s.erp_class_name}</span>
+                    ) : (
+                      <span className="text-warning">not mapped</span>
+                    )}
                   </div>
                   <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">
                     <div
@@ -97,6 +116,19 @@ export default async function SectionsPage({
                       <div className="space-y-1">
                         <Label htmlFor={`name-${s.id}`} className="text-xs">Section</Label>
                         <Input id={`name-${s.id}`} name="name" defaultValue={s.name} className="h-9 w-16" required />
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor={`batch-${s.id}`} className="text-xs">Batch</Label>
+                        <Input id={`batch-${s.id}`} name="batch" defaultValue={s.batch ?? ""} className="h-9 w-28" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor={`erp-${s.id}`} className="text-xs">ERP class name</Label>
+                        <Input
+                          id={`erp-${s.id}`}
+                          name="erp_class_name"
+                          defaultValue={s.erp_class_name ?? ""}
+                          className="h-9 w-36"
+                        />
                       </div>
                       <div className="space-y-1">
                         <Label htmlFor={`cap-${s.id}`} className="text-xs">Capacity</Label>

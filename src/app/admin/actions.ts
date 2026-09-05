@@ -586,6 +586,8 @@ const UpdateSectionSchema = z.object({
   section_id: z.string().uuid(),
   grade: z.string().trim().min(1),
   name: z.string().trim().min(1).max(4),
+  batch: z.string().trim().max(60).optional().or(z.literal("")),
+  erp_class_name: z.string().trim().max(120).optional().or(z.literal("")),
   capacity: z.coerce.number().int().positive().max(200),
 });
 
@@ -595,10 +597,12 @@ export async function updateSection(formData: FormData) {
     section_id: formData.get("section_id"),
     grade: formData.get("grade"),
     name: formData.get("name"),
+    batch: formData.get("batch") ?? "",
+    erp_class_name: formData.get("erp_class_name") ?? "",
     capacity: formData.get("capacity"),
   });
   if (!parsed.success) sectionsBack(parsed.error.issues[0].message, "error");
-  const { section_id, grade, name, capacity } = parsed.data!;
+  const { section_id, grade, name, batch, erp_class_name, capacity } = parsed.data!;
 
   const admin = createSupabaseAdminClient();
   const { data: section } = await admin
@@ -613,7 +617,13 @@ export async function updateSection(formData: FormData) {
 
   const { error } = await admin
     .from("sections")
-    .update({ grade: grade.toUpperCase(), name: name.toUpperCase(), capacity })
+    .update({
+      grade: grade.toUpperCase(),
+      name: name.toUpperCase(),
+      batch: batch || null,
+      erp_class_name: erp_class_name || null,
+      capacity,
+    })
     .eq("id", section_id);
   if (error) sectionsBack(error.message, "error");
 
@@ -623,9 +633,10 @@ export async function updateSection(formData: FormData) {
     action: "admin.update_section",
     entity: "section",
     entityId: section_id,
-    details: { grade, name, capacity },
+    details: { grade, name, batch: batch || null, erp_class_name: erp_class_name || null, capacity },
   });
   revalidatePath("/admin/sections");
+  revalidatePath("/admin/erp");
   sectionsBack("Section updated.");
 }
 
@@ -671,6 +682,8 @@ export async function deleteSection(formData: FormData) {
 const SectionSchema = z.object({
   grade: z.string().trim().min(1),
   name: z.string().trim().min(1).max(4),
+  batch: z.string().trim().max(60).optional().or(z.literal("")),
+  erp_class_name: z.string().trim().max(120).optional().or(z.literal("")),
   capacity: z.coerce.number().int().positive().max(200).default(30),
 });
 
@@ -679,15 +692,21 @@ export async function createSection(formData: FormData) {
   const parsed = SectionSchema.safeParse({
     grade: formData.get("grade"),
     name: formData.get("name"),
+    batch: formData.get("batch") ?? "",
+    erp_class_name: formData.get("erp_class_name") ?? "",
     capacity: formData.get("capacity") ?? 30,
   });
   if (!parsed.success) sectionsBack("Invalid section", "error");
-  const { grade, name, capacity } = parsed.data!;
+  const { grade, name, batch, erp_class_name, capacity } = parsed.data!;
 
   const admin = createSupabaseAdminClient();
-  const { error } = await admin
-    .from("sections")
-    .insert({ grade: grade.toUpperCase(), name: name.toUpperCase(), capacity });
+  const { error } = await admin.from("sections").insert({
+    grade: grade.toUpperCase(),
+    name: name.toUpperCase(),
+    batch: batch || null,
+    erp_class_name: erp_class_name || null,
+    capacity,
+  });
   if (error) sectionsBack(error.message, "error");
 
   await logAudit({
@@ -695,7 +714,7 @@ export async function createSection(formData: FormData) {
     actorRole: profile.role,
     action: "admin.create_section",
     entity: "section",
-    details: { grade, name, capacity },
+    details: { grade, name, batch: batch || null, erp_class_name: erp_class_name || null, capacity },
   });
   revalidatePath("/admin");
   revalidatePath("/admin/sections");
