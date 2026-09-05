@@ -69,12 +69,18 @@ export const config = {
   },
 
   // School ERP admission-sync webhooks (already built and deployed on the
-  // ERP side; this app only calls them). The two endpoint URLs are fixed and
-  // live in src/lib/erp.ts, not here — only the shared secret is an env var.
+  // ERP side; this app only calls them). The endpoint URLs are fixed and
+  // live in src/lib/erp.ts, not here — only the shared secrets are env vars.
+  // classWebhookSecret is a genuinely separate credential from secret (not a
+  // typo/duplicate) — the ERP side issued two distinct values.
   erp: {
     secret: process.env.ERP_ADMISSIONS_SECRET ?? "",
+    classWebhookSecret: process.env.ERP_CLASS_WEBHOOK_SECRET ?? "",
     get enabled() {
       return Boolean(this.secret);
+    },
+    get classWebhookEnabled() {
+      return Boolean(this.classWebhookSecret);
     },
   },
 

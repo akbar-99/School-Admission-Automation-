@@ -5,7 +5,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import type { Section } from "@/lib/types";
+
+const ERP_SYNC_LABEL: Record<Section["erp_sync_status"], { label: string; tone: "neutral" | "success" | "warning" | "danger" }> = {
+  pending: { label: "Not yet pushed to ERP", tone: "neutral" },
+  synced: { label: "Synced to ERP", tone: "success" },
+  conflict: { label: "ERP conflict — resolve in ERP", tone: "danger" },
+  failed: { label: "ERP push failed", tone: "warning" },
+};
 
 export default async function SectionsPage({
   searchParams,
@@ -90,13 +98,18 @@ export default async function SectionsPage({
                       {s.filled} / {s.capacity} seats {full && "· full"}
                     </div>
                   </div>
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    ERP class:{" "}
-                    {s.erp_class_name ? (
-                      <span className="font-medium text-foreground">{s.erp_class_name}</span>
-                    ) : (
-                      <span className="text-warning">not mapped</span>
-                    )}
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <span>
+                      ERP class:{" "}
+                      {s.erp_class_name ? (
+                        <span className="font-medium text-foreground">{s.erp_class_name}</span>
+                      ) : (
+                        <span className="text-warning">not mapped</span>
+                      )}
+                    </span>
+                    <Badge tone={ERP_SYNC_LABEL[s.erp_sync_status].tone}>
+                      {ERP_SYNC_LABEL[s.erp_sync_status].label}
+                    </Badge>
                   </div>
                   <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">
                     <div

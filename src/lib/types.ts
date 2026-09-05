@@ -121,6 +121,8 @@ export interface Section {
   name: string;
   batch: string | null;
   erp_class_name: string | null;
+  erp_sync_status: "pending" | "synced" | "conflict" | "failed";
+  erp_synced_at: string | null;
   capacity: number;
   filled: number;
   created_at: string;

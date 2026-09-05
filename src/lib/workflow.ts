@@ -8,7 +8,7 @@ import { logAudit } from "@/lib/audit";
 import { formatINR, formatInZone, formatDate } from "@/lib/utils";
 import { generateResultPdf } from "@/lib/result-pdf";
 import { ensureZoomForApplication } from "@/lib/zoom";
-import { sendErpAdmission } from "@/lib/erp";
+import { sendErpAdmission, syncClassToErp } from "@/lib/erp";
 import { needsAssessment } from "@/lib/assessment";
 import { fetchSchoolLogo } from "@/lib/school-logo";
 import type { Application, Parent, Student, SubjectResult } from "@/lib/types";
@@ -899,6 +899,84 @@ export async function resendErpAdmission(appId: string): Promise<void> {
     entityId: app.id,
     details: { class_name: app.erp_class_name, warning: result.warning, retry: true },
   });
+}
+
+// ---------------------------------------------------------------------------
+// Push this app's own section (class/division/batch) into the ERP whenever
+// one is created or edited — a discrete call per edit, not a poll, per the
+// ERP's own instruction. Called from createSection/updateSection after their
+// own DB write succeeds; never throws — a section is fully usable in this
+// app regardless of whether the ERP mirror call succeeds, matching the same
+// "never block the primary action" precedent as Zoom/student sync. Conflicts
+// (a name collision the ERP can't resolve on its own) are surfaced to admin
+// staff and are never retried automatically — the ERP's own instruction is
+// that these need a human to resolve directly in the ERP.
+// ---------------------------------------------------------------------------
+export async function syncSectionToErp(section: {
+  id: string;
+  grade: string;
+  name: string;
+  batch: string | null;
+  capacity: number;
+}) {
+  if (!config.erp.classWebhookEnabled) return;
+  const admin = createSupabaseAdminClient();
+
+  const result = await syncClassToErp({
+    external_class_id: section.id,
+    class_name: section.grade,
+    division: section.name,
+    batch: section.batch,
+    capacity: section.capacity,
+  });
+
+  if (result.ok) {
+    await admin
+      .from("sections")
+      .update({ erp_sync_status: "synced", erp_synced_at: new Date().toISOString() })
+      .eq("id", section.id);
+    await logAudit({
+      action: "erp.section_synced",
+      entity: "section",
+      entityId: section.id,
+      details: { action: result.action },
+    });
+    return;
+  }
+
+  if (result.conflict) {
+    await admin.from("sections").update({ erp_sync_status: "conflict" }).eq("id", section.id);
+    await logAudit({
+      action: "erp.section_conflict",
+      entity: "section",
+      entityId: section.id,
+      details: { raw: result.raw },
+    });
+    await dispatch(
+      fanToStaff(await staffContacts(["admin"]), {
+        event: "ERP_SECTION_CONFLICT",
+        subject: "ERP class conflict needs manual resolution",
+        body: `${section.grade}-${section.name}${section.batch ? ` (${section.batch})` : ""} couldn't sync to the ERP — a name collision needs to be resolved directly in the ERP (not something this app can retry automatically).`,
+      }),
+    );
+    return;
+  }
+
+  console.error("[erp] section sync failed", result.error);
+  await admin.from("sections").update({ erp_sync_status: "failed" }).eq("id", section.id);
+  await logAudit({
+    action: "erp.section_send_failed",
+    entity: "section",
+    entityId: section.id,
+    details: { error: result.error },
+  });
+  await dispatch(
+    fanToStaff(await staffContacts(["admin"]), {
+      event: "ERP_SECTION_FAILED",
+      subject: "ERP class sync failed",
+      body: `${section.grade}-${section.name}${section.batch ? ` (${section.batch})` : ""} couldn't sync to the ERP. Editing the section again will retry.`,
+    }),
+  );
 }
 
 // ---------------------------------------------------------------------------

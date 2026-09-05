@@ -14,6 +14,7 @@ import {
   notifySlotReassigned,
   notifySlotsPublished,
   notifyTeacherSlotAssigned,
+  syncSectionToErp,
 } from "@/lib/workflow";
 import { logAudit } from "@/lib/audit";
 import { config } from "@/lib/config";
@@ -635,6 +636,13 @@ export async function updateSection(formData: FormData) {
     entityId: section_id,
     details: { grade, name, batch: batch || null, erp_class_name: erp_class_name || null, capacity },
   });
+  await syncSectionToErp({
+    id: section_id,
+    grade: grade.toUpperCase(),
+    name: name.toUpperCase(),
+    batch: batch || null,
+    capacity,
+  });
   revalidatePath("/admin/sections");
   revalidatePath("/admin/erp");
   sectionsBack("Section updated.");
@@ -700,13 +708,17 @@ export async function createSection(formData: FormData) {
   const { grade, name, batch, erp_class_name, capacity } = parsed.data!;
 
   const admin = createSupabaseAdminClient();
-  const { error } = await admin.from("sections").insert({
-    grade: grade.toUpperCase(),
-    name: name.toUpperCase(),
-    batch: batch || null,
-    erp_class_name: erp_class_name || null,
-    capacity,
-  });
+  const { data: created, error } = await admin
+    .from("sections")
+    .insert({
+      grade: grade.toUpperCase(),
+      name: name.toUpperCase(),
+      batch: batch || null,
+      erp_class_name: erp_class_name || null,
+      capacity,
+    })
+    .select("id")
+    .single();
   if (error) sectionsBack(error.message, "error");
 
   await logAudit({
@@ -714,7 +726,15 @@ export async function createSection(formData: FormData) {
     actorRole: profile.role,
     action: "admin.create_section",
     entity: "section",
+    entityId: created!.id,
     details: { grade, name, batch: batch || null, erp_class_name: erp_class_name || null, capacity },
+  });
+  await syncSectionToErp({
+    id: created!.id,
+    grade: grade.toUpperCase(),
+    name: name.toUpperCase(),
+    batch: batch || null,
+    capacity,
   });
   revalidatePath("/admin");
   revalidatePath("/admin/sections");

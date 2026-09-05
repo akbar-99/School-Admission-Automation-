@@ -13,9 +13,17 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 const CAPACITY_URL =
   "https://lxnwnkgyjywoolnqsrjy.supabase.co/functions/v1/admissions-class-capacity";
 const WEBHOOK_URL = "https://lxnwnkgyjywoolnqsrjy.supabase.co/functions/v1/admissions-webhook";
+const CLASS_WEBHOOK_URL =
+  "https://lxnwnkgyjywoolnqsrjy.supabase.co/functions/v1/admissions-class-webhook";
 
 function authHeaders(): Record<string, string> {
   return { "x-admissions-secret": config.erp.secret };
+}
+
+// Separate credential from authHeaders() above — the ERP issued a distinct
+// secret for the class-push webhook.
+function classAuthHeaders(): Record<string, string> {
+  return { "x-admissions-secret": config.erp.classWebhookSecret };
 }
 
 export interface ErpClassEntry {
@@ -142,4 +150,57 @@ export async function syncErpCapacity(): Promise<number | null> {
   }
 
   return classes.length;
+}
+
+// ---------------------------------------------------------------------------
+// Push this app's own class/division/batch definition into the ERP on
+// section create/edit — a discrete, user-triggered call each time (never on
+// a timer), per the ERP's own instruction. external_class_id is this app's
+// own permanent id (sections.id) so repeat calls for the same section update
+// rather than duplicate. Never throws.
+// ---------------------------------------------------------------------------
+export interface ErpClassPushPayload {
+  external_class_id: string;
+  class_name: string;
+  division?: string | null;
+  batch?: string | null;
+  capacity?: number | null;
+  curriculum?: string | null;
+}
+
+export type SyncClassToErpResult =
+  | { ok: true; action: string; raw: unknown }
+  | { ok: false; conflict: true; raw: unknown }
+  | { ok: false; conflict: false; error: string };
+
+export async function syncClassToErp(payload: ErpClassPushPayload): Promise<SyncClassToErpResult> {
+  if (!config.erp.classWebhookEnabled) {
+    return { ok: false, conflict: false, error: "ERP class webhook not configured" };
+  }
+  try {
+    const res = await fetch(CLASS_WEBHOOK_URL, {
+      method: "POST",
+      headers: { ...classAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const text = await res.text();
+    let json: unknown = null;
+    try {
+      json = text ? JSON.parse(text) : null;
+    } catch {
+      // fall through with json = null; raw text still reported in the error
+    }
+
+    if (res.status === 409) {
+      return { ok: false, conflict: true, raw: json ?? text };
+    }
+    if (!res.ok) {
+      return { ok: false, conflict: false, error: `ERP class webhook failed (${res.status}): ${text}` };
+    }
+
+    const action = (json as { action?: string } | null)?.action ?? "unknown";
+    return { ok: true, action, raw: json };
+  } catch (err) {
+    return { ok: false, conflict: false, error: err instanceof Error ? err.message : String(err) };
+  }
 }
