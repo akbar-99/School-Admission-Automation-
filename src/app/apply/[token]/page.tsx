@@ -185,7 +185,7 @@ async function Content({
         </Card>
       )}
 
-      {app.grade_applying && status !== "LEAD_CREATED" && <ClassTimingCard />}
+      {app.grade_applying && status === "DETAILS_PENDING" && <ClassTimingCard />}
 
       {status === "DETAILS_PENDING" && (
         <Card>
