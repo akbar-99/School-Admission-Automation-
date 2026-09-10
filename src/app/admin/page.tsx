@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { formatDateTime } from "@/lib/utils";
+import { formatDateTime, cn } from "@/lib/utils";
 import { resolveSeat } from "./actions";
 import { getClassOptions } from "@/lib/classes";
 import { needsAssessment } from "@/lib/assessment";
@@ -241,6 +241,34 @@ async function ApplicationsTableSection({
         </CardDescription>
       </CardHeader>
       <CardContent>
+        <div className="mb-4 flex flex-wrap gap-2 border-b border-border pb-4">
+          <Link
+            href="/admin"
+            className={cn(
+              "rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors",
+              !filters.status
+                ? "bg-primary text-primary-foreground"
+                : "bg-secondary text-secondary-foreground hover:bg-secondary/70",
+            )}
+          >
+            All
+          </Link>
+          {(Object.keys(STATUS_LABEL) as AppStatus[]).map((s) => (
+            <Link
+              key={s}
+              href={`/admin?status=${s}`}
+              className={cn(
+                "rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors",
+                filters.status === s
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-secondary text-secondary-foreground hover:bg-secondary/70",
+              )}
+            >
+              {STATUS_LABEL[s]}
+            </Link>
+          ))}
+        </div>
+
         <form action="/admin" method="get" className="mb-4 space-y-4 border-b border-border pb-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-1.5">
