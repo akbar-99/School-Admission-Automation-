@@ -134,16 +134,29 @@ export function RemainingDetailsForm({
             <Input value={grade} disabled />
           </div>
           {timingOptions.length > 1 && (
-            <div className="space-y-1.5">
-              <Label htmlFor="preferred_class_timing">Preferred class timing</Label>
-              <Select id="preferred_class_timing" name="preferred_class_timing" defaultValue="">
-                <option value="">No preference</option>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label>Preferred class timing</Label>
+              <div className="space-y-2">
+                <label className="flex cursor-pointer items-center gap-3 rounded-md border border-border px-3 py-2 text-sm transition-colors has-[:checked]:border-primary has-[:checked]:bg-secondary">
+                  <input
+                    type="radio"
+                    name="preferred_class_timing"
+                    value=""
+                    defaultChecked
+                    className="shrink-0"
+                  />
+                  <span>No preference</span>
+                </label>
                 {timingOptions.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
+                  <label
+                    key={t}
+                    className="flex cursor-pointer items-center gap-3 rounded-md border border-border px-3 py-2 text-sm transition-colors has-[:checked]:border-primary has-[:checked]:bg-secondary"
+                  >
+                    <input type="radio" name="preferred_class_timing" value={t} className="shrink-0" />
+                    <span>{t}</span>
+                  </label>
                 ))}
-              </Select>
+              </div>
               <p className="text-xs text-muted-foreground">
                 We&apos;ll try to place your child in a class with this timing, subject to seat
                 availability.

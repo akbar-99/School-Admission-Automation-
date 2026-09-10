@@ -185,6 +185,8 @@ async function Content({
         </Card>
       )}
 
+      {app.grade_applying && status !== "LEAD_CREATED" && <ClassTimingCard />}
+
       {status === "DETAILS_PENDING" && (
         <Card>
           <CardHeader>
@@ -232,8 +234,6 @@ async function Content({
       )}
 
       {assessmentResult && <ResultsCard />}
-
-      {app.grade_applying && status !== "LEAD_CREATED" && <ClassTimingCard />}
 
       {(status === "AGREEMENT_SENT" ||
         status === "PAYMENT_PENDING" ||
