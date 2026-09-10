@@ -245,6 +245,16 @@ export default async function ApplicationDetailPage({
           value={app.agreement_accepted_at ? formatDateTime(app.agreement_accepted_at) : "—"}
         />
         <Field label="From IP" value={app.agreement_ip ?? "—"} />
+        <div className="sm:col-span-2">
+          <a
+            href={`/api/agreement/${app.access_token}`}
+            target="_blank"
+            rel="noreferrer"
+            className="text-sm font-medium text-primary underline underline-offset-4"
+          >
+            View {app.agreement_accepted ? "signed agreement" : "agreement"}
+          </a>
+        </div>
       </Section>
 
       <Section title="Payment">
