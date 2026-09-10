@@ -44,10 +44,15 @@ export async function GET(
 <style>
   body { font-family: ui-sans-serif, system-ui, sans-serif; color:#0f172a; max-width:720px; margin:40px auto; padding:0 24px; line-height:1.6; }
   h1 { font-size:24px; margin-bottom:4px; }
+  h2 { font-size:16px; margin:32px 0 4px; padding-bottom:8px; border-bottom:1px solid #e2e8f0; }
   .muted { color:#64748b; }
   table { width:100%; border-collapse:collapse; margin:24px 0; }
   td { padding:8px 0; border-bottom:1px solid #e2e8f0; vertical-align:top; }
   td.k { color:#64748b; width:40%; }
+  .terms { font-size:14.5px; color:#1e293b; }
+  .terms p { margin:0 0 14px; }
+  .terms p:last-child { margin-bottom:0; }
+  .terms strong { display:block; margin-bottom:2px; color:#0f172a; }
   .sign { margin-top:48px; display:flex; justify-content:space-between; }
   .sign div { width:45%; border-top:1px solid #0f172a; padding-top:8px; }
   @media print { .noprint { display:none; } body { margin:0; } }
@@ -73,13 +78,39 @@ export async function GET(
     <tr><td class="k">Admission fee</td><td>${formatINR(s.feePaise)}</td></tr>
     <tr><td class="k">Application reference</td><td>${app.id}</td></tr>
   </table>
-  <p>${esc(s.agreementTerms)}</p>
+  <h2>Terms &amp; Conditions</h2>
+  <div class="terms">${renderTerms(s.agreementTerms)}</div>
   ${signBlock}
 </body></html>`;
 
   return new Response(html, {
     headers: { "content-type": "text/html; charset=utf-8" },
   });
+}
+
+// Renders the admin-edited terms text (a plain textarea value) as proper
+// paragraphs instead of one collapsed block — blank lines split paragraphs,
+// and a short first line matching "N) Heading" is bolded as that
+// paragraph's heading. The length guard keeps a long line (a heading typed
+// with no break before its body text) from being bolded whole.
+function renderTerms(raw: string): string {
+  const blocks = raw
+    .replace(/\r\n/g, "\n")
+    .split(/\n\s*\n/)
+    .map((b) => b.trim())
+    .filter(Boolean);
+
+  return blocks
+    .map((block) => {
+      const lines = block.split("\n");
+      const isHeading = /^\d+\)/.test(lines[0]) && lines[0].length < 60;
+      if (isHeading) {
+        const rest = lines.slice(1).map(esc).join("<br/>");
+        return `<p><strong>${esc(lines[0])}</strong>${rest}</p>`;
+      }
+      return `<p>${lines.map(esc).join("<br/>")}</p>`;
+    })
+    .join("\n");
 }
 
 function esc(s: string): string {
