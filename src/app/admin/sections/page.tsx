@@ -6,7 +6,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import type { Section } from "@/lib/types";
+import { SectionErpFields } from "@/components/admin/section-erp-fields";
+import { DuplicateBlockedAlert } from "@/components/admin/duplicate-blocked-alert";
+import { SectionStudentsToggle, type SectionStudentRow } from "@/components/admin/section-students-toggle";
+import type { AppStatus, Section } from "@/lib/types";
 
 const ERP_SYNC_LABEL: Record<Section["erp_sync_status"], { label: string; tone: "neutral" | "success" | "warning" | "danger" }> = {
   pending: { label: "Not yet pushed to ERP", tone: "neutral" },
@@ -18,9 +21,9 @@ const ERP_SYNC_LABEL: Record<Section["erp_sync_status"], { label: string; tone: 
 export default async function SectionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ ok?: string; error?: string }>;
+  searchParams: Promise<{ ok?: string; error?: string; duplicate?: string }>;
 }) {
-  const { ok, error } = await searchParams;
+  const { ok, error, duplicate } = await searchParams;
   const admin = createSupabaseAdminClient();
   const { data } = await admin
     .from("sections")
@@ -34,8 +37,37 @@ export default async function SectionsPage({
     return acc;
   }, {});
 
+  // Students currently enrolled in each section — section_id is only ever
+  // set by enroll_application, so this is exactly "who's enrolled here".
+  const sectionIds = sections.map((s) => s.id);
+  const { data: enrolledData } = sectionIds.length
+    ? await admin
+        .from("applications")
+        .select("id, section_id, admission_number, status, students(full_name), parents(full_name)")
+        .in("section_id", sectionIds)
+    : { data: [] };
+  const enrolledRows = (enrolledData ?? []) as unknown as {
+    id: string;
+    section_id: string;
+    admission_number: string | null;
+    status: AppStatus;
+    students: { full_name: string } | null;
+    parents: { full_name: string } | null;
+  }[];
+  const studentsBySection = enrolledRows.reduce<Record<string, SectionStudentRow[]>>((acc, r) => {
+    (acc[r.section_id] ??= []).push({
+      id: r.id,
+      studentName: r.students?.full_name ?? "—",
+      parentName: r.parents?.full_name ?? "—",
+      admissionNumber: r.admission_number,
+      status: r.status,
+    });
+    return acc;
+  }, {});
+
   return (
     <div className="space-y-6">
+      {duplicate && <DuplicateBlockedAlert message={duplicate} />}
       <div>
         <h1 className="font-display text-3xl font-semibold tracking-tight">Class sections &amp; capacity</h1>
         <p className="text-muted-foreground">
@@ -53,26 +85,15 @@ export default async function SectionsPage({
         </CardHeader>
         <CardContent>
           <form action={createSection} className="flex flex-wrap items-end gap-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="grade">Grade</Label>
-              <Input id="grade" name="grade" placeholder="KG 1 / G1" className="w-28" required />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="name">Section</Label>
-              <Input id="name" name="name" placeholder="C" className="w-24" required />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="batch">Batch (KG only)</Label>
-              <Input id="batch" name="batch" placeholder="DAHLIA" className="w-32" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="capacity">Capacity</Label>
-              <Input id="capacity" name="capacity" type="number" defaultValue={30} className="w-28" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="erp_class_name">ERP class name</Label>
-              <Input id="erp_class_name" name="erp_class_name" placeholder="STAGE 5 A" className="w-40" />
-            </div>
+            <SectionErpFields
+              variant="create"
+              between={
+                <div className="space-y-1.5">
+                  <Label htmlFor="capacity">Capacity</Label>
+                  <Input id="capacity" name="capacity" type="number" defaultValue={30} className="w-28" />
+                </div>
+              }
+            />
             <SubmitButton pendingText="Creating…">Add section</SubmitButton>
           </form>
         </CardContent>
@@ -90,10 +111,23 @@ export default async function SectionsPage({
               return (
                 <div key={s.id} className="rounded-md border border-border p-3">
                   <div className="flex items-center justify-between">
-                    <div className="font-medium">
-                      Section {s.name}
-                      {s.batch && <span className="font-normal text-muted-foreground"> — {s.batch}</span>}
-                    </div>
+                    <SectionStudentsToggle
+                      label={
+                        <>
+                          Section {s.name}
+                          {s.batch && <span className="font-normal text-muted-foreground"> — {s.batch}</span>}
+                        </>
+                      }
+                      students={studentsBySection[s.id] ?? []}
+                      currentSectionId={s.id}
+                      targetSections={list.map((t) => ({
+                        id: t.id,
+                        name: t.name,
+                        batch: t.batch,
+                        filled: t.filled,
+                        capacity: t.capacity,
+                      }))}
+                    />
                     <div className="text-sm text-muted-foreground">
                       {s.filled} / {s.capacity} seats {full && "· full"}
                     </div>
@@ -110,6 +144,11 @@ export default async function SectionsPage({
                     <Badge tone={ERP_SYNC_LABEL[s.erp_sync_status].tone}>
                       {ERP_SYNC_LABEL[s.erp_sync_status].label}
                     </Badge>
+                    {s.class_timing && (
+                      <span>
+                        Timing: <span className="font-medium text-foreground">{s.class_timing}</span>
+                      </span>
+                    )}
                   </div>
                   <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">
                     <div
@@ -122,39 +161,29 @@ export default async function SectionsPage({
                     {/* Edit grade / section / capacity */}
                     <form action={updateSection} className="flex flex-wrap items-end gap-2">
                       <input type="hidden" name="section_id" value={s.id} />
-                      <div className="space-y-1">
-                        <Label htmlFor={`grade-${s.id}`} className="text-xs">Grade</Label>
-                        <Input id={`grade-${s.id}`} name="grade" defaultValue={s.grade} className="h-9 w-24" required />
-                      </div>
-                      <div className="space-y-1">
-                        <Label htmlFor={`name-${s.id}`} className="text-xs">Section</Label>
-                        <Input id={`name-${s.id}`} name="name" defaultValue={s.name} className="h-9 w-16" required />
-                      </div>
-                      <div className="space-y-1">
-                        <Label htmlFor={`batch-${s.id}`} className="text-xs">Batch</Label>
-                        <Input id={`batch-${s.id}`} name="batch" defaultValue={s.batch ?? ""} className="h-9 w-28" />
-                      </div>
-                      <div className="space-y-1">
-                        <Label htmlFor={`erp-${s.id}`} className="text-xs">ERP class name</Label>
-                        <Input
-                          id={`erp-${s.id}`}
-                          name="erp_class_name"
-                          defaultValue={s.erp_class_name ?? ""}
-                          className="h-9 w-36"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label htmlFor={`cap-${s.id}`} className="text-xs">Capacity</Label>
-                        <Input
-                          id={`cap-${s.id}`}
-                          name="capacity"
-                          type="number"
-                          min={s.filled}
-                          defaultValue={s.capacity}
-                          className="h-9 w-24"
-                          required
-                        />
-                      </div>
+                      <SectionErpFields
+                        variant="edit"
+                        idPrefix={s.id}
+                        initialGrade={s.grade}
+                        initialName={s.name}
+                        initialBatch={s.batch ?? ""}
+                        initialErpClassName={s.erp_class_name ?? ""}
+                        initialClassTiming={s.class_timing ?? ""}
+                        between={
+                          <div className="space-y-1">
+                            <Label htmlFor={`cap-${s.id}`} className="text-xs">Capacity</Label>
+                            <Input
+                              id={`cap-${s.id}`}
+                              name="capacity"
+                              type="number"
+                              min={s.filled}
+                              defaultValue={s.capacity}
+                              className="h-9 w-24"
+                              required
+                            />
+                          </div>
+                        }
+                      />
                       <SubmitButton size="sm" variant="outline" pendingText="Saving…">
                         Save
                       </SubmitButton>

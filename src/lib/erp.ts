@@ -15,6 +15,8 @@ const CAPACITY_URL =
 const WEBHOOK_URL = "https://lxnwnkgyjywoolnqsrjy.supabase.co/functions/v1/admissions-webhook";
 const CLASS_WEBHOOK_URL =
   "https://lxnwnkgyjywoolnqsrjy.supabase.co/functions/v1/admissions-class-webhook";
+const CLASS_DEACTIVATE_URL =
+  "https://lxnwnkgyjywoolnqsrjy.supabase.co/functions/v1/admissions-class-deactivate";
 
 function authHeaders(): Record<string, string> {
   return { "x-admissions-secret": config.erp.secret };
@@ -202,5 +204,52 @@ export async function syncClassToErp(payload: ErpClassPushPayload): Promise<Sync
     return { ok: true, action, raw: json };
   } catch (err) {
     return { ok: false, conflict: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Deactivate this app's own section in the ERP on section delete. Same
+// external_class_id/secret as the create/update push above — the ERP side
+// deactivates (is_active = false) rather than hard-deletes, since real
+// classes are referenced by timetable/journal/ledger rows on their side.
+// 404 means the ERP never had this external_class_id linked (nothing to
+// deactivate); "unchanged" means it was already deactivated — both are
+// treated as success so a delete never gets stuck on ERP state that's
+// already correct. Never throws.
+// ---------------------------------------------------------------------------
+export type DeactivateClassResult =
+  | { ok: true; action: "deactivated" | "unchanged" | "not_found" | "skipped"; raw?: unknown }
+  | { ok: false; error: string };
+
+export async function deactivateClassInErp(externalClassId: string): Promise<DeactivateClassResult> {
+  if (!config.erp.classWebhookEnabled) return { ok: true, action: "skipped" };
+  try {
+    const res = await fetch(CLASS_DEACTIVATE_URL, {
+      method: "POST",
+      headers: { ...classAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ external_class_id: externalClassId }),
+    });
+    const text = await res.text();
+    let json: unknown = null;
+    try {
+      json = text ? JSON.parse(text) : null;
+    } catch {
+      // fall through with json = null; raw text still reported in the error
+    }
+
+    if (res.status === 404) {
+      return { ok: true, action: "not_found", raw: json ?? text };
+    }
+    if (!res.ok) {
+      return { ok: false, error: `ERP class deactivate failed (${res.status}): ${text}` };
+    }
+
+    const action = (json as { action?: string; success?: boolean } | null)?.action;
+    if (action === "deactivated" || action === "unchanged") {
+      return { ok: true, action, raw: json };
+    }
+    return { ok: false, error: `ERP class deactivate returned unexpected body: ${text}` };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }

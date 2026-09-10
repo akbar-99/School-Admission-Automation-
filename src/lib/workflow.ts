@@ -72,6 +72,27 @@ export async function sendAgreement(app: Application, parent: Parent) {
 }
 
 // ---------------------------------------------------------------------------
+// Remaining-details form unlocked — either right away (KG 1, which never has
+// an assessment) or once a Grade applicant's assessment result is a PASS.
+// Shared by handleFormSubmitted and handleAssessmentResult so the two
+// trigger points send identical wording.
+// ---------------------------------------------------------------------------
+async function notifyDetailsPending(app: Application, parent: Parent) {
+  const portal = applyUrl(app.access_token);
+  await dispatch(
+    multiChannel(
+      {
+        applicationId: app.id,
+        event: "N-2b",
+        subject: "Complete your admission details",
+        body: `Hello ${parent.full_name},\n\nPlease complete the remaining admission details (documents, addresses and parent information) to continue:\n${portal}`,
+      },
+      parent,
+    ),
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Form submitted (N-2) — branch KG vs GRADE
 // ---------------------------------------------------------------------------
 export async function handleFormSubmitted(appId: string) {
@@ -105,7 +126,8 @@ export async function handleFormSubmitted(appId: string) {
   );
 
   if (!needsAssessment(app.grade_applying ?? "")) {
-    // KG: straight to agreement
+    // KG 1: never has an assessment, so the remaining-details form unlocks
+    // immediately rather than waiting on anything.
     messages.push(
       ...fanToStaff(await staffContacts(["admin"]), {
         applicationId: app.id,
@@ -116,16 +138,11 @@ export async function handleFormSubmitted(appId: string) {
     );
     await admin
       .from("applications")
-      .update({ status: "AGREEMENT_SENT" })
+      .update({ status: "DETAILS_PENDING" })
       .eq("id", app.id)
       .eq("status", "FORM_SUBMITTED");
     await dispatch(messages);
-    const { data: fresh } = await admin
-      .from("applications")
-      .select("*")
-      .eq("id", app.id)
-      .single();
-    await sendAgreement(fresh as Application, parent);
+    await notifyDetailsPending(app, parent);
   } else {
     // GRADE: notify admin to create & assign an assessment slot
     messages.push(
@@ -625,7 +642,7 @@ export async function handleAssessmentResult(
       schoolName: s.schoolName,
       schoolPhone: s.schoolPhone,
       schoolEmail: s.schoolEmail,
-      studentName: st?.full_name ?? parent.full_name,
+      studentName: st?.full_name ?? app.lead_student_name ?? parent.full_name,
       dob: st?.dob ? formatDate(st.dob) : null,
       grade: app.grade_applying,
       parentName: parent.full_name,
@@ -682,11 +699,10 @@ export async function handleAssessmentResult(
   if (outcome === "PASS") {
     await admin
       .from("applications")
-      .update({ status: "AGREEMENT_SENT" })
+      .update({ status: "DETAILS_PENDING" })
       .eq("id", app.id)
       .eq("status", "ASSESSMENT_COMPLETED");
-    const { data: fresh } = await admin.from("applications").select("*").eq("id", app.id).single();
-    await sendAgreement(fresh as Application, parent);
+    await notifyDetailsPending(app, parent);
   } else {
     // FAIL -> REJECTED, courteous note (N-10), workflow ends (SRS FR-15a)
     await admin
@@ -901,6 +917,43 @@ export async function resendErpAdmission(appId: string): Promise<void> {
   });
 }
 
+// Called after an admin transfers an already-enrolled student to a
+// different section (Admin -> Sections -> Transfer). The student's ERP class
+// mapping is now stale for the OLD section — rather than guessing at
+// resending a "class changed" update directly (unverified ERP behavior),
+// this re-flags the application as 'no_mapping', the same state a never-
+// mapped section produces on first sync. The existing Admin -> ERP "Retry"
+// button re-runs syncEnrollmentToErp, which re-reads the section's ERP class
+// name fresh from the (now updated) section_id — so it naturally picks up
+// the new section's mapping, or re-flags 'no_mapping' again if the new
+// section has none, all through the same already-reviewed retry path.
+export async function flagErpRecheckAfterTransfer(applicationId: string): Promise<void> {
+  if (!config.erp.enabled) return;
+  const admin = createSupabaseAdminClient();
+  const { data: appRow } = await admin
+    .from("applications")
+    .select("admission_number")
+    .eq("id", applicationId)
+    .maybeSingle();
+  if (!appRow?.admission_number) return;
+
+  await admin.from("applications").update({ erp_status: "no_mapping" }).eq("id", applicationId);
+  await logAudit({
+    action: "erp.recheck_after_transfer",
+    entity: "application",
+    entityId: applicationId,
+    details: {},
+  });
+  await dispatch(
+    fanToStaff(await staffContacts(["admin"]), {
+      applicationId,
+      event: "ERP_NO_MAPPING",
+      subject: "ERP sync needs attention: section transfer",
+      body: `${appRow.admission_number} was transferred to a different section — the ERP class needs to be re-verified. Retry under Admin → ERP.`,
+    }),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Push this app's own section (class/division/batch) into the ERP whenever
 // one is created or edited — a discrete call per edit, not a poll, per the
@@ -912,14 +965,16 @@ export async function resendErpAdmission(appId: string): Promise<void> {
 // staff and are never retried automatically — the ERP's own instruction is
 // that these need a human to resolve directly in the ERP.
 // ---------------------------------------------------------------------------
+export type SyncSectionToErpStatus = "synced" | "conflict" | "failed" | "skipped";
+
 export async function syncSectionToErp(section: {
   id: string;
   grade: string;
   name: string;
   batch: string | null;
   capacity: number;
-}) {
-  if (!config.erp.classWebhookEnabled) return;
+}): Promise<SyncSectionToErpStatus> {
+  if (!config.erp.classWebhookEnabled) return "skipped";
   const admin = createSupabaseAdminClient();
 
   const result = await syncClassToErp({
@@ -941,7 +996,7 @@ export async function syncSectionToErp(section: {
       entityId: section.id,
       details: { action: result.action },
     });
-    return;
+    return "synced";
   }
 
   if (result.conflict) {
@@ -959,7 +1014,7 @@ export async function syncSectionToErp(section: {
         body: `${section.grade}-${section.name}${section.batch ? ` (${section.batch})` : ""} couldn't sync to the ERP — a name collision needs to be resolved directly in the ERP (not something this app can retry automatically).`,
       }),
     );
-    return;
+    return "conflict";
   }
 
   console.error("[erp] section sync failed", result.error);
@@ -977,6 +1032,7 @@ export async function syncSectionToErp(section: {
       body: `${section.grade}-${section.name}${section.batch ? ` (${section.batch})` : ""} couldn't sync to the ERP. Editing the section again will retry.`,
     }),
   );
+  return "failed";
 }
 
 // ---------------------------------------------------------------------------

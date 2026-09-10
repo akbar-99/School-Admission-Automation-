@@ -13,6 +13,7 @@ export type AppStatus =
   | "FORM_SUBMITTED"
   | "ASSESSMENT_SCHEDULED"
   | "ASSESSMENT_COMPLETED"
+  | "DETAILS_PENDING"
   | "AGREEMENT_SENT"
   | "PAYMENT_PENDING"
   | "PAYMENT_COMPLETED"
@@ -92,6 +93,8 @@ export interface Application {
   category: Category | null;
   grade_applying: string | null;
   lead_student_name: string | null;
+  reported_age: number | null;
+  lead_source: string | null;
   preferred_assessment_date: string | null;
   preferred_assessment_date_alt: string | null;
   preferred_assessment_tz: string | null;
@@ -120,6 +123,7 @@ export interface Section {
   grade: string;
   name: string;
   batch: string | null;
+  class_timing: string | null;
   erp_class_name: string | null;
   erp_sync_status: "pending" | "synced" | "conflict" | "failed";
   erp_synced_at: string | null;
@@ -195,6 +199,7 @@ export const STATUS_LABEL: Record<AppStatus, string> = {
   FORM_SUBMITTED: "Form submitted",
   ASSESSMENT_SCHEDULED: "Assessment scheduled",
   ASSESSMENT_COMPLETED: "Assessment completed",
+  DETAILS_PENDING: "Awaiting full details",
   AGREEMENT_SENT: "Agreement sent",
   PAYMENT_PENDING: "Payment pending",
   PAYMENT_COMPLETED: "Payment completed",
@@ -205,6 +210,21 @@ export const STATUS_LABEL: Record<AppStatus, string> = {
   REJECTED: "Rejected",
 };
 
+export const LEAD_SOURCES = ["instagram", "facebook", "whatsapp", "google", "referral", "other"] as const;
+export type LeadSource = (typeof LEAD_SOURCES)[number];
+export const LEAD_SOURCE_LABEL: Record<LeadSource, string> = {
+  instagram: "Instagram",
+  facebook: "Facebook",
+  whatsapp: "WhatsApp",
+  google: "Google",
+  referral: "Referral",
+  other: "Other",
+};
+export function leadSourceLabel(source: string | null): string {
+  if (!source) return "—";
+  return (LEAD_SOURCE_LABEL as Record<string, string>)[source] ?? source;
+}
+
 export type BadgeTone = "neutral" | "info" | "warning" | "success" | "danger";
 
 export const STATUS_TONE: Record<AppStatus, BadgeTone> = {
@@ -212,6 +232,7 @@ export const STATUS_TONE: Record<AppStatus, BadgeTone> = {
   FORM_SUBMITTED: "info",
   ASSESSMENT_SCHEDULED: "info",
   ASSESSMENT_COMPLETED: "info",
+  DETAILS_PENDING: "warning",
   AGREEMENT_SENT: "warning",
   PAYMENT_PENDING: "warning",
   PAYMENT_COMPLETED: "success",

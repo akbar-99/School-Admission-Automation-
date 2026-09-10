@@ -8,6 +8,7 @@ import { requireRole } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   backfillZoomLink,
+  flagErpRecheckAfterTransfer,
   handlePaymentCompleted,
   handleSlotBooked,
   notifyOpenSlotAvailable,
@@ -16,6 +17,7 @@ import {
   notifyTeacherSlotAssigned,
   syncSectionToErp,
 } from "@/lib/workflow";
+import { deactivateClassInErp } from "@/lib/erp";
 import { logAudit } from "@/lib/audit";
 import { config } from "@/lib/config";
 import { zonedTimeToUtcISO, toZonedInputValue } from "@/lib/utils";
@@ -519,7 +521,7 @@ function back(msg?: string, type: "error" | "ok" = "ok") {
   redirect("/admin?" + (msg ? `${type}=${encodeURIComponent(msg)}` : ""));
 }
 
-function sectionsBack(msg?: string, type: "error" | "ok" = "ok"): never {
+function sectionsBack(msg?: string, type: "error" | "ok" | "duplicate" = "ok"): never {
   redirect("/admin/sections?" + (msg ? `${type}=${encodeURIComponent(msg)}` : ""));
 }
 
@@ -589,6 +591,7 @@ const UpdateSectionSchema = z.object({
   name: z.string().trim().min(1).max(4),
   batch: z.string().trim().max(60).optional().or(z.literal("")),
   erp_class_name: z.string().trim().max(120).optional().or(z.literal("")),
+  class_timing: z.string().trim().max(200).optional().or(z.literal("")),
   capacity: z.coerce.number().int().positive().max(200),
 });
 
@@ -600,10 +603,11 @@ export async function updateSection(formData: FormData) {
     name: formData.get("name"),
     batch: formData.get("batch") ?? "",
     erp_class_name: formData.get("erp_class_name") ?? "",
+    class_timing: formData.get("class_timing") ?? "",
     capacity: formData.get("capacity"),
   });
   if (!parsed.success) sectionsBack(parsed.error.issues[0].message, "error");
-  const { section_id, grade, name, batch, erp_class_name, capacity } = parsed.data!;
+  const { section_id, grade, name, batch, erp_class_name, class_timing, capacity } = parsed.data!;
 
   const admin = createSupabaseAdminClient();
   const { data: section } = await admin
@@ -623,6 +627,7 @@ export async function updateSection(formData: FormData) {
       name: name.toUpperCase(),
       batch: batch || null,
       erp_class_name: erp_class_name || null,
+      class_timing: class_timing || null,
       capacity,
     })
     .eq("id", section_id);
@@ -634,7 +639,14 @@ export async function updateSection(formData: FormData) {
     action: "admin.update_section",
     entity: "section",
     entityId: section_id,
-    details: { grade, name, batch: batch || null, erp_class_name: erp_class_name || null, capacity },
+    details: {
+      grade,
+      name,
+      batch: batch || null,
+      erp_class_name: erp_class_name || null,
+      class_timing: class_timing || null,
+      capacity,
+    },
   });
   await syncSectionToErp({
     id: section_id,
@@ -672,6 +684,17 @@ export async function deleteSection(formData: FormData) {
     sectionsBack("Cannot delete: applications are still assigned to this section.", "error");
   }
 
+  // Deactivate in the ERP before deleting locally — once this row is gone
+  // there's nothing left here to retry from, so a real failure blocks the
+  // delete rather than leaving a stale active class behind in the ERP.
+  // "not_found" (never linked) and "unchanged" (already deactivated) both
+  // count as success per the ERP's own contract, so this never gets stuck
+  // on ERP state that's already correct.
+  const deactivateResult = await deactivateClassInErp(section_id);
+  if (!deactivateResult.ok) {
+    sectionsBack(`Could not deactivate in the ERP: ${deactivateResult.error}. Try again.`, "error");
+  }
+
   const { error } = await admin.from("sections").delete().eq("id", section_id);
   if (error) sectionsBack(error.message, "error");
 
@@ -681,10 +704,64 @@ export async function deleteSection(formData: FormData) {
     action: "admin.delete_section",
     entity: "section",
     entityId: section_id,
-    details: { grade: section!.grade, name: section!.name },
+    details: { grade: section!.grade, name: section!.name, erp_deactivate_action: deactivateResult.action },
   });
   revalidatePath("/admin/sections");
   sectionsBack("Section deleted.");
+}
+
+// Move an already-enrolled student to a different division/batch within the
+// same grade (transfer_application_section enforces same-grade + capacity).
+const TransferSectionSchema = z.object({
+  application_id: z.string().uuid(),
+  new_section_id: z.string().uuid(),
+});
+
+export async function transferStudentSection(formData: FormData) {
+  const { profile } = await requireRole(["admin"]);
+  const parsed = TransferSectionSchema.safeParse({
+    application_id: formData.get("application_id"),
+    new_section_id: formData.get("new_section_id"),
+  });
+  if (!parsed.success) sectionsBack("Invalid transfer request.", "error");
+  const { application_id, new_section_id } = parsed.data!;
+
+  const admin = createSupabaseAdminClient();
+  const { data: result, error } = await admin.rpc("transfer_application_section", {
+    p_application: application_id,
+    p_new_section: new_section_id,
+  });
+  if (error) sectionsBack(error.message, "error");
+
+  const r = result as {
+    status: "TRANSFERRED" | "NOT_ENROLLED" | "SAME_SECTION" | "GRADE_MISMATCH" | "FULL";
+    old_section_id?: string;
+    new_section_id?: string;
+    grade?: string;
+    name?: string | null;
+    batch?: string | null;
+    erp_class_name?: string | null;
+  };
+
+  if (r.status === "NOT_ENROLLED") sectionsBack("This student isn't enrolled in a section.", "error");
+  if (r.status === "SAME_SECTION") sectionsBack("Student is already in that section.", "error");
+  if (r.status === "GRADE_MISMATCH") sectionsBack("Can't transfer across grades — only divisions/batches within the same grade.", "error");
+  if (r.status === "FULL") sectionsBack("That section is already full.", "error");
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "admin.transfer_section",
+    entity: "application",
+    entityId: application_id,
+    details: { from_section_id: r.old_section_id, to_section_id: r.new_section_id },
+  });
+  await flagErpRecheckAfterTransfer(application_id);
+
+  revalidatePath("/admin/sections");
+  revalidatePath(`/admin/applications/${application_id}`);
+  const label = `${r.grade}-${r.name ?? ""}${r.batch ? ` - ${r.batch}` : ""}`;
+  sectionsBack(`Transferred to ${label}.`);
 }
 
 const SectionSchema = z.object({
@@ -692,6 +769,7 @@ const SectionSchema = z.object({
   name: z.string().trim().min(1).max(4),
   batch: z.string().trim().max(60).optional().or(z.literal("")),
   erp_class_name: z.string().trim().max(120).optional().or(z.literal("")),
+  class_timing: z.string().trim().max(200).optional().or(z.literal("")),
   capacity: z.coerce.number().int().positive().max(200).default(30),
 });
 
@@ -702,10 +780,11 @@ export async function createSection(formData: FormData) {
     name: formData.get("name"),
     batch: formData.get("batch") ?? "",
     erp_class_name: formData.get("erp_class_name") ?? "",
+    class_timing: formData.get("class_timing") ?? "",
     capacity: formData.get("capacity") ?? 30,
   });
   if (!parsed.success) sectionsBack("Invalid section", "error");
-  const { grade, name, batch, erp_class_name, capacity } = parsed.data!;
+  const { grade, name, batch, erp_class_name, class_timing, capacity } = parsed.data!;
 
   const admin = createSupabaseAdminClient();
   const { data: created, error } = await admin
@@ -715,6 +794,7 @@ export async function createSection(formData: FormData) {
       name: name.toUpperCase(),
       batch: batch || null,
       erp_class_name: erp_class_name || null,
+      class_timing: class_timing || null,
       capacity,
     })
     .select("id")
@@ -727,15 +807,42 @@ export async function createSection(formData: FormData) {
     action: "admin.create_section",
     entity: "section",
     entityId: created!.id,
-    details: { grade, name, batch: batch || null, erp_class_name: erp_class_name || null, capacity },
+    details: {
+      grade,
+      name,
+      batch: batch || null,
+      erp_class_name: erp_class_name || null,
+      class_timing: class_timing || null,
+      capacity,
+    },
   });
-  await syncSectionToErp({
+  const syncStatus = await syncSectionToErp({
     id: created!.id,
     grade: grade.toUpperCase(),
     name: name.toUpperCase(),
     batch: batch || null,
     capacity,
   });
+
+  // A conflict means the ERP already has a class matching this exact
+  // grade/section/batch — don't let a duplicate persist here either.
+  if (syncStatus === "conflict") {
+    await admin.from("sections").delete().eq("id", created!.id);
+    await logAudit({
+      actorId: profile.id,
+      actorRole: profile.role,
+      action: "admin.create_section_blocked_duplicate",
+      entity: "section",
+      entityId: created!.id,
+      details: { grade, name, batch: batch || null },
+    });
+    revalidatePath("/admin/sections");
+    sectionsBack(
+      `A class named "${grade.toUpperCase()}-${name.toUpperCase()}${batch ? ` - ${batch}` : ""}" already exists in the ERP. Creation was blocked — resolve the naming conflict directly in the ERP, then try again.`,
+      "duplicate",
+    );
+  }
+
   revalidatePath("/admin");
   revalidatePath("/admin/sections");
   sectionsBack("Section created.");
