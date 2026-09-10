@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Alert } from "@/components/ui/alert";
 import { deleteApplication, rotateAccessToken } from "../../actions";
 import { needsAssessment } from "@/lib/assessment";
-import type { Application, Student, Parent, Payment, SubjectResult } from "@/lib/types";
+import { leadSourceLabel, type Application, type Student, type Parent, type Payment, type SubjectResult } from "@/lib/types";
 
 const DOC_LABEL: Record<string, string> = {
   passport: "Passport copy",
@@ -143,6 +143,7 @@ export default async function ApplicationDetailPage({
       <Section title="Application">
         <Field label="Category" value={app.category ?? "—"} />
         <Field label="Class / grade" value={app.grade_applying ?? "—"} />
+        <Field label="Source of enquiry" value={leadSourceLabel(app.lead_source)} />
         <Field label="Admission number" value={app.admission_number ?? "—"} mono />
         <Field label="Section" value={section ? `${section.grade}-${section.name}` : "—"} />
         <Field label="Created" value={formatDateTime(app.created_at)} />

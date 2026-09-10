@@ -4,6 +4,7 @@ import { requireRole } from "@/lib/auth";
 import { applyUrl } from "@/lib/parent";
 import { formatDateTime } from "@/lib/utils";
 import { createLead } from "./actions";
+import { LeadSourceSelect } from "@/components/marketing/lead-source-select";
 import { describeFilters, parseAdmissionsFilters } from "@/lib/admissions-report";
 import { StatusBadge } from "@/components/status-badge";
 import { CopyButton } from "@/components/copy-button";
@@ -17,7 +18,7 @@ import { Alert } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { FileDown, FileSpreadsheet } from "lucide-react";
-import { STATUS_LABEL, type AppStatus } from "@/lib/types";
+import { STATUS_LABEL, leadSourceLabel, type AppStatus } from "@/lib/types";
 
 interface Row {
   id: string;
@@ -25,6 +26,7 @@ interface Row {
   category: string | null;
   grade_applying: string | null;
   lead_student_name: string | null;
+  lead_source: string | null;
   access_token: string;
   created_at: string;
   parents: { full_name: string; phone: string; email: string | null } | null;
@@ -59,7 +61,7 @@ export default async function MarketingPage({
   let query = admin
     .from("applications")
     .select(
-      "id, status, category, grade_applying, lead_student_name, access_token, created_at, parents(full_name, phone, email), students(full_name)",
+      "id, status, category, grade_applying, lead_student_name, lead_source, access_token, created_at, parents(full_name, phone, email), students(full_name)",
     )
     .order("created_at", { ascending: false })
     .limit(100);
@@ -138,6 +140,10 @@ export default async function MarketingPage({
             <div className="space-y-1.5">
               <Label htmlFor="student_name">Student name (optional)</Label>
               <Input id="student_name" name="student_name" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="lead_source">Source of enquiry *</Label>
+              <LeadSourceSelect name="lead_source" />
             </div>
             <div className="sm:col-span-2">
               <SubmitButton pendingText="Creating…">Create lead &amp; send link</SubmitButton>
@@ -227,6 +233,7 @@ export default async function MarketingPage({
                   <TH>Parent</TH>
                   <TH>Student</TH>
                   <TH>Category</TH>
+                  <TH>Source</TH>
                   <TH>Grade</TH>
                   <TH>Status</TH>
                   <TH>Created</TH>
@@ -242,6 +249,7 @@ export default async function MarketingPage({
                     </TD>
                     <TD>{r.students?.full_name ?? r.lead_student_name ?? "—"}</TD>
                     <TD>{r.category ?? "—"}</TD>
+                    <TD>{leadSourceLabel(r.lead_source)}</TD>
                     <TD>{r.grade_applying ?? "—"}</TD>
                     <TD>
                       <StatusBadge status={r.status} />

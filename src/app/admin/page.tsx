@@ -21,7 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { FileDown, FileSpreadsheet } from "lucide-react";
-import { STATUS_LABEL, type AppStatus } from "@/lib/types";
+import { STATUS_LABEL, leadSourceLabel, type AppStatus } from "@/lib/types";
 
 interface Row {
   id: string;
@@ -29,6 +29,7 @@ interface Row {
   category: string | null;
   grade_applying: string | null;
   admission_number: string | null;
+  lead_source: string | null;
   created_at: string;
   parents: { full_name: string } | null;
   students: { full_name: string } | null;
@@ -62,7 +63,7 @@ export default async function AdminOverview({
     admin
       .from("applications")
       .select(
-        "id, status, category, grade_applying, admission_number, created_at, parents(full_name), students(full_name), sections(grade, name)",
+        "id, status, category, grade_applying, admission_number, lead_source, created_at, parents(full_name), students(full_name), sections(grade, name)",
       )
       .order("created_at", { ascending: false })
       .limit(300),
@@ -80,6 +81,7 @@ export default async function AdminOverview({
     category: r.category,
     grade_applying: r.gradeApplying,
     admission_number: r.admissionNumber,
+    lead_source: r.leadSource,
     created_at: r.createdAt,
     parents: { full_name: r.parentName },
     students: { full_name: r.studentName },
@@ -259,6 +261,7 @@ export default async function AdminOverview({
                   <TH>Grade</TH>
                   <TH>Status</TH>
                   <TH>Admission no.</TH>
+                  <TH>Source</TH>
                   <TH>Section</TH>
                   <TH>Created</TH>
                 </TR>
@@ -281,6 +284,7 @@ export default async function AdminOverview({
                       <StatusBadge status={r.status} />
                     </TD>
                     <TD className="font-mono text-xs">{r.admission_number ?? "—"}</TD>
+                    <TD>{leadSourceLabel(r.lead_source)}</TD>
                     <TD>{r.sections ? `${r.sections.grade}-${r.sections.name}` : "—"}</TD>
                     <TD className="whitespace-nowrap text-muted-foreground">
                       {formatDateTime(r.created_at)}

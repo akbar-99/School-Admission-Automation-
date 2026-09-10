@@ -7,13 +7,14 @@ import { requireRole } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { notifyLeadCreated } from "@/lib/workflow";
 import { logAudit } from "@/lib/audit";
-import type { Application, Parent } from "@/lib/types";
+import { LEAD_SOURCES, type Application, type Parent } from "@/lib/types";
 
 const LeadSchema = z.object({
   parent_name: z.string().trim().min(2, "Parent name is required"),
   phone: z.string().trim().min(7, "A valid phone number is required"),
   email: z.string().trim().email("A valid email is required").or(z.literal("")),
   student_name: z.string().trim().optional(),
+  lead_source: z.enum(LEAD_SOURCES, { error: "Select where this lead came from" }),
 });
 
 export async function createLead(formData: FormData) {
@@ -24,6 +25,7 @@ export async function createLead(formData: FormData) {
     phone: formData.get("phone"),
     email: formData.get("email") ?? "",
     student_name: formData.get("student_name") ?? "",
+    lead_source: formData.get("lead_source") ?? "",
   });
   if (!parsed.success) {
     redirect("/marketing?error=" + encodeURIComponent(parsed.error.issues[0].message));
@@ -51,6 +53,7 @@ export async function createLead(formData: FormData) {
       parent_id: parent.id,
       status: "LEAD_CREATED",
       lead_student_name: input.student_name || null,
+      lead_source: input.lead_source,
       created_by: profile.id,
     })
     .select("*")
