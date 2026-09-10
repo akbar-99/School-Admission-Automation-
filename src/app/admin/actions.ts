@@ -13,7 +13,6 @@ import {
   handleSlotBooked,
   notifyOpenSlotAvailable,
   notifySlotReassigned,
-  notifySlotsPublished,
   notifyTeacherSlotAssigned,
   syncSectionToErp,
 } from "@/lib/workflow";
@@ -166,7 +165,6 @@ export async function createAssessmentSlot(formData: FormData) {
   } else {
     await notifyOpenSlotAvailable({ starts_at: firstStart }, quantity, weeks);
   }
-  await notifySlotsPublished();
   revalidatePath("/admin/assessments");
   redirect(
     "/admin/assessments?ok=" +

@@ -53,6 +53,26 @@ export async function notifyLeadCreated(app: Application, parent: Parent) {
 }
 
 // ---------------------------------------------------------------------------
+// Stage-2 submission blocked as a likely duplicate (same address as another
+// application, plus a matching student name or DOB) — flag it to admin so
+// they can decide whether to merge/reject the extra one, since the parent
+// has no way to resolve this themselves.
+// ---------------------------------------------------------------------------
+export async function notifyDuplicateDetailsBlocked(
+  app: Application,
+  dup: { parentName: string; studentName: string; status: string },
+) {
+  await dispatch(
+    fanToStaff(await staffContacts(["admin"]), {
+      applicationId: app.id,
+      event: "DUPLICATE_DETAILS_BLOCKED",
+      subject: "Blocked a likely duplicate admission details submission",
+      body: `An admission details submission for "${dup.studentName}" was blocked because it shares an address with an existing application under ${dup.parentName} (status: ${dup.status}). Please review both and decide whether to merge or reject one.`,
+    }),
+  );
+}
+
+// ---------------------------------------------------------------------------
 // N-6 Agreement + Razorpay payment link
 // ---------------------------------------------------------------------------
 export async function sendAgreement(app: Application, parent: Parent) {
@@ -155,41 +175,6 @@ export async function handleFormSubmitted(appId: string) {
     );
     await dispatch(messages);
   }
-}
-
-// ---------------------------------------------------------------------------
-// N-3 Slots published — notify grade applicants awaiting a slot
-// ---------------------------------------------------------------------------
-export async function notifySlotsPublished() {
-  const admin = createSupabaseAdminClient();
-  const { data: pendingAll } = await admin
-    .from("applications")
-    .select("id, parent_id, access_token, grade_applying, status")
-    .eq("status", "FORM_SUBMITTED");
-  const pending = (pendingAll ?? []).filter((a) => needsAssessment(a.grade_applying ?? ""));
-  if (pending.length === 0) return;
-
-  const messages: OutboundMessage[] = [];
-  for (const a of pending) {
-    const { data: parentRow } = await admin
-      .from("parents")
-      .select("*")
-      .eq("id", a.parent_id)
-      .single();
-    const parent = parentRow as Parent;
-    messages.push(
-      ...multiChannel(
-        {
-          applicationId: a.id,
-          event: "N-3",
-          subject: "Assessment slots available",
-          body: `Hello ${parent.full_name},\n\nAssessment slots are now available. Please pick a slot: ${applyUrl(a.access_token)}`,
-        },
-        parent,
-      ),
-    );
-  }
-  await dispatch(messages);
 }
 
 // ---------------------------------------------------------------------------
@@ -774,6 +759,14 @@ export async function handleAssessmentResult(
 
   const hasFiles = subjects.some((s) => s.file);
   const portal = applyUrl(app.access_token);
+  // On a PASS, fold the "complete your details" call-to-action (previously a
+  // separate N-2b send right after this one) into the same message — the two
+  // always fired back-to-back with no parent action in between, so sending
+  // them separately was just a duplicate ping.
+  const nextStepLine =
+    outcome === "PASS"
+      ? `\nNext step: please complete your remaining admission details (documents, addresses and parent information) here:\n${portal}`
+      : `\nYou can also view the full results online here:\n${portal}`;
   const parentBody =
     `Hello ${parent.full_name},\n\n` +
     `Your child's assessment result is: ${outcome}.\n` +
@@ -782,7 +775,7 @@ export async function handleAssessmentResult(
     (pdfAttached
       ? `\nYour detailed assessment report (PDF)${hasFiles ? " and the subject sheets are" : " is"} attached.`
       : "") +
-    `\nYou can also view the full results online here:\n${portal}`;
+    nextStepLine;
 
   // N-5 result to parent (with per-subject scores + attached files) + admin
   await dispatch([
@@ -810,7 +803,6 @@ export async function handleAssessmentResult(
       .update({ status: "DETAILS_PENDING" })
       .eq("id", app.id)
       .eq("status", "ASSESSMENT_COMPLETED");
-    await notifyDetailsPending(app, parent);
   } else {
     // FAIL -> REJECTED, courteous note (N-10), workflow ends (SRS FR-15a)
     await admin

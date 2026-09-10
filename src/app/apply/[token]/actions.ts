@@ -10,8 +10,8 @@ import { ensureOrderForApplication, markPaymentCompleted } from "@/lib/payments"
 import {
   handleFormSubmitted,
   handleSlotBooked,
+  notifyDuplicateDetailsBlocked,
   notifySlotReleased,
-  notifySlotsPublished,
   sendAgreement,
 } from "@/lib/workflow";
 import { logAudit } from "@/lib/audit";
@@ -54,6 +54,56 @@ const RemainingDetailsSchema = z.object({
 
 function fail(token: string, message: string): never {
   redirect(`/apply/${token}?error=${encodeURIComponent(message)}`);
+}
+
+function normalizeAddress(s: string): string {
+  return s.trim().toLowerCase().replace(/\s+/g, " ");
+}
+function normalizeName(s: string): string {
+  return s.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+// Catches a duplicate that slipped past the marketing-side lead check (e.g.
+// two different-sounding names, or a lead created without going through
+// marketing) by cross-checking address at the point real address data first
+// exists. Deliberately requires address PLUS a name or DOB match — address
+// alone is not enough, since siblings legitimately share a home address
+// under different names.
+async function findAddressDuplicate(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  excludeAppId: string,
+  input: { currentAddress: string; permanentAddress: string; studentName: string; dob: string },
+): Promise<{ parentName: string; studentName: string; status: string } | null> {
+  const addrKeys = new Set(
+    [normalizeAddress(input.currentAddress), normalizeAddress(input.permanentAddress)].filter((a) => a.length > 0),
+  );
+  const nameKey = normalizeName(input.studentName);
+
+  const { data } = await admin
+    .from("applications")
+    .select("id, status, parents(full_name), students(full_name, dob, current_address, permanent_address)")
+    .not("student_id", "is", null)
+    .neq("id", excludeAppId);
+
+  for (const row of data ?? []) {
+    const st = row.students as unknown as {
+      full_name: string;
+      dob: string;
+      current_address: string;
+      permanent_address: string;
+    } | null;
+    const p = row.parents as unknown as { full_name: string } | null;
+    if (!st || !p) continue;
+    const addressMatches =
+      addrKeys.has(normalizeAddress(st.current_address)) || addrKeys.has(normalizeAddress(st.permanent_address));
+    if (!addressMatches) continue;
+    const nameMatches = nameKey.length > 0 && normalizeName(st.full_name) === nameKey;
+    const dobMatches = Boolean(input.dob) && st.dob === input.dob;
+    if (nameMatches || dobMatches) {
+      return { parentName: p.full_name, studentName: st.full_name, status: row.status };
+    }
+  }
+  return null;
 }
 
 // Validate + upload a single required document into a typed slot.
@@ -253,6 +303,26 @@ export async function submitRemainingDetails(formData: FormData) {
   const input = parsed.data;
 
   const admin = createSupabaseAdminClient();
+
+  const dup = await findAddressDuplicate(admin, app.id, {
+    currentAddress: input.current_address,
+    permanentAddress: input.permanent_address,
+    studentName: app.lead_student_name ?? "",
+    dob: input.dob,
+  });
+  if (dup) {
+    await logAudit({
+      action: "application.details_blocked_duplicate",
+      entity: "application",
+      entityId: app.id,
+      details: dup,
+    });
+    await notifyDuplicateDetailsBlocked(app, dup);
+    fail(
+      token,
+      `It looks like ${dup.studentName} already has an admission application in progress at this address. Please contact the school admissions office to continue with the existing application instead of submitting a new one.`,
+    );
+  }
 
   // Documents stored in typed slots (private Supabase Storage). Passport/
   // Aadhaar, birth certificate and photo are all always required.
@@ -458,9 +528,4 @@ export async function mockCompletePayment(formData: FormData) {
     signature: "mock",
   });
   redirect(`/apply/${token}`);
-}
-
-// Re-publish slots to waiting grade applicants (used by teacher action too).
-export async function republishSlots() {
-  await notifySlotsPublished();
 }

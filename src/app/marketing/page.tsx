@@ -46,12 +46,33 @@ export default async function MarketingPage({
   searchParams: Promise<{
     created?: string;
     error?: string;
+    duplicate?: string;
     status?: string;
     from?: string;
     to?: string;
   }>;
 }) {
-  const { created, error, status, from, to } = await searchParams;
+  const { created, error, duplicate, status, from, to } = await searchParams;
+  let duplicateInfo: {
+    input: { parent_name: string; phone: string; email: string; student_name?: string; lead_source: string };
+    matches: {
+      id: string;
+      status: string;
+      createdAt: string;
+      parentName: string;
+      phone: string | null;
+      studentName: string | null;
+      grade: string | null;
+      matchedOn: "contact" | "student_name";
+    }[];
+  } | null = null;
+  if (duplicate) {
+    try {
+      duplicateInfo = JSON.parse(duplicate);
+    } catch {
+      duplicateInfo = null;
+    }
+  }
   const hasFilters = Boolean(status || from || to);
   const { profile } = await requireRole(["marketing", "admin"]);
   // Marketing only sees leads they created themselves; admin sees everything.
@@ -115,6 +136,50 @@ export default async function MarketingPage({
         </Alert>
       )}
       {error && <Alert variant="error">{error}</Alert>}
+
+      {duplicateInfo && (
+        <Alert variant="warning" className="space-y-3">
+          <div>
+            <p className="font-semibold">Possible duplicate enquiry</p>
+            <p className="text-sm text-muted-foreground">
+              We found existing lead(s) matching this phone/email or student name. If this is genuinely
+              the same family enquiring again, open the existing lead below instead. If it&apos;s a
+              different family (e.g. the other parent enquiring separately), you can still create it.
+            </p>
+          </div>
+          <ul className="space-y-1.5 text-sm">
+            {duplicateInfo.matches.map((m) => (
+              <li key={m.id} className="rounded-md border border-border bg-muted/40 px-3 py-2">
+                <span className="font-medium">{m.parentName}</span>
+                {m.phone && <span className="text-muted-foreground"> · {m.phone}</span>}
+                {m.studentName && <span className="text-muted-foreground"> · student: {m.studentName}</span>}
+                {m.grade && <span className="text-muted-foreground"> · {m.grade}</span>}
+                <span className="text-muted-foreground"> · {STATUS_LABEL[m.status as AppStatus] ?? m.status}</span>
+                <span className="text-muted-foreground"> · {formatDateTime(m.createdAt)}</span>
+                <span className="ml-1 text-xs text-muted-foreground">
+                  (matched by {m.matchedOn === "contact" ? "phone/email" : "student name"})
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div className="flex flex-wrap items-center gap-3">
+            <form action={createLead}>
+              <input type="hidden" name="parent_name" value={duplicateInfo.input.parent_name} />
+              <input type="hidden" name="phone" value={duplicateInfo.input.phone} />
+              <input type="hidden" name="email" value={duplicateInfo.input.email} />
+              <input type="hidden" name="student_name" value={duplicateInfo.input.student_name ?? ""} />
+              <input type="hidden" name="lead_source" value={duplicateInfo.input.lead_source} />
+              <input type="hidden" name="confirm_duplicate" value="on" />
+              <SubmitButton pendingText="Creating…" variant="outline">
+                It&apos;s a different family — create anyway
+              </SubmitButton>
+            </form>
+            <Link href="/marketing" className={buttonVariants({ variant: "ghost" })}>
+              Cancel
+            </Link>
+          </div>
+        </Alert>
+      )}
 
       <Card>
         <CardHeader>
