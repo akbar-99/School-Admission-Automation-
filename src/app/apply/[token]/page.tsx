@@ -17,7 +17,8 @@ import {
   ZOOM_LINK_LEAD_MINUTES,
 } from "@/lib/utils";
 import { bookSlot, acceptAgreement } from "./actions";
-import { AdmissionForm } from "@/components/apply/admission-form";
+import { MinimalAdmissionForm, RemainingDetailsForm } from "@/components/apply/admission-form";
+import { EditableApplicantDetails } from "@/components/apply/editable-applicant-details";
 import { PayPanel } from "@/components/apply/pay-panel";
 import { StatusBadge } from "@/components/status-badge";
 import { SubmitButton } from "@/components/submit-button";
@@ -85,22 +86,12 @@ async function Content({
   const admin = createSupabaseAdminClient();
   const settings = await getSettings();
 
-  // Class list (from the grades that have sections) + open slots, for the form.
-  let openSlots: { id: string; startsAt: string }[] = [];
-  let classOptions: string[] = [];
-  if (status === "LEAD_CREATED") {
-    classOptions = await getClassOptions();
-    const { data } = await admin
-      .from("assessment_slots")
-      .select("id, starts_at")
-      .eq("is_open", true)
-      .is("application_id", null)
-      .not("teacher_id", "is", null) // only slots a teacher has claimed — guarantees a Zoom host
-      .gt("starts_at", new Date().toISOString())
-      .order("starts_at", { ascending: true })
-      .limit(50);
-    openSlots = (data ?? []).map((s) => ({ id: s.id as string, startsAt: s.starts_at as string }));
-  }
+  // Class list (from the grades that have sections) — needed for the minimal
+  // form, and again later for the editable-details grade dropdown.
+  const classOptions =
+    status === "LEAD_CREATED" || (!student && status === "FORM_SUBMITTED")
+      ? await getClassOptions()
+      : [];
 
   // Assessment result (subject-wise), shown to the parent once recorded.
   let assessmentResult: { outcome: string; remarks: string | null } | null = null;
@@ -147,23 +138,52 @@ async function Content({
 
       {student && status !== "LEAD_CREATED" && <StudentDetailsCard />}
 
+      {!student && status !== "LEAD_CREATED" && (
+        <EditableApplicantDetails
+          token={token}
+          studentName={app.lead_student_name ?? ""}
+          grade={app.grade_applying ?? ""}
+          gradeOptions={classOptions}
+          gradeEditable={status === "FORM_SUBMITTED"}
+          age={app.reported_age}
+          email={parent.email ?? ""}
+          whatsapp={parent.phone ?? ""}
+        />
+      )}
+
       {status === "LEAD_CREATED" && (
         <Card>
           <CardHeader>
             <CardTitle>Admission form</CardTitle>
             <CardDescription>
-              Tell us about your child. All classes except KG 1 require an assessment.
+              Tell us a few basic details to get started. All classes except KG 1 require an
+              assessment.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <AdmissionForm
+            <MinimalAdmissionForm
               token={token}
               gradeOptions={classOptions}
-              curriculumOptions={CURRICULUM_OPTIONS}
-              schoolTimezone={config.school.timezone}
-              schoolTimezoneLabel={config.school.timezoneLabel}
-              availableSlots={openSlots}
               defaultStudentName={app.lead_student_name}
+            />
+          </CardContent>
+        </Card>
+      )}
+
+      {status === "DETAILS_PENDING" && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Complete your admission details</CardTitle>
+            <CardDescription>
+              Almost there — please fill in the remaining details, documents and parent
+              information to receive the admission agreement.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <RemainingDetailsForm
+              token={token}
+              grade={app.grade_applying ?? ""}
+              curriculumOptions={CURRICULUM_OPTIONS}
             />
           </CardContent>
         </Card>
@@ -196,6 +216,8 @@ async function Content({
       )}
 
       {assessmentResult && <ResultsCard />}
+
+      {app.grade_applying && status !== "LEAD_CREATED" && <ClassTimingCard />}
 
       {(status === "AGREEMENT_SENT" ||
         status === "PAYMENT_PENDING" ||
@@ -543,6 +565,66 @@ async function Content({
               ))}
             </div>
           )}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Shown once the grade is known (after the admission form), so parents can
+  // see the schedule before committing to payment. Before a specific
+  // division is assigned, this lists every distinct timing offered for the
+  // grade (different divisions of the same grade can run different tracks,
+  // e.g. Mon-Fri vs Sun-Thu) rather than guessing which one applies.
+  async function ClassTimingCard() {
+    const grade = app.grade_applying;
+    if (!grade) return null;
+
+    if (app.section_id) {
+      const { data } = await admin
+        .from("sections")
+        .select("class_timing")
+        .eq("id", app.section_id)
+        .maybeSingle();
+      if (!data?.class_timing) return null;
+      return (
+        <Card>
+          <CardHeader>
+            <CardTitle>Class timing</CardTitle>
+            <CardDescription>Your child&apos;s class schedule.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm font-medium">{data.class_timing}</p>
+          </CardContent>
+        </Card>
+      );
+    }
+
+    const { data: rows } = await admin
+      .from("sections")
+      .select("class_timing")
+      .eq("grade", grade)
+      .not("class_timing", "is", null);
+    const timings = Array.from(
+      new Set((rows ?? []).map((r) => r.class_timing as string).filter(Boolean)),
+    );
+    if (timings.length === 0) return null;
+
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Class timing</CardTitle>
+          <CardDescription>
+            {timings.length > 1
+              ? `${grade} classes run on one of these schedules:`
+              : `${grade} classes run on this schedule:`}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-1.5">
+          {timings.map((t) => (
+            <p key={t} className="text-sm font-medium">
+              {t}
+            </p>
+          ))}
         </CardContent>
       </Card>
     );

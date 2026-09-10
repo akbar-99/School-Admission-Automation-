@@ -30,6 +30,7 @@ function bucketOf(status: AppStatus): BucketKey {
     case "FORM_SUBMITTED":
     case "ASSESSMENT_SCHEDULED":
     case "ASSESSMENT_COMPLETED":
+    case "DETAILS_PENDING":
       return "assessment";
     case "AGREEMENT_SENT":
     case "PAYMENT_PENDING":

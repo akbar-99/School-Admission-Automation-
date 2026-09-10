@@ -1,0 +1,14 @@
+-- ============================================================================
+-- New intermediate status: the admission form is being split into two
+-- stages — a minimal form (name, class, age, email, WhatsApp) submitted
+-- immediately, then a "remaining details" form (DOB, gender, curriculum,
+-- addresses, documents, parent info) submitted only once it's worth
+-- collecting the full paperwork — after a passed assessment for grades that
+-- need one, or immediately for KG 1 which never has one.
+--
+-- ALTER TYPE ... ADD VALUE cannot be used in the same transaction as
+-- anything that references the new value, so this is its own migration —
+-- the transition-function update that actually uses 'DETAILS_PENDING'
+-- follows in the next one.
+-- ============================================================================
+alter type app_status add value if not exists 'DETAILS_PENDING' after 'ASSESSMENT_COMPLETED';

@@ -11,6 +11,7 @@ import {
   handleFormSubmitted,
   handleSlotBooked,
   notifySlotsPublished,
+  sendAgreement,
 } from "@/lib/workflow";
 import { logAudit } from "@/lib/audit";
 import { config } from "@/lib/config";
@@ -19,11 +20,24 @@ import type { Application, DocumentRef } from "@/lib/types";
 const MAX_FILE = 5 * 1024 * 1024; // 5 MB (SRS FR-4a)
 const ALLOWED = new Set(["application/pdf", "image/jpeg", "image/png"]);
 
-const FormSchema = z.object({
+// Stage 1 — the minimal form (LEAD_CREATED -> FORM_SUBMITTED): just enough
+// to identify the applicant and their class, so an assessment can be
+// scheduled (or, for KG 1, the remaining-details form unlocked) without
+// asking for the full paperwork up front.
+const MinimalFormSchema = z.object({
   student_name: z.string().trim().min(2, "Student full name is required"),
+  grade: z.string().trim().min(1, "Class applying for is required"),
+  age: z.coerce.number().int().min(1, "Age is required").max(25, "Enter a valid age"),
+  email: z.string().trim().email("A valid email address is required"),
+  whatsapp: z.string().trim().min(7, "WhatsApp number is required"),
+});
+
+// Stage 2 — the remaining-details form (DETAILS_PENDING -> AGREEMENT_SENT):
+// everything else. Grade/student name/email/WhatsApp were already captured
+// in stage 1 and aren't re-asked here.
+const RemainingDetailsSchema = z.object({
   dob: z.string().min(1, "Date of birth is required"),
   gender: z.enum(["male", "female", "other"], { message: "Gender is required" }),
-  grade: z.string().trim().min(1, "Class applying for is required"),
   curriculum: z.string().trim().min(1, "Preferred curriculum is required"),
   country: z.string().trim().min(1, "Country of residence is required"),
   current_address: z.string().trim().min(1, "Current address is required"),
@@ -33,8 +47,6 @@ const FormSchema = z.object({
   father_phone: z.string().trim().min(7, "Father's contact number is required"),
   mother_name: z.string().trim().min(1, "Mother's full name is required"),
   mother_phone: z.string().trim().min(7, "Mother's contact number is required"),
-  whatsapp: z.string().trim().min(7, "WhatsApp number is required"),
-  email: z.string().trim().email("A valid email address is required"),
 });
 
 function fail(token: string, message: string): never {
@@ -66,7 +78,11 @@ async function uploadDocument(
   return { category, type: file.type, path, name: file.name, size: file.size };
 }
 
-export async function submitAdmissionForm(formData: FormData) {
+// Stage 1: LEAD_CREATED -> FORM_SUBMITTED. Just the minimal fields — no
+// documents, no parent details, no DOB. handleFormSubmitted takes it from
+// here: schedules an assessment for grades that need one, or (KG 1) unlocks
+// the remaining-details form immediately.
+export async function submitMinimalForm(formData: FormData) {
   const token = String(formData.get("token") ?? "");
   const { bundle } = await loadApplicationByToken(token);
   if (!bundle) fail(token, "This admission link is invalid or expired.");
@@ -75,26 +91,12 @@ export async function submitAdmissionForm(formData: FormData) {
     redirect(`/apply/${token}`);
   }
 
-  if (formData.get("consent") !== "on") {
-    fail(token, "You must accept the data-processing consent to continue.");
-  }
-
-  const parsed = FormSchema.safeParse({
+  const parsed = MinimalFormSchema.safeParse({
     student_name: formData.get("student_name"),
-    dob: formData.get("dob"),
-    gender: formData.get("gender") || undefined,
     grade: formData.get("grade"),
-    curriculum: formData.get("curriculum"),
-    country: formData.get("country"),
-    current_address: formData.get("current_address"),
-    permanent_address: formData.get("permanent_address"),
-    previous_school: formData.get("previous_school") || undefined,
-    father_name: formData.get("father_name"),
-    father_phone: formData.get("father_phone"),
-    mother_name: formData.get("mother_name"),
-    mother_phone: formData.get("mother_phone"),
-    whatsapp: formData.get("whatsapp"),
+    age: formData.get("age"),
     email: formData.get("email"),
+    whatsapp: formData.get("whatsapp"),
   });
   if (!parsed.success) fail(token, parsed.error.issues[0].message);
   const input = parsed.data;
@@ -104,11 +106,146 @@ export async function submitAdmissionForm(formData: FormData) {
   // labeled "KG" but still requires an assessment. Neither is age-based.
   const grade = input.grade;
   const category = classCategory(grade);
-  const assessmentRequired = needsAssessment(grade);
 
-  // Grade applicants may pick an open slot now for instant confirmation; if
-  // none is picked (or none are open yet), an admin schedules it afterward.
-  const slotId = String(formData.get("slot_id") ?? "");
+  const admin = createSupabaseAdminClient();
+
+  // Primary contact going forward = the email + WhatsApp the parent entered.
+  await admin
+    .from("parents")
+    .update({ email: input.email, phone: input.whatsapp })
+    .eq("id", app.parent_id);
+
+  const { error: aErr } = await admin
+    .from("applications")
+    .update({
+      lead_student_name: input.student_name,
+      reported_age: input.age,
+      category,
+      grade_applying: grade,
+      status: "FORM_SUBMITTED",
+    })
+    .eq("id", app.id)
+    .eq("status", "LEAD_CREATED");
+  if (aErr) fail(token, aErr.message);
+
+  await logAudit({
+    action: "application.form_submitted",
+    entity: "application",
+    entityId: app.id,
+    details: { category, grade },
+  });
+
+  await handleFormSubmitted(app.id);
+  redirect(`/apply/${token}`);
+}
+
+// Lets the parent correct their own stage-1 details (name, age, email,
+// WhatsApp — and class, only before an assessment is in motion) at any later
+// step, instead of leaving a typo locked in for the rest of the flow. Name/
+// age/email/WhatsApp are safe to change any time since nothing downstream
+// depends on their exact value except which contact the parent is reached
+// at. Class is different: it's what decides whether an assessment happens
+// at all, so once the applicant has moved past FORM_SUBMITTED (a slot may
+// already be booked or completed, or the remaining-details form already
+// unlocked on the strength of the original class), it's locked to avoid an
+// inconsistent state — e.g. switching into KG 1 after already sitting a
+// Grade assessment.
+const UpdateMinimalDetailsSchema = z.object({
+  student_name: z.string().trim().min(2, "Student full name is required"),
+  grade: z.string().trim().min(1).optional(),
+  age: z.coerce.number().int().min(1, "Age is required").max(25, "Enter a valid age"),
+  email: z.string().trim().email("A valid email address is required"),
+  whatsapp: z.string().trim().min(7, "WhatsApp number is required"),
+});
+
+export async function updateMinimalDetails(formData: FormData) {
+  const token = String(formData.get("token") ?? "");
+  const { bundle } = await loadApplicationByToken(token);
+  if (!bundle) fail(token, "This admission link is invalid or expired.");
+  const app = bundle.application;
+  if (app.status === "LEAD_CREATED") redirect(`/apply/${token}`);
+
+  const gradeEditable = app.status === "FORM_SUBMITTED";
+  const parsed = UpdateMinimalDetailsSchema.safeParse({
+    student_name: formData.get("student_name"),
+    grade: gradeEditable ? formData.get("grade") || undefined : undefined,
+    age: formData.get("age"),
+    email: formData.get("email"),
+    whatsapp: formData.get("whatsapp"),
+  });
+  if (!parsed.success) fail(token, parsed.error.issues[0].message);
+  const input = parsed.data;
+
+  const admin = createSupabaseAdminClient();
+  await admin
+    .from("parents")
+    .update({ email: input.email, phone: input.whatsapp })
+    .eq("id", app.parent_id);
+
+  const updates: Record<string, unknown> = {
+    lead_student_name: input.student_name,
+    reported_age: input.age,
+  };
+  const gradeChanged = gradeEditable && input.grade && input.grade !== app.grade_applying;
+  if (gradeChanged) {
+    updates.grade_applying = input.grade;
+    updates.category = classCategory(input.grade!);
+  }
+
+  const { error } = await admin.from("applications").update(updates).eq("id", app.id);
+  if (error) fail(token, error.message);
+
+  await logAudit({
+    action: "application.minimal_details_updated",
+    entity: "application",
+    entityId: app.id,
+    details: updates,
+  });
+
+  // The class changed while still awaiting assessment scheduling — re-run
+  // the same KG/Grade branch handleFormSubmitted already does, so switching
+  // into (or out of) KG 1 correctly re-routes to DETAILS_PENDING or to
+  // "awaiting assessment" rather than leaving it stuck on the old path.
+  if (gradeChanged) {
+    await handleFormSubmitted(app.id);
+  }
+
+  redirect(`/apply/${token}`);
+}
+
+// Stage 2: DETAILS_PENDING -> AGREEMENT_SENT. Everything the minimal form
+// didn't ask for — DOB, gender, curriculum, addresses, documents, parent
+// details — then sends the agreement, same as the old single-step flow used
+// to do right after creating the student record.
+export async function submitRemainingDetails(formData: FormData) {
+  const token = String(formData.get("token") ?? "");
+  const { bundle } = await loadApplicationByToken(token);
+  if (!bundle) fail(token, "This admission link is invalid or expired.");
+  const app = bundle.application;
+  const parent = bundle.parent;
+  if (app.status !== "DETAILS_PENDING") {
+    redirect(`/apply/${token}`);
+  }
+
+  if (formData.get("consent") !== "on") {
+    fail(token, "You must accept the data-processing consent to continue.");
+  }
+
+  const parsed = RemainingDetailsSchema.safeParse({
+    dob: formData.get("dob"),
+    gender: formData.get("gender") || undefined,
+    curriculum: formData.get("curriculum"),
+    country: formData.get("country"),
+    current_address: formData.get("current_address"),
+    permanent_address: formData.get("permanent_address"),
+    previous_school: formData.get("previous_school") || undefined,
+    father_name: formData.get("father_name"),
+    father_phone: formData.get("father_phone"),
+    mother_name: formData.get("mother_name"),
+    mother_phone: formData.get("mother_phone"),
+  });
+  if (!parsed.success) fail(token, parsed.error.issues[0].message);
+  const input = parsed.data;
 
   const admin = createSupabaseAdminClient();
 
@@ -131,18 +268,12 @@ export async function submitAdmissionForm(formData: FormData) {
     await uploadDocument(admin, token, app.id, "birth_certificate", "Birth certificate", formData.get("birth_certificate")),
   );
 
-  // Primary contact going forward = the email + WhatsApp the parent entered.
-  await admin
-    .from("parents")
-    .update({ email: input.email, phone: input.whatsapp })
-    .eq("id", app.parent_id);
-
-  // Create student
+  // Create student — the name was already captured on the minimal form.
   const { data: studentRow, error: sErr } = await admin
     .from("students")
     .insert({
       parent_id: app.parent_id,
-      full_name: input.student_name,
+      full_name: app.lead_student_name ?? "",
       dob: input.dob,
       gender: input.gender,
       previous_school: input.previous_school ?? null,
@@ -159,55 +290,29 @@ export async function submitAdmissionForm(formData: FormData) {
     .single();
   if (sErr) fail(token, sErr.message);
 
-  // Update application -> FORM_SUBMITTED
   const { error: aErr } = await admin
     .from("applications")
     .update({
       student_id: studentRow.id,
-      category,
-      grade_applying: grade,
       documents,
       consent_accepted: true,
       consent_at: new Date().toISOString(),
-      status: "FORM_SUBMITTED",
+      status: "AGREEMENT_SENT",
     })
     .eq("id", app.id)
-    .eq("status", "LEAD_CREATED");
+    .eq("status", "DETAILS_PENDING");
   if (aErr) fail(token, aErr.message);
 
   await logAudit({
-    action: "application.form_submitted",
+    action: "application.details_submitted",
     entity: "application",
     entityId: app.id,
-    details: { category, grade },
+    details: { student_id: studentRow.id },
   });
 
-  // If the parent picked an open slot on the form, book it now (only for
-  // classes that require an assessment): the slot is confirmed instantly and
-  // the parent, teacher and admin are all notified — no separate "please
-  // schedule" step. Falls back to the normal flow if the slot was just taken
-  // by someone else.
-  if (assessmentRequired && slotId) {
-    const { data: slot, error: bookErr } = await admin.rpc("book_assessment_slot", {
-      p_slot: slotId,
-      p_application: app.id,
-    });
-    if (!bookErr && slot) {
-      await logAudit({
-        action: "assessment.slot_booked",
-        entity: "application",
-        entityId: app.id,
-        details: { slot_id: slotId, via: "form" },
-      });
-      await handleSlotBooked(app.id, slot as { starts_at: string; teacher_id: string });
-      redirect(`/apply/${token}`);
-    }
-    // Slot just taken — notify normally so the parent can pick another below.
-    await handleFormSubmitted(app.id);
-    fail(token, "That slot was just taken — please pick another available slot below.");
-  }
+  const { data: fresh } = await admin.from("applications").select("*").eq("id", app.id).single();
+  await sendAgreement(fresh as Application, parent);
 
-  await handleFormSubmitted(app.id);
   redirect(`/apply/${token}`);
 }
 
