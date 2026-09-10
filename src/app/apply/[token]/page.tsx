@@ -93,6 +93,21 @@ async function Content({
       ? await getClassOptions()
       : [];
 
+  // Distinct class timings offered for this grade, for the stage-2 timing
+  // preference — same query ClassTimingCard uses for the "not yet assigned"
+  // case below.
+  let timingOptions: string[] = [];
+  if (status === "DETAILS_PENDING" && app.grade_applying) {
+    const { data: timingRows } = await admin
+      .from("sections")
+      .select("class_timing")
+      .eq("grade", app.grade_applying)
+      .not("class_timing", "is", null);
+    timingOptions = Array.from(
+      new Set((timingRows ?? []).map((r) => r.class_timing as string).filter(Boolean)),
+    );
+  }
+
   // Assessment result (subject-wise), shown to the parent once recorded.
   let assessmentResult: { outcome: string; remarks: string | null } | null = null;
   let subjectResults: (SubjectResult & { url: string | null })[] = [];
@@ -184,6 +199,7 @@ async function Content({
               token={token}
               grade={app.grade_applying ?? ""}
               curriculumOptions={CURRICULUM_OPTIONS}
+              timingOptions={timingOptions}
             />
           </CardContent>
         </Card>

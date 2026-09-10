@@ -94,6 +94,7 @@ export interface Application {
   grade_applying: string | null;
   lead_student_name: string | null;
   reported_age: number | null;
+  preferred_class_timing: string | null;
   lead_source: string | null;
   preferred_assessment_date: string | null;
   preferred_assessment_date_alt: string | null;

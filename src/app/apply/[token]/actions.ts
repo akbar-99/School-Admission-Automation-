@@ -47,6 +47,7 @@ const RemainingDetailsSchema = z.object({
   father_phone: z.string().trim().min(7, "Father's contact number is required"),
   mother_name: z.string().trim().min(1, "Mother's full name is required"),
   mother_phone: z.string().trim().min(7, "Mother's contact number is required"),
+  preferred_class_timing: z.string().trim().max(200).optional(),
 });
 
 function fail(token: string, message: string): never {
@@ -243,6 +244,7 @@ export async function submitRemainingDetails(formData: FormData) {
     father_phone: formData.get("father_phone"),
     mother_name: formData.get("mother_name"),
     mother_phone: formData.get("mother_phone"),
+    preferred_class_timing: formData.get("preferred_class_timing") || undefined,
   });
   if (!parsed.success) fail(token, parsed.error.issues[0].message);
   const input = parsed.data;
@@ -297,6 +299,7 @@ export async function submitRemainingDetails(formData: FormData) {
       documents,
       consent_accepted: true,
       consent_at: new Date().toISOString(),
+      preferred_class_timing: input.preferred_class_timing || null,
       status: "AGREEMENT_SENT",
     })
     .eq("id", app.id)
@@ -307,7 +310,7 @@ export async function submitRemainingDetails(formData: FormData) {
     action: "application.details_submitted",
     entity: "application",
     entityId: app.id,
-    details: { student_id: studentRow.id },
+    details: { student_id: studentRow.id, preferred_class_timing: input.preferred_class_timing || null },
   });
 
   const { data: fresh } = await admin.from("applications").select("*").eq("id", app.id).single();

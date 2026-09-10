@@ -111,10 +111,12 @@ export function RemainingDetailsForm({
   token,
   grade,
   curriculumOptions,
+  timingOptions,
 }: {
   token: string;
   grade: string;
   curriculumOptions: readonly string[];
+  timingOptions: readonly string[];
 }) {
   const [country, setCountry] = useState("");
   // Passport is mandatory for applicants residing outside India.
@@ -131,6 +133,23 @@ export function RemainingDetailsForm({
             <Label>Class</Label>
             <Input value={grade} disabled />
           </div>
+          {timingOptions.length > 1 && (
+            <div className="space-y-1.5">
+              <Label htmlFor="preferred_class_timing">Preferred class timing</Label>
+              <Select id="preferred_class_timing" name="preferred_class_timing" defaultValue="">
+                <option value="">No preference</option>
+                {timingOptions.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                We&apos;ll try to place your child in a class with this timing, subject to seat
+                availability.
+              </p>
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label htmlFor="dob">Date of birth *</Label>
             <Input id="dob" name="dob" type="date" required />
