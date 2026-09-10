@@ -73,6 +73,7 @@ export interface Student {
   father_phone: string | null;
   mother_name: string | null;
   mother_phone: string | null;
+  pen_number: string | null;
   created_at: string;
   updated_at: string;
 }

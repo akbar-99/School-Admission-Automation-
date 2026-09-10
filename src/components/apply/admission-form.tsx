@@ -119,8 +119,6 @@ export function RemainingDetailsForm({
   timingOptions: readonly string[];
 }) {
   const [country, setCountry] = useState("");
-  // Passport is mandatory for applicants residing outside India.
-  const passportRequired = country.trim().toLowerCase() !== "india";
   const isGrade = needsAssessment(grade);
 
   return (
@@ -227,20 +225,26 @@ export function RemainingDetailsForm({
       <Section title="Documents" description="PDF / JPG / PNG, max 5 MB each.">
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label htmlFor="passport">
-              Passport copy {passportRequired ? "*" : "(optional for India)"}
-            </Label>
+            <Label htmlFor="passport">Passport/Aadhaar *</Label>
             <Input
               id="passport"
               name="passport"
               type="file"
-              required={passportRequired}
+              required
               accept="application/pdf,image/jpeg,image/png"
             />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="birth_certificate">Birth certificate *</Label>
             <Input id="birth_certificate" name="birth_certificate" type="file" required accept="application/pdf,image/jpeg,image/png" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="photo">Photo *</Label>
+            <Input id="photo" name="photo" type="file" required accept="image/jpeg,image/png" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="pen_number">PEN Number (optional)</Label>
+            <Input id="pen_number" name="pen_number" placeholder="PEN number" />
           </div>
         </div>
       </Section>
