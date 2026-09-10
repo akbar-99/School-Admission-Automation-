@@ -16,7 +16,7 @@ import {
   isZoomLinkActive,
   ZOOM_LINK_LEAD_MINUTES,
 } from "@/lib/utils";
-import { bookSlot, acceptAgreement } from "./actions";
+import { bookSlot, acceptAgreement, releaseSlot } from "./actions";
 import { MinimalAdmissionForm, RemainingDetailsForm } from "@/components/apply/admission-form";
 import { EditableApplicantDetails } from "@/components/apply/editable-applicant-details";
 import { PayPanel } from "@/components/apply/pay-panel";
@@ -27,6 +27,7 @@ import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { buttonVariants } from "@/components/ui/button";
 import type { AppStatus, SubjectResult } from "@/lib/types";
 
 export default async function ApplyPage({
@@ -420,9 +421,10 @@ async function Content({
   async function BookedSlot({ appId, parentTz }: { appId: string; parentTz: string | null }) {
     const { data: slot } = await admin
       .from("assessment_slots")
-      .select("starts_at, ends_at, zoom_join_url, zoom_passcode")
+      .select("starts_at, ends_at, zoom_join_url, zoom_passcode, confirmed_at")
       .eq("application_id", appId)
       .maybeSingle();
+    const canReschedule = slot && new Date(slot.starts_at).getTime() > Date.now();
     return (
       <Card>
         {slot && new Date(slot.starts_at).getTime() > Date.now() && (
@@ -478,6 +480,36 @@ async function Content({
                   Your Zoom link will appear here shortly and is also sent to your email.
                 </p>
               )}
+
+              {slot.confirmed_at ? (
+                <Alert variant="success">✓ You&apos;ve confirmed you&apos;ll attend.</Alert>
+              ) : (
+                canReschedule && (
+                  <a
+                    href={`/api/assessment/confirm/${token}`}
+                    className={buttonVariants({ variant: "outline", size: "sm" })}
+                  >
+                    Confirm I&apos;ll attend
+                  </a>
+                )
+              )}
+
+              {canReschedule && (
+                <details className="rounded-md border border-border p-3 text-sm">
+                  <summary className="cursor-pointer font-medium text-muted-foreground">
+                    Need to reschedule?
+                  </summary>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    This releases your current slot so you can pick a new time. It cannot be undone.
+                  </p>
+                  <form action={releaseSlot} className="mt-2">
+                    <input type="hidden" name="token" value={token} />
+                    <SubmitButton size="sm" variant="destructive" pendingText="Releasing…">
+                      Release my slot &amp; pick a new time
+                    </SubmitButton>
+                  </form>
+                </details>
+              )}
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">Slot details unavailable.</p>
@@ -511,9 +543,11 @@ async function Content({
             <Field label="Gender" value={student.gender ?? "—"} />
             <Field label="Category" value={app.category ?? "—"} />
             <Field label="Class / grade" value={app.grade_applying ?? "—"} />
+            <Field label="Preferred class timing" value={app.preferred_class_timing ?? "No preference"} />
             <Field label="Curriculum" value={student.curriculum ?? "—"} />
             <Field label="Country of residence" value={student.country_of_residence ?? "—"} />
             <Field label="Previous school" value={student.previous_school ?? "—"} />
+            <Field label="PEN number" value={student.pen_number ?? "—"} />
             <div className="sm:col-span-2">
               <Field label="Current address" value={student.current_address ?? "—"} />
             </div>

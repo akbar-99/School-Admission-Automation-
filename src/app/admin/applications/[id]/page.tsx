@@ -18,8 +18,9 @@ import { needsAssessment } from "@/lib/assessment";
 import { leadSourceLabel, type Application, type Student, type Parent, type Payment, type SubjectResult } from "@/lib/types";
 
 const DOC_LABEL: Record<string, string> = {
-  passport: "Passport copy",
+  passport: "Passport/Aadhaar",
   birth_certificate: "Birth certificate",
+  photo: "Photo",
 };
 
 export default async function ApplicationDetailPage({
@@ -143,6 +144,7 @@ export default async function ApplicationDetailPage({
       <Section title="Application">
         <Field label="Category" value={app.category ?? "—"} />
         <Field label="Class / grade" value={app.grade_applying ?? "—"} />
+        <Field label="Preferred class timing" value={app.preferred_class_timing ?? "No preference"} />
         <Field label="Source of enquiry" value={leadSourceLabel(app.lead_source)} />
         <Field label="Admission number" value={app.admission_number ?? "—"} mono />
         <Field label="Section" value={section ? `${section.grade}-${section.name}` : "—"} />
@@ -164,6 +166,7 @@ export default async function ApplicationDetailPage({
         <Field label="Curriculum" value={student?.curriculum ?? "—"} />
         <Field label="Country of residence" value={student?.country_of_residence ?? "—"} />
         <Field label="Previous school" value={student?.previous_school ?? "—"} />
+        <Field label="PEN number" value={student?.pen_number ?? "—"} />
         <Field label="Current address" value={student?.current_address ?? "—"} wide />
         <Field label="Permanent address" value={student?.permanent_address ?? "—"} wide />
       </Section>

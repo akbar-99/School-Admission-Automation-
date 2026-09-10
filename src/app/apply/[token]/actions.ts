@@ -10,6 +10,7 @@ import { ensureOrderForApplication, markPaymentCompleted } from "@/lib/payments"
 import {
   handleFormSubmitted,
   handleSlotBooked,
+  notifySlotReleased,
   notifySlotsPublished,
   sendAgreement,
 } from "@/lib/workflow";
@@ -48,6 +49,7 @@ const RemainingDetailsSchema = z.object({
   mother_name: z.string().trim().min(1, "Mother's full name is required"),
   mother_phone: z.string().trim().min(7, "Mother's contact number is required"),
   preferred_class_timing: z.string().trim().max(200).optional(),
+  pen_number: z.string().trim().max(50).optional(),
 });
 
 function fail(token: string, message: string): never {
@@ -245,29 +247,25 @@ export async function submitRemainingDetails(formData: FormData) {
     mother_name: formData.get("mother_name"),
     mother_phone: formData.get("mother_phone"),
     preferred_class_timing: formData.get("preferred_class_timing") || undefined,
+    pen_number: formData.get("pen_number") || undefined,
   });
   if (!parsed.success) fail(token, parsed.error.issues[0].message);
   const input = parsed.data;
 
   const admin = createSupabaseAdminClient();
 
-  // Documents stored in typed slots (private Supabase Storage). Passport is
-  // required only for applicants residing outside India; birth certificate
-  // is always required.
+  // Documents stored in typed slots (private Supabase Storage). Passport/
+  // Aadhaar, birth certificate and photo are all always required.
   const documents: DocumentRef[] = [];
 
-  const passportFile = formData.get("passport");
-  const hasPassport = passportFile instanceof File && passportFile.size > 0;
-  const passportRequired = input.country.trim().toLowerCase() !== "india";
-  if (passportRequired && !hasPassport) {
-    fail(token, "Passport copy is required for applicants residing outside India.");
-  }
-  if (hasPassport) {
-    documents.push(await uploadDocument(admin, token, app.id, "passport", "Passport copy", passportFile));
-  }
-
+  documents.push(
+    await uploadDocument(admin, token, app.id, "passport", "Passport/Aadhaar", formData.get("passport")),
+  );
   documents.push(
     await uploadDocument(admin, token, app.id, "birth_certificate", "Birth certificate", formData.get("birth_certificate")),
+  );
+  documents.push(
+    await uploadDocument(admin, token, app.id, "photo", "Photo", formData.get("photo")),
   );
 
   // Create student — the name was already captured on the minimal form.
@@ -287,6 +285,7 @@ export async function submitRemainingDetails(formData: FormData) {
       father_phone: input.father_phone,
       mother_name: input.mother_name,
       mother_phone: input.mother_phone,
+      pen_number: input.pen_number || null,
     })
     .select("*")
     .single();
@@ -401,6 +400,42 @@ export async function bookSlot(formData: FormData) {
     details: { slot_id: slotId },
   });
   await handleSlotBooked(app.id, slot);
+  redirect(`/apply/${token}`);
+}
+
+// Releases the parent's currently-booked slot and sends the application
+// back to FORM_SUBMITTED so the slot picker shows again. A real button
+// click (not a bare link) since this is consequential — it frees the slot
+// for someone else to book.
+export async function releaseSlot(formData: FormData) {
+  const token = String(formData.get("token") ?? "");
+  const { bundle } = await loadApplicationByToken(token);
+  if (!bundle) fail(token, "This admission link is invalid or expired.");
+  const app = bundle.application;
+  if (app.status !== "ASSESSMENT_SCHEDULED") {
+    redirect(`/apply/${token}`);
+  }
+
+  const admin = createSupabaseAdminClient();
+  const { data, error } = await admin.rpc("release_assessment_slot", { p_application: app.id });
+  if (error) {
+    fail(token, "Could not release your slot — please try again.");
+  }
+  const result = data as { status: string; slot_id?: string; teacher_id?: string | null; starts_at?: string };
+  if (result.status === "TOO_LATE") {
+    fail(token, "This slot has already started — please contact the school to reschedule.");
+  }
+  if (result.status !== "RELEASED") {
+    redirect(`/apply/${token}`);
+  }
+
+  await logAudit({
+    action: "assessment.slot_released",
+    entity: "application",
+    entityId: app.id,
+    details: { slot_id: result.slot_id },
+  });
+  await notifySlotReleased(app.id, { starts_at: result.starts_at!, teacher_id: result.teacher_id });
   redirect(`/apply/${token}`);
 }
 

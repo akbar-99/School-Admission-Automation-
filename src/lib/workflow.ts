@@ -398,6 +398,114 @@ export async function notifyAssessmentReminder(slot: {
 }
 
 // ---------------------------------------------------------------------------
+// 2-hours-before reminder — separate from the 10-minute one above (its own
+// reminder_2h_sent flag), with a confirm link and a reschedule link so the
+// parent can act on it directly from email/WhatsApp instead of just being
+// told the time. Confirm is a plain GET link (non-destructive, same pattern
+// as every other token link in this app); reschedule sends them to the
+// portal where releasing the slot needs an explicit button click, since
+// that's a real state change (frees the slot for someone else to book).
+// ---------------------------------------------------------------------------
+export async function notifyAssessmentReminder2h(slot: {
+  application_id: string;
+  starts_at: string;
+}) {
+  const admin = createSupabaseAdminClient();
+  const { data: appRow } = await admin
+    .from("applications")
+    .select("*")
+    .eq("id", slot.application_id)
+    .maybeSingle();
+  if (!appRow) return;
+  const app = appRow as Application;
+  const { data: parentRow } = await admin.from("parents").select("*").eq("id", app.parent_id).maybeSingle();
+  if (!parentRow) return;
+  const parent = parentRow as Parent;
+
+  const when = `${formatInZone(slot.starts_at, config.school.timezone)} ${config.school.timezoneLabel}`;
+  const confirmUrl = `${config.appUrl}/api/assessment/confirm/${app.access_token}`;
+  const rescheduleUrl = applyUrl(app.access_token);
+
+  await dispatch(
+    multiChannel(
+      {
+        applicationId: app.id,
+        event: "ASSESSMENT_REMINDER_2H",
+        subject: "Your assessment is in 2 hours",
+        body:
+          `Hello ${parent.full_name},\n\nYour assessment is coming up in 2 hours, at ${when}.\n\n` +
+          `Please confirm you'll attend:\n${confirmUrl}\n\n` +
+          `Need to reschedule instead? Visit your portal and release your slot to pick a new time:\n${rescheduleUrl}`,
+      },
+      parent,
+    ),
+  );
+}
+
+// Called by GET /api/assessment/confirm/[token] — a plain link click from
+// the 2h reminder. Idempotent: confirming twice just no-ops the second time.
+export async function confirmAssessmentSlot(applicationId: string): Promise<boolean> {
+  const admin = createSupabaseAdminClient();
+  const { data, error } = await admin
+    .from("assessment_slots")
+    .update({ confirmed_at: new Date().toISOString() })
+    .eq("application_id", applicationId)
+    .is("confirmed_at", null)
+    .select("id");
+  if (error) {
+    console.error("[workflow] confirmAssessmentSlot failed", error);
+    return false;
+  }
+  if (data && data.length > 0) {
+    await logAudit({ action: "assessment.confirmed", entity: "application", entityId: applicationId, details: {} });
+  }
+  return true;
+}
+
+// Called after release_assessment_slot succeeds — lets the teacher and admin
+// know the slot is open again rather than them finding out only when it
+// silently reappears in the pool.
+export async function notifySlotReleased(
+  appId: string,
+  slotInfo: { starts_at: string; teacher_id?: string | null },
+) {
+  const admin = createSupabaseAdminClient();
+  const { data: appRow } = await admin.from("applications").select("*").eq("id", appId).maybeSingle();
+  if (!appRow) return;
+  const app = appRow as Application;
+  const { data: parentRow } = await admin.from("parents").select("*").eq("id", app.parent_id).maybeSingle();
+  const parent = parentRow as Parent | null;
+
+  const when = `${formatInZone(slotInfo.starts_at, config.school.timezone)} ${config.school.timezoneLabel}`;
+  const messages: OutboundMessage[] = [
+    ...fanToStaff(await staffContacts(["admin"]), {
+      applicationId: app.id,
+      event: "ASSESSMENT_RESCHEDULED",
+      subject: "Assessment rescheduled by parent",
+      body: `${parent?.full_name ?? "A parent"} released their ${when} slot to pick a new time (Grade ${app.grade_applying ?? "—"}).`,
+    }),
+  ];
+  if (slotInfo.teacher_id) {
+    const { data: t } = await admin.from("users").select("email, phone").eq("id", slotInfo.teacher_id).maybeSingle();
+    if (t) {
+      messages.push(
+        ...multiChannel(
+          {
+            applicationId: app.id,
+            event: "ASSESSMENT_RESCHEDULED",
+            subject: "A booked slot was released",
+            body: `Your ${when} assessment slot was released by the parent and is open again.`,
+          },
+          { email: t.email, phone: t.phone },
+          ["email", "whatsapp"],
+        ),
+      );
+    }
+  }
+  await dispatch(messages);
+}
+
+// ---------------------------------------------------------------------------
 // Admin assigned a new slot to a teacher — let the teacher know.
 // ---------------------------------------------------------------------------
 export async function notifyTeacherSlotAssigned(
