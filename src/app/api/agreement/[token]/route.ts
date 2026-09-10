@@ -1,6 +1,7 @@
 import { loadApplicationByToken } from "@/lib/parent";
 import { config } from "@/lib/config";
 import { getSettings } from "@/lib/settings";
+import { fetchSchoolLogo } from "@/lib/school-logo";
 import { formatINR, formatDate } from "@/lib/utils";
 
 // Auto-generated Admission Agreement (SRS FR-16), pre-filled with parent and
@@ -16,9 +17,11 @@ export async function GET(
   const { application: app, parent, student } = bundle;
   const s = await getSettings();
   const today = formatDate(new Date());
+  const logoBytes = await fetchSchoolLogo();
+  const logoSrc = logoBytes ? `data:image/png;base64,${Buffer.from(logoBytes).toString("base64")}` : null;
 
   const acceptedBanner = app.agreement_accepted
-    ? `<div style="margin:16px 0;padding:10px 14px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;color:#065f46;font-size:14px;">
+    ? `<div class="banner">
          ✓ Digitally accepted by <strong>${esc(app.agreement_signature ?? "")}</strong>${
            app.agreement_accepted_at ? " on " + formatDate(app.agreement_accepted_at) : ""
          }.
@@ -27,60 +30,119 @@ export async function GET(
 
   const signBlock = app.agreement_accepted
     ? `<div class="sign">
-         <div>Digitally signed by ${esc(app.agreement_signature ?? "")}<br/>
-           <span class="muted">${app.agreement_accepted_at ? formatDate(app.agreement_accepted_at) : ""}</span>
+         <div><span class="sign-name">${esc(app.agreement_signature ?? "")}</span><br/>
+           <span class="muted">Digitally signed${app.agreement_accepted_at ? " · " + formatDate(app.agreement_accepted_at) : ""}</span>
          </div>
-         <div>For the School</div>
+         <div><span class="sign-name">${esc(s.schoolName)}</span><br/><span class="muted">For the School</span></div>
        </div>`
     : `<div class="sign">
-         <div>Parent / Guardian signature</div>
-         <div>For the School</div>
+         <div class="sign-blank">Parent / Guardian signature</div>
+         <div class="sign-blank">For the School</div>
        </div>`;
+
+  const row = (label: string, value: string) =>
+    `<div class="row"><span class="k">${esc(label)}</span><span class="v">${value}</span></div>`;
 
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Admission Agreement</title>
 <style>
-  body { font-family: ui-sans-serif, system-ui, sans-serif; color:#0f172a; max-width:720px; margin:40px auto; padding:0 24px; line-height:1.6; }
-  h1 { font-size:24px; margin-bottom:4px; }
-  h2 { font-size:16px; margin:32px 0 4px; padding-bottom:8px; border-bottom:1px solid #e2e8f0; }
-  .muted { color:#64748b; }
-  table { width:100%; border-collapse:collapse; margin:24px 0; }
-  td { padding:8px 0; border-bottom:1px solid #e2e8f0; vertical-align:top; }
-  td.k { color:#64748b; width:40%; }
-  .terms { font-size:14.5px; color:#1e293b; }
-  .terms p { margin:0 0 14px; }
-  .terms p:last-child { margin-bottom:0; }
-  .terms strong { display:block; margin-bottom:2px; color:#0f172a; }
-  .sign { margin-top:48px; display:flex; justify-content:space-between; }
-  .sign div { width:45%; border-top:1px solid #0f172a; padding-top:8px; }
-  @media print { .noprint { display:none; } body { margin:0; } }
-  .btn { background:#4f46e5; color:#fff; border:0; padding:10px 16px; border-radius:8px; cursor:pointer; }
+  :root {
+    --teal: #1b7e9a; --ink: #14323b; --grey: #5c727a; --green: #2f8f6b;
+    --line: #e0e9ea; --soft: #eef3f3;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+    color: var(--ink); max-width: 780px; margin: 0 auto; padding: 0 28px 48px;
+    line-height: 1.6; background: #fff;
+  }
+  .topbar { height: 6px; background: linear-gradient(90deg, var(--teal), var(--green)); margin: 0 -28px 28px; }
+  .btn-row { display: flex; justify-content: flex-end; padding: 16px 0 0; }
+  .btn {
+    background: var(--teal); color: #fff; border: 0; padding: 10px 18px; border-radius: 8px;
+    cursor: pointer; font-size: 14px; font-weight: 600; box-shadow: 0 1px 3px rgba(20,50,59,.2);
+  }
+  .letterhead { display: flex; align-items: center; gap: 16px; padding-bottom: 20px; border-bottom: 2px solid var(--ink); }
+  .letterhead img { height: 56px; width: auto; }
+  .school-name { font-size: 20px; font-weight: 700; color: var(--ink); }
+  .school-sub { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--grey); }
+  .contact { margin-left: auto; text-align: right; font-size: 12.5px; color: var(--grey); }
+  .contact a { color: var(--teal); text-decoration: none; }
+  h1 { font-size: 26px; margin: 28px 0 2px; color: var(--ink); }
+  .doc-meta { font-size: 13px; color: var(--grey); margin-bottom: 4px; }
+  .banner { margin: 18px 0; padding: 10px 14px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px; color: #065f46; font-size: 14px; }
+  .intro { font-size: 14.5px; color: var(--ink); margin: 18px 0 24px; }
+  h2 { font-size: 15px; margin: 32px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--line); color: var(--ink); }
+  .panel { background: var(--soft); border: 1px solid var(--line); border-radius: 10px; padding: 6px 18px; }
+  .row { display: flex; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .row:last-child { border-bottom: 0; }
+  .k { color: var(--grey); flex: 0 0 42%; }
+  .v { font-weight: 600; text-align: right; }
+  .fee-row .v { color: var(--teal); font-size: 16px; }
+  .terms { font-size: 14.5px; color: var(--ink); }
+  .terms p { margin: 0 0 14px; }
+  .terms p:last-child { margin-bottom: 0; }
+  .terms strong { display: block; margin-bottom: 2px; color: var(--ink); }
+  .sign { margin-top: 56px; display: flex; justify-content: space-between; gap: 24px; }
+  .sign > div { width: 46%; }
+  .sign-blank { border-top: 1px solid var(--ink); padding-top: 8px; font-size: 13px; color: var(--grey); }
+  .sign-name { font-size: 15px; font-weight: 600; border-top: 1px solid var(--ink); padding-top: 8px; display: inline-block; }
+  .foot { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 11.5px; color: var(--grey); display: flex; justify-content: space-between; }
+  @media print {
+    .noprint { display: none; }
+    .topbar { margin-top: 0; }
+    body { padding: 0 24px 24px; }
+  }
 </style></head>
 <body>
-  <button class="btn noprint" onclick="window.print()">Print / Save as PDF</button>
+  <div class="topbar noprint"></div>
+
+  <div class="letterhead">
+    ${logoSrc ? `<img src="${logoSrc}" alt="${esc(s.schoolName)}" />` : ""}
+    <div>
+      <div class="school-name">${esc(s.schoolName)}</div>
+      <div class="school-sub">Admission Agreement</div>
+    </div>
+    <div class="contact">
+      <a href="tel:${esc(s.schoolPhone.replace(/\s+/g, ""))}">${esc(s.schoolPhone)}</a><br/>
+      <a href="mailto:${esc(s.schoolEmail)}">${esc(s.schoolEmail)}</a>
+    </div>
+  </div>
+
+  <div class="btn-row noprint">
+    <button class="btn" onclick="window.print()">Print / Save as PDF</button>
+  </div>
+
   <h1>Admission Agreement</h1>
-  <div class="muted">${esc(s.schoolName)} · ${today}</div>
-  <div class="muted"><a href="tel:${esc(s.schoolPhone.replace(/\s+/g, ""))}">${esc(s.schoolPhone)}</a> · <a href="mailto:${esc(s.schoolEmail)}">${esc(s.schoolEmail)}</a></div>
+  <div class="doc-meta">Academic year ${config.admission.year} · Issued ${today}</div>
   ${acceptedBanner}
-  <p>This agreement records the admission of the student named below for the
+  <p class="intro">This agreement records the admission of the student named below for the
   academic year ${config.admission.year}, subject to the school's policies and
   payment of the admission fee.</p>
-  <table>
-    <tr><td class="k">Student name</td><td>${esc(student?.full_name ?? "—")}</td></tr>
-    <tr><td class="k">Date of birth</td><td>${student ? formatDate(student.dob) : "—"}</td></tr>
-    <tr><td class="k">Category</td><td>${esc(app.category ?? "—")}</td></tr>
-    <tr><td class="k">Grade applying</td><td>${esc(app.grade_applying ?? "—")}</td></tr>
-    <tr><td class="k">Curriculum</td><td>${esc(student?.curriculum ?? "—")}</td></tr>
-    <tr><td class="k">Parent / guardian</td><td>${esc(parent.full_name)}</td></tr>
-    <tr><td class="k">Contact</td><td>${esc(parent.phone)}${parent.email ? " · " + esc(parent.email) : ""}</td></tr>
-    <tr><td class="k">Admission fee</td><td>${formatINR(s.feePaise)}</td></tr>
-    <tr><td class="k">Application reference</td><td>${app.id}</td></tr>
-  </table>
+
+  <div class="panel">
+    ${row("Student name", esc(student?.full_name ?? "—"))}
+    ${row("Date of birth", student ? formatDate(student.dob) : "—")}
+    ${row("Category", esc(app.category ?? "—"))}
+    ${row("Grade applying", esc(app.grade_applying ?? "—"))}
+    ${row("Curriculum", esc(student?.curriculum ?? "—"))}
+    ${row("Parent / guardian", esc(parent.full_name))}
+    ${row("Contact", esc(parent.phone) + (parent.email ? " · " + esc(parent.email) : ""))}
+    <div class="row fee-row"><span class="k">Admission fee</span><span class="v">${formatINR(s.feePaise)}</span></div>
+    ${row("Application reference", `<span style="font-weight:500;font-family:ui-monospace,monospace;font-size:12px;">${app.id}</span>`)}
+  </div>
+
   <h2>Terms &amp; Conditions</h2>
   <div class="terms">${renderTerms(s.agreementTerms)}</div>
+
   ${signBlock}
+
+  <div class="foot">
+    <span>${esc(s.schoolName)} · Confidential — admission agreement, computer-generated.</span>
+    <span>Ref: ${app.id}</span>
+  </div>
 </body></html>`;
 
   return new Response(html, {
