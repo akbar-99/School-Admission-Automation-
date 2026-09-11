@@ -30,13 +30,6 @@ export default async function MarketingPerformancePage({
   const { from, to } = await searchParams;
   const admin = createSupabaseAdminClient();
 
-  const { data: staffData } = await admin
-    .from("users")
-    .select("id, full_name, email")
-    .eq("role", "marketing")
-    .order("full_name", { ascending: true });
-  const staff = staffData ?? [];
-
   // Date range applies to when the lead was created (cohort-based) — a lead
   // created in this window is tracked through to its current status even if
   // that progress happened after the window closed.
@@ -46,7 +39,16 @@ export default async function MarketingPerformancePage({
     .not("created_by", "is", null);
   if (from) query = query.gte("created_at", `${from}T00:00:00`);
   if (to) query = query.lte("created_at", `${to}T23:59:59`);
-  const { data: appsData } = await query;
+
+  const [{ data: staffData }, { data: appsData }] = await Promise.all([
+    admin
+      .from("users")
+      .select("id, full_name, email")
+      .eq("role", "marketing")
+      .order("full_name", { ascending: true }),
+    query,
+  ]);
+  const staff = staffData ?? [];
   const statsByStaff = computeMarketingStatsByCreator((appsData ?? []) as unknown as MarketingStatsRow[]);
 
   const totals = staff.reduce(

@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { getSessionUser } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { config } from "@/lib/config";
@@ -22,6 +23,42 @@ interface ResultRow {
 }
 
 export default async function TeacherHistoryPage() {
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="font-display text-3xl font-semibold tracking-tight">Assessment history</h1>
+        <p className="text-muted-foreground">
+          Every assessment you&apos;ve conducted, with the full student record and your pass/fail rate.
+        </p>
+      </div>
+
+      <Suspense fallback={<HistoryBodySkeleton />}>
+        <HistoryBody />
+      </Suspense>
+    </div>
+  );
+}
+
+function HistoryBodySkeleton() {
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardContent className="pt-6">
+          <div className="h-32 w-full animate-pulse rounded bg-muted" />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent className="space-y-2 pt-6">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-20 w-full animate-pulse rounded bg-muted" />
+          ))}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+async function HistoryBody() {
   const session = await getSessionUser();
   const teacherId = session!.profile!.id;
   const admin = createSupabaseAdminClient();
@@ -44,14 +81,7 @@ export default async function TeacherHistoryPage() {
   const failCount = results.filter((r) => r.outcome === "FAIL").length;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="font-display text-3xl font-semibold tracking-tight">Assessment history</h1>
-        <p className="text-muted-foreground">
-          Every assessment you&apos;ve conducted, with the full student record and your pass/fail rate.
-        </p>
-      </div>
-
+    <>
       <Card>
         <CardHeader>
           <CardTitle>Your pass/fail record</CardTitle>
@@ -139,6 +169,6 @@ export default async function TeacherHistoryPage() {
           )}
         </CardContent>
       </Card>
-    </div>
+    </>
   );
 }

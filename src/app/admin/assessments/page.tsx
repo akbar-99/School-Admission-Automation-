@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { config } from "@/lib/config";
 import { formatInZone, formatInZoneWithDay, toZonedInputValue } from "@/lib/utils";
@@ -65,12 +66,51 @@ interface TeacherStats {
   fail: number;
 }
 
+// The heading needs no data; everything else on this page comes from a
+// single 6-way Promise.all plus in-memory aggregation, so it's wrapped in
+// one Suspense boundary rather than blocking the shell.
 export default async function AdminAssessmentsPage({
   searchParams,
 }: {
   searchParams: Promise<{ ok?: string; error?: string; teacher?: string }>;
 }) {
   const { ok, error, teacher: teacherFilter } = await searchParams;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="font-display text-3xl font-semibold tracking-tight">Assessments</h1>
+        <p className="text-muted-foreground">
+          Create assessment slots, assign a teacher, and track requests.
+        </p>
+      </div>
+
+      {ok && <Alert variant="success">{ok}</Alert>}
+      {error && <Alert variant="error">{error}</Alert>}
+
+      <Suspense fallback={<AssessmentsSkeleton />}>
+        <AssessmentsBody teacherFilter={teacherFilter} />
+      </Suspense>
+    </div>
+  );
+}
+
+function AssessmentsSkeleton() {
+  return (
+    <div className="space-y-6">
+      {[0, 1, 2].map((i) => (
+        <Card key={i}>
+          <CardContent className="space-y-2 pt-6">
+            <div className="h-6 w-48 animate-pulse rounded bg-muted" />
+            <div className="h-24 w-full animate-pulse rounded bg-muted" />
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
   const admin = createSupabaseAdminClient();
   const schoolTz = config.school.timezone;
   const schoolLabel = config.school.timezoneLabel;
@@ -233,15 +273,6 @@ export default async function AdminAssessmentsPage({
   return (
     <div className="space-y-6">
       <AdminUnavailableAlerts initialAlerts={unavailableInitialAlerts} />
-      <div>
-        <h1 className="font-display text-3xl font-semibold tracking-tight">Assessments</h1>
-        <p className="text-muted-foreground">
-          Create assessment slots, assign a teacher, and track requests.
-        </p>
-      </div>
-
-      {ok && <Alert variant="success">{ok}</Alert>}
-      {error && <Alert variant="error">{error}</Alert>}
 
       {unavailableSlots.length > 0 && (
         <Card className="border-warning/40">

@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getSessionUser } from "@/lib/auth";
 import { formatDateTime } from "@/lib/utils";
@@ -41,14 +42,6 @@ export default async function StaffPage({
   searchParams: Promise<{ ok?: string; error?: string }>;
 }) {
   const { ok, error } = await searchParams;
-  const session = await getSessionUser();
-  const currentUserId = session!.profile!.id;
-  const admin = createSupabaseAdminClient();
-  const { data } = await admin
-    .from("users")
-    .select("id, full_name, email, phone, role, zoom_email, disabled, created_at")
-    .order("created_at", { ascending: true });
-  const staff = (data ?? []) as StaffRow[];
 
   return (
     <div className="space-y-6">
@@ -111,12 +104,45 @@ export default async function StaffPage({
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Current staff ({staff.length})</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {staff.length === 0 ? (
+      <Suspense fallback={<StaffTableSkeleton />}>
+        <StaffTable />
+      </Suspense>
+    </div>
+  );
+}
+
+function StaffTableSkeleton() {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Current staff</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="h-10 w-full animate-pulse rounded bg-muted" />
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+async function StaffTable() {
+  const session = await getSessionUser();
+  const currentUserId = session!.profile!.id;
+  const admin = createSupabaseAdminClient();
+  const { data } = await admin
+    .from("users")
+    .select("id, full_name, email, phone, role, zoom_email, disabled, created_at")
+    .order("created_at", { ascending: true });
+  const staff = (data ?? []) as StaffRow[];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Current staff ({staff.length})</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {staff.length === 0 ? (
             <p className="text-sm text-muted-foreground">No staff yet.</p>
           ) : (
             <Table>
@@ -216,6 +242,5 @@ export default async function StaffPage({
           )}
         </CardContent>
       </Card>
-    </div>
   );
 }

@@ -23,6 +23,13 @@ function normalizePhone(raw: string): string {
   return raw.replace(/\D/g, "").slice(-10);
 }
 
+// Escapes Postgres LIKE/ILIKE wildcards so a value is matched literally
+// (case-insensitively) instead of as a pattern — needed because emails and
+// names routinely contain "_", which ILIKE otherwise treats as "any char".
+function escapeLikeExact(s: string): string {
+  return s.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
 interface DuplicateMatch {
   id: string;
   status: string;
@@ -51,31 +58,63 @@ async function findDuplicateLeads(input: {
   const emailKey = input.email.trim().toLowerCase();
   const nameKey = input.studentName.trim().toLowerCase().replace(/\s+/g, " ");
 
-  const matches = new Map<string, DuplicateMatch>();
+  const APP_COLUMNS =
+    "id, status, created_at, lead_student_name, grade_applying, parents(full_name, phone, email)";
+  type AppRow = {
+    id: string;
+    status: string;
+    created_at: string;
+    lead_student_name: string | null;
+    grade_applying: string | null;
+    parents: { full_name: string; phone: string | null; email: string | null } | null;
+  };
 
-  const { data: appsByContact } = await admin
-    .from("applications")
-    .select("id, status, created_at, lead_student_name, grade_applying, parents(full_name, phone, email)");
-  for (const row of appsByContact ?? []) {
-    const p = row.parents as unknown as { full_name: string; phone: string | null; email: string | null } | null;
-    if (!p) continue;
-    const contactMatch =
-      (phoneKey.length === 10 && p.phone && normalizePhone(p.phone) === phoneKey) ||
-      (emailKey.length > 0 && p.email && p.email.trim().toLowerCase() === emailKey);
-    const nameMatch =
-      nameKey.length > 0 &&
-      (row.lead_student_name ?? "").trim().toLowerCase().replace(/\s+/g, " ") === nameKey;
-    if (!contactMatch && !nameMatch) continue;
-    matches.set(row.id, {
-      id: row.id,
-      status: row.status,
-      createdAt: row.created_at,
-      parentName: p.full_name,
-      phone: p.phone,
-      studentName: row.lead_student_name,
-      grade: row.grade_applying,
-      matchedOn: contactMatch ? "contact" : "student_name",
-    });
+  const matches = new Map<string, DuplicateMatch>();
+  const addRows = (rows: AppRow[] | null | undefined, matchedOn: DuplicateMatch["matchedOn"]) => {
+    for (const row of rows ?? []) {
+      if (matches.has(row.id)) continue;
+      const p = row.parents;
+      if (!p) continue;
+      matches.set(row.id, {
+        id: row.id,
+        status: row.status,
+        createdAt: row.created_at,
+        parentName: p.full_name,
+        phone: p.phone,
+        studentName: row.lead_student_name,
+        grade: row.grade_applying,
+        matchedOn,
+      });
+    }
+  };
+
+  // Contact match: filter to the (usually 0-1) parents sharing this phone or
+  // email, then fetch only their applications — instead of scanning the
+  // whole applications table on every lead submission.
+  if (phoneKey.length === 10 || emailKey.length > 0) {
+    const orParts: string[] = [];
+    if (phoneKey.length === 10) orParts.push(`phone.ilike.%${phoneKey}`);
+    if (emailKey.length > 0) orParts.push(`email.ilike.${escapeLikeExact(emailKey)}`);
+    const { data: parentRows } = await admin.from("parents").select("id").or(orParts.join(","));
+    const parentIds = (parentRows ?? []).map((p) => p.id);
+    if (parentIds.length > 0) {
+      const { data: appsByContact } = await admin
+        .from("applications")
+        .select(APP_COLUMNS)
+        .in("parent_id", parentIds);
+      addRows(appsByContact as unknown as AppRow[], "contact");
+    }
+  }
+
+  // Student-name match: same child, entirely different parent contact (e.g.
+  // father and mother enquiring separately) — filtered at the DB by an exact
+  // (case-insensitive) name match rather than scanning every application.
+  if (nameKey.length > 0) {
+    const { data: appsByName } = await admin
+      .from("applications")
+      .select(APP_COLUMNS)
+      .ilike("lead_student_name", escapeLikeExact(nameKey));
+    addRows(appsByName as unknown as AppRow[], "student_name");
   }
 
   return [...matches.values()];

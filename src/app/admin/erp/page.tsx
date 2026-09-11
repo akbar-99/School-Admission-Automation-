@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { formatDateTime } from "@/lib/utils";
 import { syncErpNow, retryErpAdmission } from "./actions";
@@ -41,24 +42,6 @@ export default async function ErpIntegrationPage({
   searchParams: Promise<{ ok?: string; error?: string }>;
 }) {
   const { ok, error } = await searchParams;
-  const admin = createSupabaseAdminClient();
-
-  const [{ data: classRows }, { data: attentionRows }] = await Promise.all([
-    admin
-      .from("erp_classes")
-      .select("class_name, base, division, batch, capacity, enrolled, admitted_since_sync, synced_at")
-      .order("base", { ascending: true })
-      .order("division", { ascending: true })
-      .order("batch", { ascending: true }),
-    admin
-      .from("applications")
-      .select("id, admission_number, grade_applying, erp_status, erp_class_name, students(full_name), parents(full_name)")
-      .in("erp_status", ["no_mapping", "send_failed"])
-      .order("created_at", { ascending: false }),
-  ]);
-
-  const classes = (classRows ?? []) as ErpClassRow[];
-  const attention = (attentionRows ?? []) as unknown as NeedsAttentionRow[];
 
   return (
     <div className="space-y-6">
@@ -83,6 +66,50 @@ export default async function ErpIntegrationPage({
         that division maps to.
       </Alert>
 
+      <Suspense fallback={<ErpBodySkeleton />}>
+        <ErpBody />
+      </Suspense>
+    </div>
+  );
+}
+
+function ErpBodySkeleton() {
+  return (
+    <div className="space-y-6">
+      {[0, 1].map((i) => (
+        <Card key={i}>
+          <CardContent className="space-y-2 pt-6">
+            <div className="h-5 w-48 animate-pulse rounded bg-muted" />
+            <div className="h-24 w-full animate-pulse rounded bg-muted" />
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+async function ErpBody() {
+  const admin = createSupabaseAdminClient();
+
+  const [{ data: classRows }, { data: attentionRows }] = await Promise.all([
+    admin
+      .from("erp_classes")
+      .select("class_name, base, division, batch, capacity, enrolled, admitted_since_sync, synced_at")
+      .order("base", { ascending: true })
+      .order("division", { ascending: true })
+      .order("batch", { ascending: true }),
+    admin
+      .from("applications")
+      .select("id, admission_number, grade_applying, erp_status, erp_class_name, students(full_name), parents(full_name)")
+      .in("erp_status", ["no_mapping", "send_failed"])
+      .order("created_at", { ascending: false }),
+  ]);
+
+  const classes = (classRows ?? []) as ErpClassRow[];
+  const attention = (attentionRows ?? []) as unknown as NeedsAttentionRow[];
+
+  return (
+    <>
       <Card>
         <CardHeader>
           <CardTitle>Cached ERP capacity ({classes.length})</CardTitle>
@@ -180,6 +207,6 @@ export default async function ErpIntegrationPage({
           )}
         </CardContent>
       </Card>
-    </div>
+    </>
   );
 }

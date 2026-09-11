@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -6,6 +7,43 @@ import type { Section } from "@/lib/types";
 // Marketing-facing, read-only view of seat availability per grade so the team
 // can set parent expectations. Capacity changes remain admin-only.
 export default async function MarketingSeatsPage() {
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="font-display text-3xl font-semibold tracking-tight">Seat availability</h1>
+        <p className="text-muted-foreground">
+          Live open seats per grade. Seats fill A → B → C as students enrol.
+        </p>
+      </div>
+
+      <Suspense fallback={<SeatsBodySkeleton />}>
+        <SeatsBody />
+      </Suspense>
+    </div>
+  );
+}
+
+function SeatsBodySkeleton() {
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardContent className="space-y-2 py-5">
+          <div className="h-4 w-32 animate-pulse rounded bg-muted" />
+          <div className="h-8 w-40 animate-pulse rounded bg-muted" />
+        </CardContent>
+      </Card>
+      {[0, 1].map((i) => (
+        <Card key={i}>
+          <CardContent className="space-y-2 pt-6">
+            <div className="h-16 w-full animate-pulse rounded bg-muted" />
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+async function SeatsBody() {
   const admin = createSupabaseAdminClient();
   const { data } = await admin
     .from("sections")
@@ -24,14 +62,7 @@ export default async function MarketingSeatsPage() {
   const totalCapacity = sections.reduce((n, s) => n + s.capacity, 0);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="font-display text-3xl font-semibold tracking-tight">Seat availability</h1>
-        <p className="text-muted-foreground">
-          Live open seats per grade. Seats fill A → B → C as students enrol.
-        </p>
-      </div>
-
+    <>
       <Card>
         <CardContent className="flex items-center justify-between py-5">
           <div>
@@ -103,6 +134,6 @@ export default async function MarketingSeatsPage() {
           );
         })
       )}
-    </div>
+    </>
   );
 }

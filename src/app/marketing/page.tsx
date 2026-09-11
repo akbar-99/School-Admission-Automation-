@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireRole } from "@/lib/auth";
 import { applyUrl } from "@/lib/parent";
@@ -74,48 +75,6 @@ export default async function MarketingPage({
     }
   }
   const hasFilters = Boolean(status || from || to);
-  const { profile } = await requireRole(["marketing", "admin"]);
-  // Marketing only sees leads they created themselves; admin sees everything.
-  const scopedToOwn = profile.role === "marketing";
-  const admin = createSupabaseAdminClient();
-
-  let query = admin
-    .from("applications")
-    .select(
-      "id, status, category, grade_applying, lead_student_name, lead_source, access_token, created_at, parents(full_name, phone, email), students(full_name)",
-    )
-    .order("created_at", { ascending: false })
-    .limit(100);
-  if (scopedToOwn) query = query.eq("created_by", profile.id);
-  if (status) query = query.eq("status", status);
-  if (from) query = query.gte("created_at", `${from}T00:00:00`);
-  if (to) query = query.lte("created_at", `${to}T23:59:59`);
-
-  const { data } = await query;
-  const rows = (data ?? []) as unknown as Row[];
-
-  // Quick date-range presets — each preserves the current status filter.
-  const presetHref = (f: string, t: string) => {
-    const params = new URLSearchParams();
-    if (status) params.set("status", status);
-    params.set("from", f);
-    params.set("to", t);
-    return `/marketing?${params.toString()}`;
-  };
-  const today = isoDate(new Date());
-  const presets = [
-    { label: "Today", href: presetHref(today, today) },
-    { label: "Last 7 days", href: presetHref(isoDate(daysAgo(6)), today) },
-    { label: "Last 30 days", href: presetHref(isoDate(daysAgo(29)), today) },
-    {
-      label: "This month",
-      href: presetHref(isoDate(new Date(new Date().getFullYear(), new Date().getMonth(), 1)), today),
-    },
-  ];
-  const exportQuery = new URLSearchParams(
-    Object.entries({ status, from, to }).filter(([, v]) => v) as [string, string][],
-  ).toString();
-  const filterSummary = describeFilters(parseAdmissionsFilters({ status, from, to }));
 
   return (
     <div className="space-y-6">
@@ -217,121 +176,197 @@ export default async function MarketingPage({
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{scopedToOwn ? "Your leads" : "All leads"} ({rows.length})</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="mb-4 space-y-3 border-b border-border pb-4">
-            <form action="/marketing" method="get" className="flex flex-wrap items-end gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="status">Status</Label>
-                <Select id="status" name="status" defaultValue={status ?? ""} className="w-48">
-                  <option value="">All statuses</option>
-                  {(Object.keys(STATUS_LABEL) as AppStatus[]).map((s) => (
-                    <option key={s} value={s}>
-                      {STATUS_LABEL[s]}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="from">Created from</Label>
-                <Input id="from" name="from" type="date" defaultValue={from ?? ""} className="w-40" />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="to">Created to</Label>
-                <Input id="to" name="to" type="date" defaultValue={to ?? ""} className="w-40" />
-              </div>
-              <Button type="submit" variant="outline">
-                Filter
-              </Button>
-              {hasFilters && (
-                <Link href="/marketing" className={buttonVariants({ variant: "ghost" })}>
-                  Clear
-                </Link>
-              )}
-            </form>
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <span className="text-muted-foreground">Quick range:</span>
-              {presets.map((p) => (
-                <Link
-                  key={p.label}
-                  href={p.href}
-                  className={buttonVariants({ variant: "outline", size: "sm" })}
-                >
-                  {p.label}
-                </Link>
-              ))}
+      <Suspense fallback={<LeadsTableSkeleton />}>
+        <LeadsTableSection status={status} from={from} to={to} hasFilters={hasFilters} />
+      </Suspense>
+    </div>
+  );
+}
+
+function LeadsTableSkeleton() {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Leads</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <div key={i} className="h-10 w-full animate-pulse rounded bg-muted" />
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+async function LeadsTableSection({
+  status,
+  from,
+  to,
+  hasFilters,
+}: {
+  status?: string;
+  from?: string;
+  to?: string;
+  hasFilters: boolean;
+}) {
+  const { profile } = await requireRole(["marketing", "admin"]);
+  // Marketing only sees leads they created themselves; admin sees everything.
+  const scopedToOwn = profile.role === "marketing";
+  const admin = createSupabaseAdminClient();
+
+  let query = admin
+    .from("applications")
+    .select(
+      "id, status, category, grade_applying, lead_student_name, lead_source, access_token, created_at, parents(full_name, phone, email), students(full_name)",
+    )
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (scopedToOwn) query = query.eq("created_by", profile.id);
+  if (status) query = query.eq("status", status);
+  if (from) query = query.gte("created_at", `${from}T00:00:00`);
+  if (to) query = query.lte("created_at", `${to}T23:59:59`);
+
+  const { data } = await query;
+  const rows = (data ?? []) as unknown as Row[];
+
+  // Quick date-range presets — each preserves the current status filter.
+  const presetHref = (f: string, t: string) => {
+    const params = new URLSearchParams();
+    if (status) params.set("status", status);
+    params.set("from", f);
+    params.set("to", t);
+    return `/marketing?${params.toString()}`;
+  };
+  const today = isoDate(new Date());
+  const presets = [
+    { label: "Today", href: presetHref(today, today) },
+    { label: "Last 7 days", href: presetHref(isoDate(daysAgo(6)), today) },
+    { label: "Last 30 days", href: presetHref(isoDate(daysAgo(29)), today) },
+    {
+      label: "This month",
+      href: presetHref(isoDate(new Date(new Date().getFullYear(), new Date().getMonth(), 1)), today),
+    },
+  ];
+  const exportQuery = new URLSearchParams(
+    Object.entries({ status, from, to }).filter(([, v]) => v) as [string, string][],
+  ).toString();
+  const filterSummary = describeFilters(parseAdmissionsFilters({ status, from, to }));
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{scopedToOwn ? "Your leads" : "All leads"} ({rows.length})</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="mb-4 space-y-3 border-b border-border pb-4">
+          <form action="/marketing" method="get" className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="status">Status</Label>
+              <Select id="status" name="status" defaultValue={status ?? ""} className="w-48">
+                <option value="">All statuses</option>
+                {(Object.keys(STATUS_LABEL) as AppStatus[]).map((s) => (
+                  <option key={s} value={s}>
+                    {STATUS_LABEL[s]}
+                  </option>
+                ))}
+              </Select>
             </div>
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
-              <p className="text-xs text-muted-foreground">
-                Export: <span className="font-medium text-foreground">{filterSummary}</span>
-              </p>
-              <div className="flex items-center gap-2">
-                <a
-                  href={`/api/marketing/export/pdf${exportQuery ? `?${exportQuery}` : ""}`}
-                  className={buttonVariants({ variant: "outline", size: "sm" })}
-                >
-                  <FileDown className="size-4" />
-                  Export PDF
-                </a>
-                <a
-                  href={`/api/marketing/export/excel${exportQuery ? `?${exportQuery}` : ""}`}
-                  className={buttonVariants({ variant: "outline", size: "sm" })}
-                >
-                  <FileSpreadsheet className="size-4" />
-                  Export Excel
-                </a>
-              </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="from">Created from</Label>
+              <Input id="from" name="from" type="date" defaultValue={from ?? ""} className="w-40" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="to">Created to</Label>
+              <Input id="to" name="to" type="date" defaultValue={to ?? ""} className="w-40" />
+            </div>
+            <Button type="submit" variant="outline">
+              Filter
+            </Button>
+            {hasFilters && (
+              <Link href="/marketing" className={buttonVariants({ variant: "ghost" })}>
+                Clear
+              </Link>
+            )}
+          </form>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="text-muted-foreground">Quick range:</span>
+            {presets.map((p) => (
+              <Link
+                key={p.label}
+                href={p.href}
+                className={buttonVariants({ variant: "outline", size: "sm" })}
+              >
+                {p.label}
+              </Link>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
+            <p className="text-xs text-muted-foreground">
+              Export: <span className="font-medium text-foreground">{filterSummary}</span>
+            </p>
+            <div className="flex items-center gap-2">
+              <a
+                href={`/api/marketing/export/pdf${exportQuery ? `?${exportQuery}` : ""}`}
+                className={buttonVariants({ variant: "outline", size: "sm" })}
+              >
+                <FileDown className="size-4" />
+                Export PDF
+              </a>
+              <a
+                href={`/api/marketing/export/excel${exportQuery ? `?${exportQuery}` : ""}`}
+                className={buttonVariants({ variant: "outline", size: "sm" })}
+              >
+                <FileSpreadsheet className="size-4" />
+                Export Excel
+              </a>
             </div>
           </div>
+        </div>
 
-          {rows.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              {hasFilters ? "No leads match this filter." : "No leads yet."}
-            </p>
-          ) : (
-            <Table>
-              <THead>
-                <TR>
-                  <TH>Parent</TH>
-                  <TH>Student</TH>
-                  <TH>Category</TH>
-                  <TH>Source</TH>
-                  <TH>Grade</TH>
-                  <TH>Status</TH>
-                  <TH>Created</TH>
-                  <TH>Link</TH>
+        {rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            {hasFilters ? "No leads match this filter." : "No leads yet."}
+          </p>
+        ) : (
+          <Table>
+            <THead>
+              <TR>
+                <TH>Parent</TH>
+                <TH>Student</TH>
+                <TH>Category</TH>
+                <TH>Source</TH>
+                <TH>Grade</TH>
+                <TH>Status</TH>
+                <TH>Created</TH>
+                <TH>Link</TH>
+              </TR>
+            </THead>
+            <TBody>
+              {rows.map((r) => (
+                <TR key={r.id}>
+                  <TD>
+                    <div className="font-medium">{r.parents?.full_name ?? "—"}</div>
+                    <div className="text-xs text-muted-foreground">{r.parents?.phone}</div>
+                  </TD>
+                  <TD>{r.students?.full_name ?? r.lead_student_name ?? "—"}</TD>
+                  <TD>{r.category ?? "—"}</TD>
+                  <TD>{leadSourceLabel(r.lead_source)}</TD>
+                  <TD>{r.grade_applying ?? "—"}</TD>
+                  <TD>
+                    <StatusBadge status={r.status} />
+                  </TD>
+                  <TD className="whitespace-nowrap text-muted-foreground">
+                    {formatDateTime(r.created_at)}
+                  </TD>
+                  <TD>
+                    <CopyButton value={applyUrl(r.access_token)} variant="ghost" />
+                  </TD>
                 </TR>
-              </THead>
-              <TBody>
-                {rows.map((r) => (
-                  <TR key={r.id}>
-                    <TD>
-                      <div className="font-medium">{r.parents?.full_name ?? "—"}</div>
-                      <div className="text-xs text-muted-foreground">{r.parents?.phone}</div>
-                    </TD>
-                    <TD>{r.students?.full_name ?? r.lead_student_name ?? "—"}</TD>
-                    <TD>{r.category ?? "—"}</TD>
-                    <TD>{leadSourceLabel(r.lead_source)}</TD>
-                    <TD>{r.grade_applying ?? "—"}</TD>
-                    <TD>
-                      <StatusBadge status={r.status} />
-                    </TD>
-                    <TD className="whitespace-nowrap text-muted-foreground">
-                      {formatDateTime(r.created_at)}
-                    </TD>
-                    <TD>
-                      <CopyButton value={applyUrl(r.access_token)} variant="ghost" />
-                    </TD>
-                  </TR>
-                ))}
-              </TBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+              ))}
+            </TBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
   );
 }

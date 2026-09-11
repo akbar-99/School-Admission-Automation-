@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { formatDateTime } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -5,6 +6,37 @@ import { Badge } from "@/components/ui/badge";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 
 export default async function NotificationsPage() {
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="font-display text-3xl font-semibold tracking-tight">Notifications &amp; audit</h1>
+        <p className="text-muted-foreground">Every lifecycle message and change is recorded.</p>
+      </div>
+
+      <Suspense fallback={<NotificationsBodySkeleton />}>
+        <NotificationsBody />
+      </Suspense>
+    </div>
+  );
+}
+
+function NotificationsBodySkeleton() {
+  return (
+    <div className="space-y-6">
+      {[0, 1].map((i) => (
+        <Card key={i}>
+          <CardContent className="space-y-2 pt-6">
+            {[0, 1, 2].map((j) => (
+              <div key={j} className="h-9 w-full animate-pulse rounded bg-muted" />
+            ))}
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+async function NotificationsBody() {
   const admin = createSupabaseAdminClient();
   const [{ data: notifications }, { data: audit }] = await Promise.all([
     admin
@@ -20,12 +52,7 @@ export default async function NotificationsPage() {
   ]);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="font-display text-3xl font-semibold tracking-tight">Notifications &amp; audit</h1>
-        <p className="text-muted-foreground">Every lifecycle message and change is recorded.</p>
-      </div>
-
+    <>
       <Card>
         <CardHeader>
           <CardTitle>Notifications ({notifications?.length ?? 0})</CardTitle>
@@ -100,6 +127,6 @@ export default async function NotificationsPage() {
           )}
         </CardContent>
       </Card>
-    </div>
+    </>
   );
 }

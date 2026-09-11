@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -12,8 +13,12 @@ export interface SessionUser {
 }
 
 // Resolve the signed-in staff user and their role profile. Returns null when
-// there is no valid session.
-export async function getSessionUser(): Promise<SessionUser | null> {
+// there is no valid session. Wrapped in React's cache() because every staff
+// layout (admin/marketing/teacher) already calls this once to gate access,
+// and several pages under them called it again — without cache() that meant
+// a real Supabase Auth network round-trip plus a `users` query, twice, on
+// every single page load.
+export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
@@ -43,7 +48,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     email: user.email ?? null,
     profile: (profile as AppUser | null) ?? null,
   };
-}
+});
 
 export const ROLE_HOME: Record<UserRole, string> = {
   admin: "/admin",

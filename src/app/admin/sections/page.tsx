@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { adjustCapacity, createSection, updateSection, deleteSection } from "../actions";
 import { SubmitButton } from "@/components/submit-button";
@@ -24,6 +25,64 @@ export default async function SectionsPage({
   searchParams: Promise<{ ok?: string; error?: string; duplicate?: string }>;
 }) {
   const { ok, error, duplicate } = await searchParams;
+
+  return (
+    <div className="space-y-6">
+      {duplicate && <DuplicateBlockedAlert message={duplicate} />}
+      <div>
+        <h1 className="font-display text-3xl font-semibold tracking-tight">Class sections &amp; capacity</h1>
+        <p className="text-muted-foreground">
+          Seats fill A → B → C automatically. Add, edit or remove sections here.
+        </p>
+      </div>
+
+      {ok && <Alert variant="success">{ok}</Alert>}
+      {error && <Alert variant="error">{error}</Alert>}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Add a section</CardTitle>
+          <CardDescription>Create a new division for a grade.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={createSection} className="flex flex-wrap items-end gap-4">
+            <SectionErpFields
+              variant="create"
+              between={
+                <div className="space-y-1.5">
+                  <Label htmlFor="capacity">Capacity</Label>
+                  <Input id="capacity" name="capacity" type="number" defaultValue={30} className="w-28" />
+                </div>
+              }
+            />
+            <SubmitButton pendingText="Creating…">Add section</SubmitButton>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Suspense fallback={<SectionsListSkeleton />}>
+        <SectionsList />
+      </Suspense>
+    </div>
+  );
+}
+
+function SectionsListSkeleton() {
+  return (
+    <div className="space-y-6">
+      {[0, 1, 2].map((i) => (
+        <Card key={i}>
+          <CardContent className="space-y-2 pt-6">
+            <div className="h-5 w-32 animate-pulse rounded bg-muted" />
+            <div className="h-20 w-full animate-pulse rounded bg-muted" />
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+async function SectionsList() {
   const admin = createSupabaseAdminClient();
   const { data } = await admin
     .from("sections")
@@ -66,39 +125,7 @@ export default async function SectionsPage({
   }, {});
 
   return (
-    <div className="space-y-6">
-      {duplicate && <DuplicateBlockedAlert message={duplicate} />}
-      <div>
-        <h1 className="font-display text-3xl font-semibold tracking-tight">Class sections &amp; capacity</h1>
-        <p className="text-muted-foreground">
-          Seats fill A → B → C automatically. Add, edit or remove sections here.
-        </p>
-      </div>
-
-      {ok && <Alert variant="success">{ok}</Alert>}
-      {error && <Alert variant="error">{error}</Alert>}
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Add a section</CardTitle>
-          <CardDescription>Create a new division for a grade.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form action={createSection} className="flex flex-wrap items-end gap-4">
-            <SectionErpFields
-              variant="create"
-              between={
-                <div className="space-y-1.5">
-                  <Label htmlFor="capacity">Capacity</Label>
-                  <Input id="capacity" name="capacity" type="number" defaultValue={30} className="w-28" />
-                </div>
-              }
-            />
-            <SubmitButton pendingText="Creating…">Add section</SubmitButton>
-          </form>
-        </CardContent>
-      </Card>
-
+    <>
       {Object.entries(byGrade).map(([grade, list]) => (
         <Card key={grade}>
           <CardHeader>
@@ -218,6 +245,6 @@ export default async function SectionsPage({
           </CardContent>
         </Card>
       ))}
-    </div>
+    </>
   );
 }

@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { getSessionUser } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { config } from "@/lib/config";
@@ -50,33 +51,76 @@ export default async function TeacherPage({
   }>;
 }) {
   const { error, recorded, claimed, reported, released } = await searchParams;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="font-display text-3xl font-semibold tracking-tight">My assessments</h1>
+        <p className="text-muted-foreground">
+          Your assigned assessment slots. Record results once an applicant has been assessed.
+        </p>
+      </div>
+
+      {error && <Alert variant="error">{error}</Alert>}
+      {recorded && <Alert variant="success">Result recorded.</Alert>}
+      {claimed && <Alert variant="success">Slot claimed — it&apos;s now on your schedule.</Alert>}
+      {reported && (
+        <Alert variant="success">Reported — the admin has been notified to reassign it.</Alert>
+      )}
+      {released && <Alert variant="success">Slot released back to the open pool.</Alert>}
+
+      <Suspense fallback={<TeacherBodySkeleton />}>
+        <TeacherBody />
+      </Suspense>
+    </div>
+  );
+}
+
+function TeacherBodySkeleton() {
+  return (
+    <div className="space-y-6">
+      {[0, 1, 2].map((i) => (
+        <Card key={i}>
+          <CardContent className="space-y-2 pt-6">
+            <div className="h-6 w-48 animate-pulse rounded bg-muted" />
+            <div className="h-20 w-full animate-pulse rounded bg-muted" />
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+async function TeacherBody() {
   const session = await getSessionUser();
   const teacherId = session!.profile!.id;
   const admin = createSupabaseAdminClient();
   const schoolTz = config.school.timezone;
   const schoolLabel = config.school.timezoneLabel;
-  const subjects = (await getSettings()).assessmentSubjectsItems;
 
-  // The slots assigned to this teacher (by an admin, or previously self-claimed).
-  const { data } = await admin
-    .from("assessment_slots")
-    .select(
-      "id, starts_at, ends_at, is_open, application_id, zoom_start_url, unavailable_reported, applications(id, status, grade_applying, students(full_name, dob), parents(full_name, phone, email))",
-    )
-    .eq("teacher_id", teacherId)
-    .order("starts_at", { ascending: true });
+  // Independent reads — settings, this teacher's own slots, and the open
+  // pool don't depend on each other, so fetch them in one round-trip.
+  const [settings, { data }, { data: poolData }] = await Promise.all([
+    getSettings(),
+    admin
+      .from("assessment_slots")
+      .select(
+        "id, starts_at, ends_at, is_open, application_id, zoom_start_url, unavailable_reported, applications(id, status, grade_applying, students(full_name, dob), parents(full_name, phone, email))",
+      )
+      .eq("teacher_id", teacherId)
+      .order("starts_at", { ascending: true }),
+    admin
+      .from("assessment_slots")
+      .select("id, starts_at")
+      .is("teacher_id", null)
+      .is("application_id", null)
+      .eq("is_open", true)
+      .gt("starts_at", new Date().toISOString())
+      .order("starts_at", { ascending: true })
+      .limit(50),
+  ]);
+  const subjects = settings.assessmentSubjectsItems;
   const slots = (data ?? []) as unknown as SlotRow[];
-
-  // Open, unassigned slots any teacher can claim on a first-come basis.
-  const { data: poolData } = await admin
-    .from("assessment_slots")
-    .select("id, starts_at")
-    .is("teacher_id", null)
-    .is("application_id", null)
-    .eq("is_open", true)
-    .gt("starts_at", new Date().toISOString())
-    .order("starts_at", { ascending: true })
-    .limit(50);
   const openPool = (poolData ?? []) as PoolSlotRow[];
 
   // Group same-time slots so "Monday 8:00 PM, 10 slots" reads as one row
@@ -144,22 +188,8 @@ export default async function TeacherPage({
     }));
 
   return (
-    <div className="space-y-6">
+    <>
       <TeacherLiveAlerts teacherId={teacherId} initialAlerts={initialAlerts} scheduledAlerts={scheduledAlerts} />
-      <div>
-        <h1 className="font-display text-3xl font-semibold tracking-tight">My assessments</h1>
-        <p className="text-muted-foreground">
-          Your assigned assessment slots. Record results once an applicant has been assessed.
-        </p>
-      </div>
-
-      {error && <Alert variant="error">{error}</Alert>}
-      {recorded && <Alert variant="success">Result recorded.</Alert>}
-      {claimed && <Alert variant="success">Slot claimed — it&apos;s now on your schedule.</Alert>}
-      {reported && (
-        <Alert variant="success">Reported — the admin has been notified to reassign it.</Alert>
-      )}
-      {released && <Alert variant="success">Slot released back to the open pool.</Alert>}
 
       <Card>
         <CardHeader>
@@ -371,6 +401,6 @@ export default async function TeacherPage({
           )}
         </CardContent>
       </Card>
-    </div>
+    </>
   );
 }

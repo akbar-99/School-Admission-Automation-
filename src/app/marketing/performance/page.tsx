@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { requireRole } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { formatINR } from "@/lib/utils";
@@ -23,30 +24,6 @@ export default async function YourPerformancePage({
   searchParams: Promise<{ from?: string; to?: string }>;
 }) {
   const { from, to } = await searchParams;
-  const { profile } = await requireRole(["marketing", "admin"]);
-  const admin = createSupabaseAdminClient();
-
-  // Own leads only — date range is cohort-based (when the lead was created),
-  // same as the leads page and the admin-wide performance report.
-  let query = admin
-    .from("applications")
-    .select("id, status, created_at, payments(amount, status)")
-    .eq("created_by", profile.id);
-  if (from) query = query.gte("created_at", `${from}T00:00:00`);
-  if (to) query = query.lte("created_at", `${to}T23:59:59`);
-  const { data: appsData } = await query;
-  // Every row is already scoped to profile.id by the query above — inject it
-  // directly rather than selecting created_by, since computeMarketingStatsByCreator
-  // groups by that field.
-  const rows = ((appsData ?? []) as unknown as {
-    status: AppStatus;
-    created_at: string;
-    payments: { amount: number; status: string }[] | null;
-  }[]).map((r) => ({ ...r, created_by: profile.id }));
-
-  const statsByCreator = computeMarketingStatsByCreator(rows);
-  const s = statsByCreator.get(profile.id) ?? EMPTY_MARKETING_STATS;
-  const conversion = conversionLabel(s);
 
   const presetHref = (f: string, t: string) => `/marketing/performance?from=${f}&to=${t}`;
   const today = isoDate(new Date());
@@ -109,6 +86,63 @@ export default async function YourPerformancePage({
         </CardContent>
       </Card>
 
+      <Suspense fallback={<PerformanceBodySkeleton />}>
+        <PerformanceBody from={from} to={to} />
+      </Suspense>
+    </div>
+  );
+}
+
+function PerformanceBodySkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => (
+          <Card key={i}>
+            <CardContent className="space-y-2 py-5">
+              <div className="h-4 w-24 animate-pulse rounded bg-muted" />
+              <div className="h-8 w-16 animate-pulse rounded bg-muted" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <Card>
+        <CardContent className="pt-6">
+          <div className="h-40 w-full animate-pulse rounded bg-muted" />
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+async function PerformanceBody({ from, to }: { from?: string; to?: string }) {
+  const { profile } = await requireRole(["marketing", "admin"]);
+  const admin = createSupabaseAdminClient();
+
+  // Own leads only — date range is cohort-based (when the lead was created),
+  // same as the leads page and the admin-wide performance report.
+  let query = admin
+    .from("applications")
+    .select("id, status, created_at, payments(amount, status)")
+    .eq("created_by", profile.id);
+  if (from) query = query.gte("created_at", `${from}T00:00:00`);
+  if (to) query = query.lte("created_at", `${to}T23:59:59`);
+  const { data: appsData } = await query;
+  // Every row is already scoped to profile.id by the query above — inject it
+  // directly rather than selecting created_by, since computeMarketingStatsByCreator
+  // groups by that field.
+  const rows = ((appsData ?? []) as unknown as {
+    status: AppStatus;
+    created_at: string;
+    payments: { amount: number; status: string }[] | null;
+  }[]).map((r) => ({ ...r, created_by: profile.id }));
+
+  const statsByCreator = computeMarketingStatsByCreator(rows);
+  const s = statsByCreator.get(profile.id) ?? EMPTY_MARKETING_STATS;
+  const conversion = conversionLabel(s);
+
+  return (
+    <>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardContent className="py-5">
@@ -163,7 +197,7 @@ export default async function YourPerformancePage({
       ) : (
         <AdmissionsCharts rows={rows} />
       )}
-    </div>
+    </>
   );
 }
 

@@ -85,55 +85,59 @@ async function Content({
   const { application: app, parent, student } = bundle;
   const status = app.status as AppStatus;
   const admin = createSupabaseAdminClient();
-  const settings = await getSettings();
 
-  // Class list (from the grades that have sections) — needed for the minimal
-  // form, and again later for the editable-details grade dropdown.
-  const classOptions =
-    status === "LEAD_CREATED" || (!student && status === "FORM_SUBMITTED")
-      ? await getClassOptions()
-      : [];
+  // These four reads are all independent of each other (none needs another's
+  // result), so they run as one Promise.all round-trip instead of one after
+  // another — this gates every load of the parent's own portal page.
+  const wantsClassOptions = status === "LEAD_CREATED" || (!student && status === "FORM_SUBMITTED");
+  const wantsTiming = status === "DETAILS_PENDING" && Boolean(app.grade_applying);
+  const wantsResult = needsAssessment(app.grade_applying ?? "");
+
+  const [settings, classOptions, timingRows, resultRow] = await Promise.all([
+    getSettings(),
+    wantsClassOptions ? getClassOptions() : Promise.resolve<string[]>([]),
+    wantsTiming
+      ? admin
+          .from("sections")
+          .select("class_timing")
+          .eq("grade", app.grade_applying!)
+          .not("class_timing", "is", null)
+          .then((r) => r.data)
+      : Promise.resolve(null),
+    wantsResult
+      ? admin
+          .from("assessment_results")
+          .select("outcome, remarks, subjects")
+          .eq("application_id", app.id)
+          .maybeSingle()
+          .then((r) => r.data as { outcome: string; remarks: string | null; subjects?: SubjectResult[] } | null)
+      : Promise.resolve(null),
+  ]);
 
   // Distinct class timings offered for this grade, for the stage-2 timing
   // preference — same query ClassTimingCard uses for the "not yet assigned"
   // case below.
-  let timingOptions: string[] = [];
-  if (status === "DETAILS_PENDING" && app.grade_applying) {
-    const { data: timingRows } = await admin
-      .from("sections")
-      .select("class_timing")
-      .eq("grade", app.grade_applying)
-      .not("class_timing", "is", null);
-    timingOptions = Array.from(
-      new Set((timingRows ?? []).map((r) => r.class_timing as string).filter(Boolean)),
-    );
-  }
+  const timingOptions = Array.from(
+    new Set((timingRows ?? []).map((r) => r.class_timing as string).filter(Boolean)),
+  );
 
   // Assessment result (subject-wise), shown to the parent once recorded.
   let assessmentResult: { outcome: string; remarks: string | null } | null = null;
   let subjectResults: (SubjectResult & { url: string | null })[] = [];
-  if (needsAssessment(app.grade_applying ?? "")) {
-    const { data: resultRow } = await admin
-      .from("assessment_results")
-      .select("outcome, remarks, subjects")
-      .eq("application_id", app.id)
-      .maybeSingle();
-    if (resultRow) {
-      const row = resultRow as { outcome: string; remarks: string | null; subjects?: SubjectResult[] };
-      assessmentResult = { outcome: row.outcome, remarks: row.remarks };
-      subjectResults = await Promise.all(
-        (row.subjects ?? []).map(async (sub) => {
-          let url: string | null = null;
-          if (sub.file) {
-            const { data } = await admin.storage
-              .from("documents")
-              .createSignedUrl(sub.file.path, 3600, { download: sub.file.name });
-            url = data?.signedUrl ?? null;
-          }
-          return { ...sub, url };
-        }),
-      );
-    }
+  if (resultRow) {
+    assessmentResult = { outcome: resultRow.outcome, remarks: resultRow.remarks };
+    subjectResults = await Promise.all(
+      (resultRow.subjects ?? []).map(async (sub) => {
+        let url: string | null = null;
+        if (sub.file) {
+          const { data } = await admin.storage
+            .from("documents")
+            .createSignedUrl(sub.file.path, 3600, { download: sub.file.name });
+          url = data?.signedUrl ?? null;
+        }
+        return { ...sub, url };
+      }),
+    );
   }
 
   return (
