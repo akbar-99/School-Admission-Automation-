@@ -16,41 +16,47 @@ function computeErpClassName(grade: string, name: string, batch: string): string
   return b ? `${g}-${n} - ${b}` : `${g}-${n}`;
 }
 
-// KG runs a plain weekday pattern with no fixed hours given; other grades
-// have specific hour ranges. Keyed off whether the typed grade contains
-// "KG" so switching between "KG 1" and "G1" swaps the preset list live.
-const KG_TIMINGS = ["Monday to Friday", "Sunday to Thursday"];
-const GRADE_TIMINGS = [
-  "Monday - Friday, 9:30 AM - 12:55 PM IST",
-  "Sunday - Thursday, 11:20 AM - 2:45 PM IST",
-  "Monday - Friday, 9:30 AM - 1:55 PM IST",
-  "Sunday - Thursday, 9:30 AM - 1:55 PM IST",
+// Grouped by grade band so the dropdown shows a heading over each school's
+// set of timings, rather than one flat list mixing all of them together.
+const TIMING_GROUPS: { label: string; options: string[] }[] = [
+  {
+    label: "Grade 1 - 3",
+    options: [
+      "Monday - Friday, 9:30 AM - 12:55 PM IST",
+      "Sunday - Thursday, 11:20 AM - 2:45 PM IST",
+    ],
+  },
+  {
+    label: "Grade 4 - 8",
+    options: [
+      "Monday - Friday, 9:30 AM - 1:55 PM IST",
+      "Sunday - Thursday, 9:30 AM - 1:55 PM IST",
+    ],
+  },
+  {
+    label: "KG",
+    options: ["Monday to Friday", "Sunday to Thursday"],
+  },
 ];
-function timingPresetsForGrade(grade: string): string[] {
-  return grade.trim().toUpperCase().includes("KG") ? KG_TIMINGS : GRADE_TIMINGS;
-}
+const ALL_TIMING_PRESETS = TIMING_GROUPS.flatMap((g) => g.options);
 
 const CUSTOM = "__custom__";
 
-// A <select> of preset timings plus an "Add a time" option that reveals a
-// free-text input — covers the fixed school schedules without locking the
-// admin out of a one-off value. `key`-remounted from the parent whenever the
-// KG/non-KG preset bucket changes, so switching grade doesn't leave a
-// stale preset selected from the other list.
+// A <select> of preset timings, grouped by grade band, plus an "Add a time"
+// option that reveals a free-text input — covers the fixed school schedules
+// without locking the admin out of a one-off value.
 function ClassTimingPicker({
   id,
-  presets,
   initialValue,
   labelClass,
   heightClass,
 }: {
   id: string;
-  presets: string[];
   initialValue: string;
   labelClass?: string;
   heightClass: string;
 }) {
-  const matchesPreset = presets.includes(initialValue);
+  const matchesPreset = ALL_TIMING_PRESETS.includes(initialValue);
   const [selected, setSelected] = useState(matchesPreset ? initialValue : initialValue ? CUSTOM : "");
   const [customValue, setCustomValue] = useState(matchesPreset ? "" : initialValue);
   const value = selected === CUSTOM ? customValue : selected;
@@ -68,10 +74,14 @@ function ClassTimingPicker({
         className={`${heightClass}w-full min-w-56 rounded-md border border-input bg-card px-3 text-sm shadow-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
       >
         <option value="">No timing set</option>
-        {presets.map((p) => (
-          <option key={p} value={p}>
-            {p}
-          </option>
+        {TIMING_GROUPS.map((group) => (
+          <optgroup key={group.label} label={group.label}>
+            {group.options.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </optgroup>
         ))}
         <option value={CUSTOM}>+ Add a time…</option>
       </select>
@@ -124,7 +134,6 @@ export function SectionErpFields({
   const isEdit = variant === "edit";
   const labelClass = isEdit ? "text-xs" : undefined;
   const heightClass = isEdit ? "h-9 " : "";
-  const isKg = grade.trim().toUpperCase().includes("KG");
 
   return (
     <>
@@ -190,9 +199,7 @@ export function SectionErpFields({
         />
       </div>
       <ClassTimingPicker
-        key={isKg ? "kg" : "grade"}
         id={id("class_timing")}
-        presets={timingPresetsForGrade(grade)}
         initialValue={initialClassTiming}
         labelClass={labelClass}
         heightClass={heightClass}
