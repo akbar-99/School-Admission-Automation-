@@ -126,22 +126,13 @@ function ApplicationsTableSkeleton() {
 // show a stale/wrong count).
 async function OverviewStatsSection() {
   const admin = createSupabaseAdminClient();
-  const [{ data: allData }, { data: chartData }] = await Promise.all([
-    admin
-      .from("applications")
-      .select(
-        "id, status, category, grade_applying, admission_number, lead_source, created_at, parents(full_name), students(full_name), sections(grade, name)",
-      )
-      .order("created_at", { ascending: false })
-      .limit(300),
-    admin
-      .from("applications")
-      .select("status, created_at")
-      .order("created_at", { ascending: true })
-      .limit(2000),
-  ]);
-  const allRows = (allData ?? []) as unknown as Row[];
-  const chartRows = (chartData ?? []) as { status: AppStatus; created_at: string }[];
+  // One round-trip instead of two separate selects — see admin_overview_data
+  // in 0038_admin_overview_rpc.sql. Cross-region latency to the database
+  // makes every extra round-trip here directly add to page-load time.
+  const { data } = await admin.rpc("admin_overview_data", { p_limit: 300, p_chart_limit: 2000 });
+  const result = data as { overview_rows: unknown[]; chart_rows: { status: AppStatus; created_at: string }[] } | null;
+  const allRows = (result?.overview_rows ?? []) as unknown as Row[];
+  const chartRows = result?.chart_rows ?? [];
 
   const stat = (pred: (r: Row) => boolean) => allRows.filter(pred).length;
   const stats = [
