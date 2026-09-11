@@ -252,7 +252,7 @@ export function RemainingDetailsForm({
       <Section title="Parent details">
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label htmlFor="father_name">Father full name *</Label>
+            <Label htmlFor="father_name">Father&apos;s name *</Label>
             <Input id="father_name" name="father_name" required />
           </div>
           <div className="space-y-1.5">
@@ -260,7 +260,7 @@ export function RemainingDetailsForm({
             <PhoneField id="father_phone" name="father_phone" required placeholder="Contact number" />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="mother_name">Mother full name *</Label>
+            <Label htmlFor="mother_name">Mother&apos;s name *</Label>
             <Input id="mother_name" name="mother_name" required />
           </div>
           <div className="space-y-1.5">

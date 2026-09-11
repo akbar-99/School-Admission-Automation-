@@ -66,7 +66,7 @@ export async function GET(
     <tr><td class="k">Receipt no.</td><td>${esc(payment.receipt ?? "—")}</td></tr>
     <tr><td class="k">Payment ID</td><td>${esc(payment.razorpay_payment_id ?? "—")}</td></tr>
     <tr><td class="k">Date</td><td>${paidOn ? formatDateTime(paidOn) : "—"}</td></tr>
-    <tr><td class="k">Student name</td><td>${esc(student?.full_name ?? "—")}</td></tr>
+    <tr><td class="k">Student's name</td><td>${esc(student?.full_name ?? "—")}</td></tr>
     <tr><td class="k">Date of birth</td><td>${student ? formatDate(student.dob) : "—"}</td></tr>
     <tr><td class="k">Parent / guardian</td><td>${esc(parent.full_name)}</td></tr>
     <tr><td class="k">Admission number</td><td>${esc(app.admission_number ?? "—")}</td></tr>

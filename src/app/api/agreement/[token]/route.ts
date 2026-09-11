@@ -123,7 +123,7 @@ export async function GET(
   payment of the admission fee.</p>
 
   <div class="panel">
-    ${row("Student name", esc(student?.full_name ?? "—"))}
+    ${row("Student's name", esc(student?.full_name ?? "—"))}
     ${row("Date of birth", student ? formatDate(student.dob) : "—")}
     ${row("Category", esc(app.category ?? "—"))}
     ${row("Grade applying", esc(app.grade_applying ?? "—"))}

@@ -162,7 +162,7 @@ export default async function MarketingPage({
               <Input id="email" name="email" type="email" />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="student_name">Student name (optional)</Label>
+              <Label htmlFor="student_name">Student&apos;s name (optional)</Label>
               <Input id="student_name" name="student_name" />
             </div>
             <div className="space-y-1.5">

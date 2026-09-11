@@ -542,7 +542,7 @@ async function Content({
         </CardHeader>
         <CardContent className="space-y-6">
           <FieldGroup title="Student">
-            <Field label="Student name" value={student.full_name} />
+            <Field label="Student&apos;s name" value={student.full_name} />
             <Field label="Date of birth" value={formatDate(student.dob)} />
             <Field label="Gender" value={student.gender ?? "—"} />
             <Field label="Category" value={app.category ?? "—"} />

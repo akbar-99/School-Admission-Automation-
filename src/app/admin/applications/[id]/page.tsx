@@ -160,7 +160,7 @@ export default async function ApplicationDetailPage({
       </Section>
 
       <Section title="Student">
-        <Field label="Full name" value={student?.full_name ?? "—"} />
+        <Field label="Student&apos;s name" value={student?.full_name ?? "—"} />
         <Field label="Date of birth" value={student?.dob ? formatDate(student.dob) : "—"} />
         <Field label="Gender" value={student?.gender ?? "—"} />
         <Field label="Curriculum" value={student?.curriculum ?? "—"} />
@@ -172,9 +172,9 @@ export default async function ApplicationDetailPage({
       </Section>
 
       <Section title="Parent / guardian">
-        <Field label="Father" value={student?.father_name ?? "—"} />
+        <Field label="Father&apos;s name" value={student?.father_name ?? "—"} />
         <Field label="Father's contact" value={student?.father_phone ?? "—"} />
-        <Field label="Mother" value={student?.mother_name ?? "—"} />
+        <Field label="Mother&apos;s name" value={student?.mother_name ?? "—"} />
         <Field label="Mother's contact" value={student?.mother_phone ?? "—"} />
         <Field label="WhatsApp / phone" value={parent?.phone ?? "—"} />
         <Field label="Email" value={parent?.email ?? "—"} />

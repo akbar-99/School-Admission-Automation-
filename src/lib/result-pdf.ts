@@ -101,7 +101,7 @@ export async function generateResultPdf(input: ResultPdfInput): Promise<Buffer> 
 
   // ---- Details (two columns) ----
   const rows: [string, string][] = [
-    ["Student name", input.studentName || "—"],
+    ["Student's name", input.studentName || "—"],
     ["Date of birth", input.dob || "—"],
     ["Class / grade", input.grade || "—"],
     ["Parent / guardian", input.parentName || "—"],

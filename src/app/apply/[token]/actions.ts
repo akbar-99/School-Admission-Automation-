@@ -26,7 +26,7 @@ const ALLOWED = new Set(["application/pdf", "image/jpeg", "image/png"]);
 // scheduled (or, for KG 1, the remaining-details form unlocked) without
 // asking for the full paperwork up front.
 const MinimalFormSchema = z.object({
-  student_name: z.string().trim().min(2, "Student full name is required"),
+  student_name: z.string().trim().min(2, "Student's name is required"),
   grade: z.string().trim().min(1, "Class applying for is required"),
   age: z.coerce.number().int().min(1, "Age is required").max(25, "Enter a valid age"),
   email: z.string().trim().email("A valid email address is required"),
@@ -44,9 +44,9 @@ const RemainingDetailsSchema = z.object({
   current_address: z.string().trim().min(1, "Current address is required"),
   permanent_address: z.string().trim().min(1, "Permanent address is required"),
   previous_school: z.string().trim().min(1).optional(),
-  father_name: z.string().trim().min(1, "Father's full name is required"),
+  father_name: z.string().trim().min(1, "Father's name is required"),
   father_phone: z.string().trim().min(7, "Father's contact number is required"),
-  mother_name: z.string().trim().min(1, "Mother's full name is required"),
+  mother_name: z.string().trim().min(1, "Mother's name is required"),
   mother_phone: z.string().trim().min(7, "Mother's contact number is required"),
   preferred_class_timing: z.string().trim().max(200).optional(),
   pen_number: z.string().trim().max(50).optional(),
@@ -227,7 +227,7 @@ export async function submitMinimalForm(formData: FormData) {
 // inconsistent state — e.g. switching into KG 1 after already sitting a
 // Grade assessment.
 const UpdateMinimalDetailsSchema = z.object({
-  student_name: z.string().trim().min(2, "Student full name is required"),
+  student_name: z.string().trim().min(2, "Student's name is required"),
   grade: z.string().trim().min(1).optional(),
   age: z.coerce.number().int().min(1, "Age is required").max(25, "Enter a valid age"),
   email: z.string().trim().email("A valid email address is required"),
