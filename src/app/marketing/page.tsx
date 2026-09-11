@@ -150,7 +150,7 @@ export default async function MarketingPage({
         <CardContent>
           <form action={createLead} className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="parent_name">Parent name *</Label>
+              <Label htmlFor="parent_name">Parent&apos;s name *</Label>
               <Input id="parent_name" name="parent_name" required />
             </div>
             <div className="space-y-1.5">
