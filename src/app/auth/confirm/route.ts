@@ -20,6 +20,9 @@ export async function GET(request: NextRequest) {
     if (!error) {
       redirect(next);
     }
+    console.error("[auth] verifyOtp failed", { type, message: error.message, status: error.status });
+  } else {
+    console.error("[auth] /auth/confirm missing token_hash or type", { tokenHash, type });
   }
 
   redirect(
