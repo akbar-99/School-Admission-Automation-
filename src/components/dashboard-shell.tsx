@@ -55,17 +55,30 @@ export function DashboardShell({
             </form>
           </div>
         </div>
-        <nav className="flex items-center gap-1 overflow-x-auto border-t border-border/60 px-6 py-2 md:hidden">
-          {nav.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-secondary"
-            >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
+        <div className="relative border-t border-border/60 md:hidden">
+          <nav className="flex items-center gap-1 overflow-x-auto px-6 py-2">
+            {nav.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="whitespace-nowrap rounded-full px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-secondary"
+              >
+                {item.label}
+              </Link>
+            ))}
+          </nav>
+          {/* Fades the trailing edge so a scrollable nav with more items off-screen
+              doesn't look like it simply ends mid-list. Matches the header's own
+              .glass background formula (globals.css) rather than a plain solid
+              color, since the header is semi-transparent + blurred. */}
+          <div
+            className="pointer-events-none absolute inset-y-0 right-0 w-8"
+            style={{
+              background:
+                "linear-gradient(to left, color-mix(in srgb, var(--card) 78%, transparent), transparent)",
+            }}
+          />
+        </div>
       </header>
       <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-10">{children}</main>
       <footer className="border-t border-border/60 py-5 text-center text-xs text-muted-foreground print:hidden">
