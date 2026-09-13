@@ -10,6 +10,6 @@ jobs:
     steps:
       - name: Trigger Coolify deploy webhook
         run: |
-          curl --fail --silent --show-error \
+          curl --fail --silent --show-error -X POST \
             -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" \
             "http://187.53.138.154:8000/api/v1/deploy?uuid=xunynbsnlxukeagoifawtk0x&force=false"
