@@ -73,12 +73,31 @@ export async function inviteStaff(formData: FormData) {
     back(error?.message ?? "Could not create the account (the email may already exist).", "error");
   }
 
+  // Re-inviting an email that was previously removed (removeStaff bans the
+  // auth user for ~100 years) reuses that same auth user row — without this,
+  // the new invite link would still fail verifyOtp with "User is banned"
+  // forever, no matter how many times it's resent.
+  const { error: unbanErr } = await admin.auth.admin.updateUserById(data!.user!.id, {
+    ban_duration: "none",
+  });
+  if (unbanErr) back(unbanErr.message, "error");
+
   // Create the staff profile immediately so the account is usable as soon as the
   // password is set (an auth user without this row triggers "No staff profile").
+  // disabled: false for the same reason as the unban above — re-inviting a
+  // previously removed staff member must actually restore their access.
   const { error: pErr } = await admin
     .from("users")
     .upsert(
-      { id: data!.user!.id, role, full_name, email, phone: phone || null, zoom_email: zoom_email || null },
+      {
+        id: data!.user!.id,
+        role,
+        full_name,
+        email,
+        phone: phone || null,
+        zoom_email: zoom_email || null,
+        disabled: false,
+      },
       { onConflict: "id" },
     );
   if (pErr) back(pErr.message, "error");
