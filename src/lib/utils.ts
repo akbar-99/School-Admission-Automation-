@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { config } from "@/lib/config";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -37,17 +38,22 @@ export function formatINR(paise: number): string {
   }).format(paise / 100);
 }
 
+// "en-IN" alone only controls number/date formatting style, not the
+// timezone used for conversion — without an explicit timeZone, this
+// silently uses the server process's own timezone (e.g. UTC on most
+// hosts), which is wrong for a school whose staff are all in IST.
 export function formatDateTime(value: string | Date): string {
   const d = typeof value === "string" ? new Date(value) : value;
   return d.toLocaleString("en-IN", {
     dateStyle: "medium",
     timeStyle: "short",
+    timeZone: config.school.timezone,
   });
 }
 
 export function formatDate(value: string | Date): string {
   const d = typeof value === "string" ? new Date(value) : value;
-  return d.toLocaleDateString("en-IN", { dateStyle: "medium" });
+  return d.toLocaleDateString("en-IN", { dateStyle: "medium", timeZone: config.school.timezone });
 }
 
 // Format an instant in a specific IANA timezone (e.g. "Asia/Kolkata").
