@@ -286,3 +286,56 @@ export async function reactivateStaff(formData: FormData) {
   revalidatePath("/admin/staff");
   back("Staff member reactivated.");
 }
+
+// Admin-only: irreversibly delete a previously-removed staff member's account
+// (auth user + profile row). Only allowed once already removed — Remove is
+// the normal, reversible path; this is for cleaning up mistaken/duplicate
+// invites, not for routine offboarding. Refuses to run if the account has
+// any assessment_slots history: that table cascades on a users-row delete
+// (unlike assessment_results, which just nulls the attribution), so deleting
+// a teacher with real slot history would silently erase it.
+export async function deleteStaffPermanently(formData: FormData) {
+  const { profile } = await requireRole(["admin"]);
+  const parsed = StaffIdSchema.safeParse({ user_id: formData.get("user_id") });
+  if (!parsed.success) back("Invalid staff member.", "error");
+  const { user_id } = parsed.data!;
+
+  if (user_id === profile.id) back("You can't delete your own account.", "error");
+
+  const admin = createSupabaseAdminClient();
+  const { data: target } = await admin
+    .from("users")
+    .select("role, email, full_name, disabled")
+    .eq("id", user_id)
+    .maybeSingle();
+  if (!target) back("Staff member not found.", "error");
+  if (!target.disabled) back("Remove this staff member first before deleting permanently.", "error");
+
+  const { count: slotCount } = await admin
+    .from("assessment_slots")
+    .select("id", { count: "exact", head: true })
+    .eq("teacher_id", user_id);
+  if ((slotCount ?? 0) > 0) {
+    back(
+      "Can't permanently delete — this account has assessment slot history that would be lost. Leave it removed instead.",
+      "error",
+    );
+  }
+
+  const { error: delErr } = await admin.auth.admin.deleteUser(user_id);
+  if (delErr) back(delErr.message, "error");
+  // public.users row cascades automatically (id references auth.users(id)
+  // on delete cascade) — no separate delete needed.
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "staff.deleted_permanently",
+    entity: "user",
+    entityId: user_id,
+    details: { email: target.email, role: target.role },
+  });
+
+  revalidatePath("/admin/staff");
+  back(`${target.full_name ?? target.email} permanently deleted.`);
+}

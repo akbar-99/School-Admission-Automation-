@@ -33,3 +33,36 @@ export function RemoveStaffButton({
     </form>
   );
 }
+
+// Stronger confirmation than Remove — this is irreversible (unlike Remove,
+// which Reactivate can undo). Only rendered for already-removed accounts.
+export function DeleteStaffButton({
+  action,
+  userId,
+  name,
+}: {
+  action: (formData: FormData) => void;
+  userId: string;
+  name: string;
+}) {
+  return (
+    <form
+      action={action}
+      className="inline-flex"
+      onSubmit={(e) => {
+        if (
+          !window.confirm(
+            `Permanently delete ${name}? This cannot be undone — unlike Remove, there is no Reactivate afterward.`,
+          )
+        ) {
+          e.preventDefault();
+        }
+      }}
+    >
+      <input type="hidden" name="user_id" value={userId} />
+      <SubmitButton size="sm" variant="destructive" pendingText="Deleting…">
+        Delete permanently
+      </SubmitButton>
+    </form>
+  );
+}

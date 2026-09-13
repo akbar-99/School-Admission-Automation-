@@ -2,9 +2,16 @@ import { Suspense } from "react";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getSessionUser } from "@/lib/auth";
 import { formatDateTime } from "@/lib/utils";
-import { inviteStaff, setZoomEmail, setStaffPhone, removeStaff, reactivateStaff } from "./actions";
+import {
+  inviteStaff,
+  setZoomEmail,
+  setStaffPhone,
+  removeStaff,
+  reactivateStaff,
+  deleteStaffPermanently,
+} from "./actions";
 import { SubmitButton } from "@/components/submit-button";
-import { RemoveStaffButton } from "@/components/admin/remove-staff-button";
+import { RemoveStaffButton, DeleteStaffButton } from "@/components/admin/remove-staff-button";
 import { PhoneField } from "@/components/apply/phone-field";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -221,12 +228,19 @@ async function StaffTable() {
                       {s.id === currentUserId ? (
                         <span className="text-xs text-muted-foreground">You</span>
                       ) : s.disabled ? (
-                        <form action={reactivateStaff} className="inline-flex">
-                          <input type="hidden" name="user_id" value={s.id} />
-                          <SubmitButton size="sm" variant="outline" pendingText="…">
-                            Reactivate
-                          </SubmitButton>
-                        </form>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <form action={reactivateStaff} className="inline-flex">
+                            <input type="hidden" name="user_id" value={s.id} />
+                            <SubmitButton size="sm" variant="outline" pendingText="…">
+                              Reactivate
+                            </SubmitButton>
+                          </form>
+                          <DeleteStaffButton
+                            action={deleteStaffPermanently}
+                            userId={s.id}
+                            name={s.full_name ?? s.email ?? "this staff member"}
+                          />
+                        </div>
                       ) : (
                         <RemoveStaffButton
                           action={removeStaff}
