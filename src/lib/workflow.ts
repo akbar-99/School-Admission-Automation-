@@ -3,7 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { dispatch, multiChannel, type OutboundMessage, type EmailAttachment } from "@/lib/notifications";
 import { applyUrl } from "@/lib/parent";
 import { config } from "@/lib/config";
-import { getSettings } from "@/lib/settings";
+import { getSettings, getStudyMaterialFeeForGrade } from "@/lib/settings";
 import { logAudit } from "@/lib/audit";
 import { formatINR, formatInZone, formatDate } from "@/lib/utils";
 import { generateResultPdf } from "@/lib/result-pdf";
@@ -77,14 +77,21 @@ export async function notifyDuplicateDetailsBlocked(
 // ---------------------------------------------------------------------------
 export async function sendAgreement(app: Application, parent: Parent) {
   const portal = applyUrl(app.access_token);
-  const { feePaise } = await getSettings();
+  const [{ feePaise }, studyMaterialFeePaise] = await Promise.all([
+    getSettings(),
+    getStudyMaterialFeeForGrade(app.grade_applying),
+  ]);
+  const studyMaterialLine =
+    studyMaterialFeePaise > 0
+      ? `\nStudy material (optional, can also be paid later): ${formatINR(studyMaterialFeePaise)}`
+      : "";
   await dispatch(
     multiChannel(
       {
         applicationId: app.id,
         event: "N-6",
         subject: "Admission agreement & payment",
-        body: `Hello ${parent.full_name},\n\nCongratulations! Your admission agreement is ready.\nReview the agreement and complete the admission fee of ${formatINR(feePaise)} here:\n${portal}\n\n(You can read the full agreement on that page before paying.)`,
+        body: `Hello ${parent.full_name},\n\nCongratulations! Your admission agreement is ready.\nReview the agreement and complete your payment here:\n${portal}\n\nAdmission fee: ${formatINR(feePaise)}${studyMaterialLine}\n\n(You can read the full agreement on that page before paying.)`,
       },
       parent,
     ),
@@ -1144,7 +1151,6 @@ export async function handlePaymentCompleted(
 ) {
   const sendReceipt = opts.sendReceipt ?? true;
   const admin = createSupabaseAdminClient();
-  const { feePaise } = await getSettings();
 
   const { data: result, error } = await admin.rpc("enroll_application", {
     p_application: appId,
@@ -1190,7 +1196,29 @@ export async function handlePaymentCompleted(
     return { ...res, status: "ENROLLED" as const };
   }
 
-  // N-7 payment receipt + admin; N-8 welcome + onboarding + class teacher
+  // N-7 payment receipt + admin; N-8 welcome + onboarding + class teacher.
+  // Itemized from the actual completed payment row (not current settings),
+  // since the parent may have chosen to include study material or not, and
+  // fees can change later — this reflects what was actually charged.
+  const { data: payRow } = await admin
+    .from("payments")
+    .select("admission_amount, study_material_amount, includes_study_material")
+    .eq("application_id", app.id)
+    .eq("includes_admission", true)
+    .eq("status", "completed")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const admissionAmount = payRow?.admission_amount ?? 0;
+  const studyMaterialAmount = payRow?.includes_study_material ? payRow.study_material_amount ?? 0 : 0;
+  const totalPaid = admissionAmount + studyMaterialAmount;
+  const receiptBody =
+    `Hello ${parent.full_name},\n\n` +
+    `We have received your payment of ${formatINR(totalPaid)}:\n` +
+    `- Admission fee: ${formatINR(admissionAmount)}\n` +
+    (studyMaterialAmount > 0 ? `- Study material: ${formatINR(studyMaterialAmount)}\n` : "") +
+    `\nA receipt is available in your portal: ${applyUrl(app.access_token)}`;
+
   const receiptMessages = sendReceipt
     ? [
         ...multiChannel(
@@ -1198,7 +1226,7 @@ export async function handlePaymentCompleted(
             applicationId: app.id,
             event: "N-7",
             subject: "Payment received",
-            body: `Hello ${parent.full_name},\n\nWe have received your admission fee of ${formatINR(feePaise)}. A receipt is available in your portal: ${applyUrl(app.access_token)}`,
+            body: receiptBody,
           },
           parent,
         ),
@@ -1232,4 +1260,45 @@ export async function handlePaymentCompleted(
   await logAudit({ action: "enrollment.completed", entity: "application", entityId: app.id, details: res });
   await syncEnrollmentToErp(app, parent, res.admission_number!);
   return { ...res, status: "ENROLLED" as const };
+}
+
+// ---------------------------------------------------------------------------
+// Study material fee paid — either alongside the main admission payment or,
+// if the parent declined it then, separately afterward from their portal.
+// The application is already ENROLLED by this point, so this only notifies;
+// it never touches application status or re-runs enrollment.
+// ---------------------------------------------------------------------------
+export async function handleStudyMaterialPaymentCompleted(applicationId: string): Promise<void> {
+  const admin = createSupabaseAdminClient();
+  const { data: appRow } = await admin.from("applications").select("*").eq("id", applicationId).single();
+  const app = appRow as Application;
+  const { data: parentRow } = await admin.from("parents").select("*").eq("id", app.parent_id).single();
+  const parent = parentRow as Parent;
+  const { data: payRow } = await admin
+    .from("payments")
+    .select("study_material_amount")
+    .eq("application_id", applicationId)
+    .eq("includes_study_material", true)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const amount = (payRow?.study_material_amount as number | undefined) ?? 0;
+
+  await dispatch([
+    ...multiChannel(
+      {
+        applicationId: app.id,
+        event: "N-11",
+        subject: "Study material payment received",
+        body: `Hello ${parent.full_name},\n\nWe have received your study material payment of ${formatINR(amount)}. A receipt is available in your portal: ${applyUrl(app.access_token)}`,
+      },
+      parent,
+    ),
+    ...fanToStaff(await staffContacts(["admin"]), {
+      applicationId: app.id,
+      event: "N-11",
+      subject: "Study material payment received",
+      body: `Study material fee (${formatINR(amount)}) received for admission no. ${app.admission_number ?? app.id}.`,
+    }),
+  ]);
 }

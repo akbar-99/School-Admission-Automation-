@@ -5,7 +5,7 @@ import { LiveAlerts } from "@/components/live-alerts";
 import { loadApplicationByToken } from "@/lib/parent";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { config, CURRICULUM_OPTIONS } from "@/lib/config";
-import { getSettings } from "@/lib/settings";
+import { getSettings, getStudyMaterialFeeForGrade } from "@/lib/settings";
 import { getClassOptions } from "@/lib/classes";
 import { needsAssessment } from "@/lib/assessment";
 import {
@@ -19,7 +19,7 @@ import {
 import { bookSlot, acceptAgreement, releaseSlot } from "./actions";
 import { MinimalAdmissionForm, RemainingDetailsForm } from "@/components/apply/admission-form";
 import { EditableApplicantDetails } from "@/components/apply/editable-applicant-details";
-import { PayPanel } from "@/components/apply/pay-panel";
+import { PaymentSelector, StudyMaterialPayPanel } from "@/components/apply/pay-panel";
 import { StatusBadge } from "@/components/status-badge";
 import { SubmitButton } from "@/components/submit-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -93,7 +93,7 @@ async function Content({
   const wantsTiming = status === "DETAILS_PENDING" && Boolean(app.grade_applying);
   const wantsResult = needsAssessment(app.grade_applying ?? "");
 
-  const [settings, classOptions, timingRows, resultRow] = await Promise.all([
+  const [settings, classOptions, timingRows, resultRow, studyMaterialFeePaise] = await Promise.all([
     getSettings(),
     wantsClassOptions ? getClassOptions() : Promise.resolve<string[]>([]),
     wantsTiming
@@ -112,6 +112,7 @@ async function Content({
           .maybeSingle()
           .then((r) => r.data as { outcome: string; remarks: string | null; subjects?: SubjectResult[] } | null)
       : Promise.resolve(null),
+    getStudyMaterialFeeForGrade(app.grade_applying),
   ]);
 
   // Distinct class timings offered for this grade, for the stage-2 timing
@@ -248,8 +249,7 @@ async function Content({
           <CardHeader>
             <CardTitle>Admission agreement &amp; payment</CardTitle>
             <CardDescription>
-              Review the agreement and pay the admission fee of{" "}
-              {formatINR(settings.feePaise)} to confirm the seat.
+              Review the agreement, then complete your payment below to confirm the seat.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -298,9 +298,10 @@ async function Content({
                   ✓ Agreement accepted by <strong>{app.agreement_signature}</strong>
                   {app.agreement_accepted_at && <> on {formatDateTime(app.agreement_accepted_at)}</>}.
                 </Alert>
-                <PayPanel
+                <PaymentSelector
                   token={token}
-                  amountLabel={formatINR(settings.feePaise)}
+                  admissionAmountPaise={settings.feePaise}
+                  studyMaterialAmountPaise={studyMaterialFeePaise}
                   razorpayEnabled={config.razorpay.enabled}
                   allowMockPayment={
                     !config.razorpay.enabled && process.env.NODE_ENV !== "production"
@@ -334,6 +335,29 @@ async function Content({
           Thank you for your interest. Unfortunately we are unable to offer
           admission at this time. We wish your child the very best.
         </InfoCard>
+      )}
+
+      {status === "ENROLLED" && !app.study_material_paid && studyMaterialFeePaise > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Study material payment</CardTitle>
+            <CardDescription>
+              You chose to skip this at admission — you can pay it anytime here.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <StudyMaterialPayPanel
+              token={token}
+              amountPaise={studyMaterialFeePaise}
+              razorpayEnabled={config.razorpay.enabled}
+              allowMockPayment={!config.razorpay.enabled && process.env.NODE_ENV !== "production"}
+              razorpayKeyId={config.razorpay.publicKeyId}
+              parentName={parent.full_name}
+              parentEmail={parent.email}
+              parentPhone={parent.phone}
+            />
+          </CardContent>
+        </Card>
       )}
 
       {status === "ENROLLED" && <Onboarding appId={app.id} sectionId={app.section_id} admissionNumber={app.admission_number} />}

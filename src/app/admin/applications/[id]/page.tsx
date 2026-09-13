@@ -47,9 +47,7 @@ export default async function ApplicationDetailPage({
       .from("payments")
       .select("*")
       .eq("application_id", id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+      .order("created_at", { ascending: false }),
     app.section_id
       ? admin.from("sections").select("grade, name").eq("id", app.section_id).maybeSingle()
       : Promise.resolve({ data: null }),
@@ -66,7 +64,7 @@ export default async function ApplicationDetailPage({
   ]);
   const student = studentRes.data as Student | null;
   const parent = parentRes.data as Parent | null;
-  const payment = paymentRes.data as Payment | null;
+  const payments = (paymentRes.data ?? []) as Payment[];
   const section = sectionRes.data as { grade: string; name: string } | null;
   const result = resultRes.data as {
     outcome: string;
@@ -148,6 +146,7 @@ export default async function ApplicationDetailPage({
         <Field label="Source of enquiry" value={leadSourceLabel(app.lead_source)} />
         <Field label="Admission number" value={app.admission_number ?? "—"} mono />
         <Field label="Section" value={section ? `${section.grade}-${section.name}` : "—"} />
+        <Field label="Study material" value={app.study_material_paid ? "Paid" : "Not paid"} />
         <Field label="Created" value={formatDateTime(app.created_at)} />
         <Field
           label="Data consent"
@@ -257,12 +256,58 @@ export default async function ApplicationDetailPage({
         </div>
       </Section>
 
-      <Section title="Payment">
-        <Field label="Status" value={payment?.status ?? "—"} />
-        <Field label="Amount" value={payment ? formatINR(payment.amount) : "—"} />
-        <Field label="Receipt" value={payment?.receipt ?? "—"} mono />
-        <Field label="Razorpay payment ID" value={payment?.razorpay_payment_id ?? "—"} mono />
-      </Section>
+      <Card>
+        <CardHeader>
+          <CardTitle>Payments ({payments.length})</CardTitle>
+          <CardDescription>Admission and study material can be paid together or separately.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {payments.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No payment attempts yet.</p>
+          ) : (
+            payments.map((p) => {
+              const description =
+                p.includes_admission && p.includes_study_material
+                  ? "Admission fee + Study material"
+                  : p.includes_study_material
+                    ? "Study material"
+                    : "Admission fee";
+              return (
+                <div key={p.id} className="rounded-md border border-border p-3">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium">{description}</span>
+                    <span className="text-xs uppercase tracking-wide text-muted-foreground">{p.status}</span>
+                  </div>
+                  <div className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
+                    <div>
+                      <span className="text-muted-foreground">Amount: </span>
+                      {formatINR(p.amount)}
+                      {p.includes_admission && p.includes_study_material && (
+                        <span className="text-muted-foreground">
+                          {" "}
+                          ({formatINR(p.admission_amount)} + {formatINR(p.study_material_amount)})
+                        </span>
+                      )}
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Date: </span>
+                      {formatDateTime(p.created_at)}
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Receipt: </span>
+                      <span className="font-mono text-xs">{p.receipt ?? "—"}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Razorpay payment ID: </span>
+                      <span className="font-mono text-xs">{p.razorpay_payment_id ?? "—"}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

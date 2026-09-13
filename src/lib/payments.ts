@@ -1,8 +1,8 @@
 import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createRazorpayOrder } from "@/lib/razorpay";
-import { handlePaymentCompleted } from "@/lib/workflow";
-import { getSettings } from "@/lib/settings";
+import { handlePaymentCompleted, handleStudyMaterialPaymentCompleted } from "@/lib/workflow";
+import { getSettings, getStudyMaterialFeeForGrade } from "@/lib/settings";
 import { logAudit } from "@/lib/audit";
 import type { Application, Payment } from "@/lib/types";
 
@@ -13,45 +13,65 @@ const PAYABLE = new Set([
   "ABANDONED",
 ]);
 
-// Create (or reuse) a Razorpay order for an application and move it to
-// PAYMENT_PENDING. (SRS FR-17 — server-side order creation.)
+// Create (or reuse) a Razorpay order for an application's main payment step
+// and move it to PAYMENT_PENDING. (SRS FR-17 — server-side order creation.)
+// Admission is always included; study material is the parent's choice and
+// only added to the order (and its own snapshot column) if selected.
 export async function ensureOrderForApplication(
   app: Application,
+  opts?: { includeStudyMaterial?: boolean },
 ): Promise<{ payment: Payment; orderId: string; amount: number }> {
   if (!PAYABLE.has(app.status)) {
     throw new Error(`Application not payable in status ${app.status}`);
   }
+  const includeStudyMaterial = opts?.includeStudyMaterial ?? false;
   const admin = createSupabaseAdminClient();
 
-  // Reuse an open order if one exists.
+  const { feePaise } = await getSettings();
+  const studyMaterialAmount = includeStudyMaterial
+    ? await getStudyMaterialFeeForGrade(app.grade_applying)
+    : 0;
+  const admissionAmount = feePaise;
+  const totalAmount = admissionAmount + studyMaterialAmount;
+
+  // Reuse an open order only if its selection still matches what's being
+  // requested now — Razorpay orders are immutable once created, so a parent
+  // who changes their study-material choice needs a fresh order, not a
+  // silently-wrong amount from an earlier attempt.
   const { data: existing } = await admin
     .from("payments")
     .select("*")
     .eq("application_id", app.id)
+    .eq("includes_admission", true)
     .in("status", ["created", "pending"])
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
   let payment = existing as Payment | null;
+  const reusable =
+    payment && payment.razorpay_order_id && payment.includes_study_material === includeStudyMaterial;
 
-  if (!payment || !payment.razorpay_order_id) {
-    const { feePaise } = await getSettings();
+  if (!reusable) {
     const receipt = `adm_${app.id.slice(0, 8)}_${Date.now()}`;
     const order = await createRazorpayOrder({
-      amount: feePaise,
+      amount: totalAmount,
       receipt,
-      notes: { application_id: app.id },
+      notes: { application_id: app.id, includes_study_material: String(includeStudyMaterial) },
     });
     const { data: inserted } = await admin
       .from("payments")
       .insert({
         application_id: app.id,
         razorpay_order_id: order.id,
-        amount: feePaise,
+        amount: totalAmount,
         currency: "INR",
         status: "created",
         receipt,
+        includes_admission: true,
+        includes_study_material: includeStudyMaterial,
+        admission_amount: admissionAmount,
+        study_material_amount: studyMaterialAmount,
       })
       .select("*")
       .single();
@@ -71,6 +91,66 @@ export async function ensureOrderForApplication(
     if (statusErr) {
       throw new Error(`Could not move application to PAYMENT_PENDING: ${statusErr.message}`);
     }
+  }
+
+  return { payment: payment!, orderId: payment!.razorpay_order_id!, amount: payment!.amount };
+}
+
+// Standalone study-material payment, made after enrollment by a parent who
+// declined it at the main payment step. Doesn't touch application status
+// (already ENROLLED) — markPaymentCompleted branches on includes_admission
+// to route here instead of the full enrollment flow.
+export async function ensureStudyMaterialOnlyOrder(
+  app: Application,
+): Promise<{ payment: Payment; orderId: string; amount: number }> {
+  if (app.status !== "ENROLLED") {
+    throw new Error("Study material payment is only available after enrollment");
+  }
+  if (app.study_material_paid) {
+    throw new Error("Study material fee has already been paid");
+  }
+  const admin = createSupabaseAdminClient();
+  const studyMaterialAmount = await getStudyMaterialFeeForGrade(app.grade_applying);
+  if (studyMaterialAmount <= 0) {
+    throw new Error("No study material fee is configured for this grade");
+  }
+
+  const { data: existing } = await admin
+    .from("payments")
+    .select("*")
+    .eq("application_id", app.id)
+    .eq("includes_admission", false)
+    .eq("includes_study_material", true)
+    .in("status", ["created", "pending"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  let payment = existing as Payment | null;
+  if (!payment || !payment.razorpay_order_id) {
+    const receipt = `sm_${app.id.slice(0, 8)}_${Date.now()}`;
+    const order = await createRazorpayOrder({
+      amount: studyMaterialAmount,
+      receipt,
+      notes: { application_id: app.id, study_material_only: "true" },
+    });
+    const { data: inserted } = await admin
+      .from("payments")
+      .insert({
+        application_id: app.id,
+        razorpay_order_id: order.id,
+        amount: studyMaterialAmount,
+        currency: "INR",
+        status: "created",
+        receipt,
+        includes_admission: false,
+        includes_study_material: true,
+        admission_amount: 0,
+        study_material_amount: studyMaterialAmount,
+      })
+      .select("*")
+      .single();
+    payment = inserted as Payment;
   }
 
   return { payment, orderId: payment.razorpay_order_id!, amount: payment.amount };
@@ -120,11 +200,20 @@ export async function markPaymentCompleted(params: {
       return { ok: false, applicationId: payment.application_id, reason: "db_error" };
     }
 
-    const { error: appErr } = await admin
-      .from("applications")
-      .update({ status: "PAYMENT_COMPLETED" })
-      .eq("id", payment.application_id)
-      .eq("status", "PAYMENT_PENDING");
+    // A study-material-only payment happens after enrollment (the parent
+    // declined it at the main payment step and is paying separately later)
+    // — the application is already ENROLLED, so there's no status transition
+    // here, just the study_material_paid flag.
+    const { error: appErr } = payment.includes_admission
+      ? await admin
+          .from("applications")
+          .update({ status: "PAYMENT_COMPLETED" })
+          .eq("id", payment.application_id)
+          .eq("status", "PAYMENT_PENDING")
+      : await admin
+          .from("applications")
+          .update({ study_material_paid: true })
+          .eq("id", payment.application_id);
     if (appErr) {
       await logAudit({
         action: "payment.completed_db_error",
@@ -143,7 +232,11 @@ export async function markPaymentCompleted(params: {
     details: { order_id: params.orderId, payment_id: params.paymentId },
   });
 
-  await handlePaymentCompleted(payment.application_id);
+  if (payment.includes_admission) {
+    await handlePaymentCompleted(payment.application_id);
+  } else {
+    await handleStudyMaterialPaymentCompleted(payment.application_id);
+  }
   return { ok: true, applicationId: payment.application_id };
 }
 

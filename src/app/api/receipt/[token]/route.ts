@@ -16,15 +16,29 @@ export async function GET(
   const { application: app, parent, student } = bundle;
   const admin = createSupabaseAdminClient();
 
-  const { data: payment } = await admin
+  // A parent may have two completed payments over time (admission at the
+  // main step, study material paid separately later) — show the most recent
+  // one rather than .maybeSingle(), which would throw once a second
+  // completed row exists.
+  const { data: payments } = await admin
     .from("payments")
-    .select("amount, currency, receipt, razorpay_payment_id, status, created_at, updated_at")
+    .select(
+      "amount, currency, receipt, razorpay_payment_id, status, created_at, updated_at, includes_admission, includes_study_material, admission_amount, study_material_amount",
+    )
     .eq("application_id", app.id)
     .eq("status", "completed")
-    .maybeSingle();
+    .order("created_at", { ascending: false })
+    .limit(1);
+  const payment = payments?.[0];
   if (!payment) {
     return new Response("No completed payment found for this application.", { status: 404 });
   }
+  const description =
+    payment.includes_admission && payment.includes_study_material
+      ? "Admission fee + Study material"
+      : payment.includes_study_material
+        ? "Study material"
+        : "Admission fee";
 
   let sectionLabel = "—";
   if (app.section_id) {
@@ -71,7 +85,13 @@ export async function GET(
     <tr><td class="k">Parent / guardian</td><td>${esc(parent.full_name)}</td></tr>
     <tr><td class="k">Admission number</td><td>${esc(app.admission_number ?? "—")}</td></tr>
     <tr><td class="k">Class &amp; section</td><td>${esc(sectionLabel)}</td></tr>
-    <tr><td class="k">Description</td><td>Admission fee</td></tr>
+    <tr><td class="k">Description</td><td>${esc(description)}</td></tr>
+    ${
+      payment.includes_admission && payment.includes_study_material
+        ? `<tr><td class="k">Admission fee</td><td>${formatINR(payment.admission_amount)}</td></tr>
+    <tr><td class="k">Study material</td><td>${formatINR(payment.study_material_amount)}</td></tr>`
+        : ""
+    }
     <tr class="total"><td class="k">Amount paid</td><td>${formatINR(payment.amount)}</td></tr>
   </table>
   <p class="foot">This is a computer-generated receipt and does not require a signature.

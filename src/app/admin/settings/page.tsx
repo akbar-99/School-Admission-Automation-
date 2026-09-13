@@ -1,5 +1,6 @@
-import { factoryReset, updateSettings } from "../actions";
-import { getSettings } from "@/lib/settings";
+import { factoryReset, updateSettings, updateStudyMaterialFees } from "../actions";
+import { getSettings, getStudyMaterialFees } from "@/lib/settings";
+import { getClassOptions } from "@/lib/classes";
 import { SubmitButton } from "@/components/submit-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -13,7 +14,11 @@ export default async function AdminSettingsPage({
   searchParams: Promise<{ ok?: string; error?: string }>;
 }) {
   const { ok, error } = await searchParams;
-  const s = await getSettings();
+  const [s, grades, studyMaterialFees] = await Promise.all([
+    getSettings(),
+    getClassOptions(),
+    getStudyMaterialFees(),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -127,6 +132,36 @@ export default async function AdminSettingsPage({
               </div>
             </div>
             <SubmitButton pendingText="Saving…">Save settings</SubmitButton>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Study material fee by grade</CardTitle>
+          <CardDescription>
+            Shown to parents as a second, optional payment card alongside the admission fee — set
+            to 0 to hide it for a grade.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={updateStudyMaterialFees} className="grid gap-4 sm:grid-cols-3">
+            {grades.map((grade) => (
+              <div key={grade} className="space-y-1.5">
+                <Label htmlFor={`fee-${grade}`}>{grade}</Label>
+                <Input
+                  id={`fee-${grade}`}
+                  name={`fee_grade__${grade}`}
+                  type="number"
+                  min={0}
+                  step="1"
+                  defaultValue={(studyMaterialFees[grade] ?? 0) / 100}
+                />
+              </div>
+            ))}
+            <div className="flex items-end sm:col-span-3">
+              <SubmitButton pendingText="Saving…">Save study material fees</SubmitButton>
+            </div>
           </form>
         </CardContent>
       </Card>

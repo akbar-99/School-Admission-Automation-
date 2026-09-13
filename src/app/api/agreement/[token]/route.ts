@@ -1,6 +1,6 @@
 import { loadApplicationByToken } from "@/lib/parent";
 import { config } from "@/lib/config";
-import { getSettings } from "@/lib/settings";
+import { getSettings, getStudyMaterialFeeForGrade } from "@/lib/settings";
 import { fetchSchoolLogo } from "@/lib/school-logo";
 import { formatINR, formatDate } from "@/lib/utils";
 
@@ -15,7 +15,10 @@ export async function GET(
   if (!bundle) return new Response("Agreement not found", { status: 404 });
 
   const { application: app, parent, student } = bundle;
-  const s = await getSettings();
+  const [s, studyMaterialFeePaise] = await Promise.all([
+    getSettings(),
+    getStudyMaterialFeeForGrade(app.grade_applying),
+  ]);
   const today = formatDate(new Date());
   const logoBytes = await fetchSchoolLogo();
   const logoSrc = logoBytes ? `data:image/png;base64,${Buffer.from(logoBytes).toString("base64")}` : null;
@@ -133,6 +136,11 @@ export async function GET(
     ${row("Parent / guardian", esc(parent.full_name))}
     ${row("Contact", esc(parent.phone) + (parent.email ? " · " + esc(parent.email) : ""))}
     <div class="row fee-row"><span class="k">Admission fee</span><span class="v">${formatINR(s.feePaise)}</span></div>
+    ${
+      studyMaterialFeePaise > 0
+        ? `<div class="row fee-row"><span class="k">Study material (optional)</span><span class="v">${formatINR(studyMaterialFeePaise)}</span></div>`
+        : ""
+    }
     ${row("Application reference", `<span style="font-weight:500;font-family:ui-monospace,monospace;font-size:12px;">${app.id}</span>`)}
   </div>
 

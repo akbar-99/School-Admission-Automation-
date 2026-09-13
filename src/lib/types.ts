@@ -109,6 +109,7 @@ export interface Application {
   agreement_ip: string | null;
   section_id: string | null;
   admission_number: string | null;
+  study_material_paid: boolean;
   erp_status: "pending" | "no_mapping" | "send_failed" | "synced";
   erp_class_name: string | null;
   erp_student_id: string | null;
@@ -177,6 +178,10 @@ export interface Payment {
   status: PaymentState;
   receipt: string | null;
   notes: Record<string, unknown> | null;
+  includes_admission: boolean;
+  includes_study_material: boolean;
+  admission_amount: number;
+  study_material_amount: number;
   created_at: string;
   updated_at: string;
 }

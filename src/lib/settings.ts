@@ -82,3 +82,17 @@ export const getSettings = cache(async (): Promise<AppSettings> => {
       : toList(SETTINGS_DEFAULTS.assessmentSubjects),
   };
 });
+
+// Study material fee, unlike the flat admission fee, varies by grade —
+// stored in its own table (study_material_fees) rather than app_config.
+export const getStudyMaterialFees = cache(async (): Promise<Record<string, number>> => {
+  const admin = createSupabaseAdminClient();
+  const { data } = await admin.from("study_material_fees").select("grade, fee_paise");
+  return Object.fromEntries((data ?? []).map((r) => [r.grade as string, r.fee_paise as number]));
+});
+
+export async function getStudyMaterialFeeForGrade(grade: string | null | undefined): Promise<number> {
+  if (!grade) return 0;
+  const fees = await getStudyMaterialFees();
+  return fees[grade] ?? 0;
+}

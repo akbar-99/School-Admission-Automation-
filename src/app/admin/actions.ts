@@ -515,6 +515,41 @@ export async function updateSettings(formData: FormData) {
   redirect("/admin/settings?ok=" + encodeURIComponent("Settings saved."));
 }
 
+// Study material fee varies by grade (unlike the flat admission fee), so it's
+// one form field per grade rather than a single app_config value.
+export async function updateStudyMaterialFees(formData: FormData) {
+  const { profile } = await requireRole(["admin"]);
+  const admin = createSupabaseAdminClient();
+
+  const rows: { grade: string; fee_paise: number }[] = [];
+  for (const [key, value] of formData.entries()) {
+    if (!key.startsWith("fee_grade__")) continue;
+    const grade = key.slice("fee_grade__".length);
+    const rupees = Number(value);
+    if (!Number.isFinite(rupees) || rupees < 0) {
+      redirect("/admin/settings?error=" + encodeURIComponent(`Enter a valid fee for ${grade}.`));
+    }
+    rows.push({ grade, fee_paise: Math.round(rupees * 100) });
+  }
+
+  if (rows.length > 0) {
+    const { error } = await admin.from("study_material_fees").upsert(rows, { onConflict: "grade" });
+    if (error) {
+      redirect("/admin/settings?error=" + encodeURIComponent(error.message));
+    }
+  }
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "study_material_fees.updated",
+    entity: "study_material_fees",
+    details: { rows },
+  });
+  revalidatePath("/admin/settings");
+  redirect("/admin/settings?ok=" + encodeURIComponent("Study material fees saved."));
+}
+
 function back(msg?: string, type: "error" | "ok" = "ok") {
   redirect("/admin?" + (msg ? `${type}=${encodeURIComponent(msg)}` : ""));
 }

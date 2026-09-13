@@ -6,7 +6,7 @@ import { z } from "zod";
 import { loadApplicationByToken } from "@/lib/parent";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { classCategory, needsAssessment } from "@/lib/assessment";
-import { ensureOrderForApplication, markPaymentCompleted } from "@/lib/payments";
+import { ensureOrderForApplication, ensureStudyMaterialOnlyOrder, markPaymentCompleted } from "@/lib/payments";
 import {
   handleFormSubmitted,
   handleSlotBooked,
@@ -544,7 +544,29 @@ export async function mockCompletePayment(formData: FormData) {
   if (!bundle) fail(token, "This admission link is invalid or expired.");
   const app = bundle.application;
 
-  const { orderId } = await ensureOrderForApplication(app as Application);
+  const { orderId } = await ensureOrderForApplication(app as Application, {
+    includeStudyMaterial: formData.get("include_study_material") === "on",
+  });
+  await markPaymentCompleted({
+    orderId,
+    paymentId: `pay_mock_${Date.now()}`,
+    signature: "mock",
+  });
+  redirect(`/apply/${token}`);
+}
+
+// Dev/mock: simulate the standalone study-material-only payment made after
+// enrollment. Same production-safety gates as mockCompletePayment above.
+export async function mockCompleteStudyMaterialPayment(formData: FormData) {
+  const token = String(formData.get("token") ?? "");
+  if (process.env.NODE_ENV === "production") fail(token, "Use the Razorpay checkout to pay.");
+  if (config.razorpay.enabled) fail(token, "Use the Razorpay checkout to pay.");
+
+  const { bundle } = await loadApplicationByToken(token);
+  if (!bundle) fail(token, "This admission link is invalid or expired.");
+  const app = bundle.application;
+
+  const { orderId } = await ensureStudyMaterialOnlyOrder(app as Application);
   await markPaymentCompleted({
     orderId,
     paymentId: `pay_mock_${Date.now()}`,
