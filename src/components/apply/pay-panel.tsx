@@ -8,12 +8,6 @@ import { Alert } from "@/components/ui/alert";
 import { SubmitButton } from "@/components/submit-button";
 import { formatINR, cn } from "@/lib/utils";
 
-declare global {
-  interface Window {
-    Razorpay?: new (options: Record<string, unknown>) => { open: () => void };
-  }
-}
-
 interface RazorpayContext {
   razorpayEnabled: boolean;
   allowMockPayment: boolean;
@@ -23,24 +17,56 @@ interface RazorpayContext {
   parentPhone: string;
 }
 
-function loadRazorpayScript(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (window.Razorpay) return resolve();
-    const script = document.createElement("script");
-    script.src = "https://checkout.razorpay.com/v1/checkout.js";
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Failed to load Razorpay"));
-    document.body.appendChild(script);
-  });
+// Razorpay's hosted checkout (a full-page redirect the browser POSTs to and
+// pays on, required by the payment aggregator's compliance review) rather
+// than the JS popup widget — no checkout.js to load, no in-page handler.
+// Razorpay POSTs the result back to callback_url, which does the actual
+// signature verification and crediting (see /api/razorpay/callback).
+function submitToHostedCheckout(opts: {
+  orderId: string;
+  amount: number;
+  currency: string;
+  keyId: string;
+  token: string;
+  description: string;
+  ctx: RazorpayContext;
+}) {
+  const origin = window.location.origin;
+  const fields: Record<string, string> = {
+    key_id: opts.keyId,
+    amount: String(opts.amount),
+    currency: opts.currency,
+    order_id: opts.orderId,
+    name: "Broadway Home Schooling",
+    description: opts.description,
+    "prefill[name]": opts.ctx.parentName,
+    "prefill[email]": opts.ctx.parentEmail ?? "",
+    "prefill[contact]": opts.ctx.parentPhone.replace(/\D/g, ""),
+    "theme[color]": "#1b7e9a",
+    callback_url: `${origin}/api/razorpay/callback?token=${encodeURIComponent(opts.token)}`,
+    cancel_url: `${origin}/api/razorpay/cancel?token=${encodeURIComponent(opts.token)}`,
+  };
+  const form = document.createElement("form");
+  form.method = "POST";
+  form.action = "https://api.razorpay.com/v1/checkout/embedded";
+  form.style.display = "none";
+  for (const [name, value] of Object.entries(fields)) {
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.name = name;
+    input.value = value;
+    form.appendChild(input);
+  }
+  document.body.appendChild(form);
+  form.submit();
 }
 
-async function openRazorpay(opts: {
+async function payWithHostedCheckout(opts: {
   orderEndpoint: string;
   orderBody: Record<string, unknown>;
-  amountLabel: string;
+  token: string;
+  description: string;
   ctx: RazorpayContext;
-  onError: (message: string) => void;
-  onDone: () => void;
 }) {
   const res = await fetch(opts.orderEndpoint, {
     method: "POST",
@@ -48,35 +74,17 @@ async function openRazorpay(opts: {
     body: JSON.stringify(opts.orderBody),
   });
   if (!res.ok) throw new Error((await res.json()).error ?? "Could not start payment");
-  const { orderId, amount, keyId } = await res.json();
-
-  await loadRazorpayScript();
-  if (!window.Razorpay) throw new Error("Razorpay failed to load");
-
-  const rzp = new window.Razorpay({
-    key: keyId ?? opts.ctx.razorpayKeyId,
-    order_id: orderId,
+  const { orderId, amount, currency, keyId } = await res.json();
+  // The browser navigates away here — nothing after this line runs.
+  submitToHostedCheckout({
+    orderId,
     amount,
-    currency: "INR",
-    name: "Broadway Home Schooling",
-    description: opts.amountLabel,
-    prefill: { name: opts.ctx.parentName, email: opts.ctx.parentEmail ?? "", contact: opts.ctx.parentPhone },
-    handler: async (response: Record<string, string>) => {
-      await fetch("/api/razorpay/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          token: opts.orderBody.token,
-          orderId: response.razorpay_order_id,
-          paymentId: response.razorpay_payment_id,
-          signature: response.razorpay_signature,
-        }),
-      });
-      window.location.reload();
-    },
-    modal: { ondismiss: opts.onDone },
+    currency,
+    keyId: keyId ?? opts.ctx.razorpayKeyId,
+    token: opts.token,
+    description: opts.description,
+    ctx: opts.ctx,
   });
-  rzp.open();
 }
 
 // The main payment stage — two cards: Admission (required, locked) and Study
@@ -102,13 +110,12 @@ export function PaymentSelector({
     setBusy(true);
     setError(null);
     try {
-      await openRazorpay({
+      await payWithHostedCheckout({
         orderEndpoint: "/api/razorpay/order",
         orderBody: { token, includeStudyMaterial },
-        amountLabel: includeStudyMaterial ? "Admission fee + Study material" : "Admission fee",
+        token,
+        description: includeStudyMaterial ? "Admission fee + Study material" : "Admission fee",
         ctx,
-        onError: setError,
-        onDone: () => setBusy(false),
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Payment error");
@@ -215,13 +222,12 @@ export function StudyMaterialPayPanel({
     setBusy(true);
     setError(null);
     try {
-      await openRazorpay({
+      await payWithHostedCheckout({
         orderEndpoint: "/api/razorpay/study-material-order",
         orderBody: { token },
-        amountLabel: "Study material payment",
+        token,
+        description: "Study material payment",
         ctx,
-        onError: setError,
-        onDone: () => setBusy(false),
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Payment error");

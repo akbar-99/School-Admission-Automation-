@@ -1,5 +1,31 @@
 import type { NextConfig } from "next";
 
+// The self-hosted Supabase instance's URL varies by environment/deployment,
+// so the CSP's connect-src is built from it rather than hardcoded — both the
+// https (REST/Storage) and wss (Realtime, used by the teacher/admin live
+// alert widgets) forms are needed.
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+const supabaseWs = supabaseUrl.replace(/^http/, "ws");
+
+// Required for Razorpay's hosted checkout (a full-page form POST to
+// api.razorpay.com, not the JS popup widget) — without form-action and
+// frame-src covering Razorpay's domains, the browser silently blocks the
+// redirect/return with no visible error.
+const ContentSecurityPolicy = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://checkout.razorpay.com https://cdn.razorpay.com",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data:",
+  `connect-src 'self' ${supabaseUrl} ${supabaseWs} https://*.razorpay.com https://lumberjack.razorpay.com`,
+  "frame-src https://api.razorpay.com https://checkout.razorpay.com",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self' https://api.razorpay.com https://checkout.razorpay.com",
+  "frame-ancestors 'none'",
+  "upgrade-insecure-requests",
+].join("; ");
+
 const nextConfig: NextConfig = {
   // Next 16.3+ auto-rewrites a block in AGENTS.md on every `next dev` run.
   // This repo's AGENTS.md is hand-written and load-bearing (CLAUDE.md pulls
@@ -19,7 +45,10 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/:path*",
-        headers: [{ key: "Referrer-Policy", value: "strict-origin-when-cross-origin" }],
+        headers: [
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Content-Security-Policy", value: ContentSecurityPolicy },
+        ],
       },
     ];
   },
