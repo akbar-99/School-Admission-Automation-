@@ -96,3 +96,12 @@ export async function getStudyMaterialFeeForGrade(grade: string | null | undefin
   const fees = await getStudyMaterialFees();
   return fees[grade] ?? 0;
 }
+
+// The next admission number to be issued — a single school-wide sequence
+// (see broadway_admission_sequence / next_broadway_admission_number()),
+// not scoped by year or grade. Admin-editable under Admin -> Settings.
+export const getNextAdmissionNumber = cache(async (): Promise<number> => {
+  const admin = createSupabaseAdminClient();
+  const { data } = await admin.from("broadway_admission_sequence").select("next_number").eq("id", 1).maybeSingle();
+  return data?.next_number ?? 1;
+});

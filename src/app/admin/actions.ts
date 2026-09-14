@@ -550,6 +550,50 @@ export async function updateStudyMaterialFees(formData: FormData) {
   redirect("/admin/settings?ok=" + encodeURIComponent("Study material fees saved."));
 }
 
+// Admin-only: set (or correct) where the school-wide admission number
+// sequence picks up from — e.g. continuing from existing paper/manual
+// records. Refuses to set it at or below any admission number this system
+// has already issued, so it can never hand out a duplicate.
+export async function updateAdmissionSequence(formData: FormData) {
+  const { profile } = await requireRole(["admin"]);
+  const next = Number(formData.get("next_admission_number"));
+  if (!Number.isInteger(next) || next < 1) {
+    redirect("/admin/settings?error=" + encodeURIComponent("Enter a valid whole number."));
+  }
+
+  const admin = createSupabaseAdminClient();
+  const { data: issued } = await admin
+    .from("applications")
+    .select("admission_number")
+    .not("admission_number", "is", null)
+    .filter("admission_number", "match", "^[0-9]+$");
+  const highestIssued = Math.max(0, ...(issued ?? []).map((r) => Number(r.admission_number)));
+  if (next <= highestIssued) {
+    redirect(
+      "/admin/settings?error=" +
+        encodeURIComponent(`Must be greater than ${highestIssued}, the highest admission number already issued.`),
+    );
+  }
+
+  const { error } = await admin
+    .from("broadway_admission_sequence")
+    .update({ next_number: next })
+    .eq("id", 1);
+  if (error) {
+    redirect("/admin/settings?error=" + encodeURIComponent(error.message));
+  }
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "admission_sequence.updated",
+    entity: "broadway_admission_sequence",
+    details: { next_admission_number: next },
+  });
+  revalidatePath("/admin/settings");
+  redirect("/admin/settings?ok=" + encodeURIComponent(`Next admission number set to ${next}.`));
+}
+
 function back(msg?: string, type: "error" | "ok" = "ok") {
   redirect("/admin?" + (msg ? `${type}=${encodeURIComponent(msg)}` : ""));
 }

@@ -1,5 +1,5 @@
-import { factoryReset, updateSettings, updateStudyMaterialFees } from "../actions";
-import { getSettings, getStudyMaterialFees } from "@/lib/settings";
+import { factoryReset, updateSettings, updateStudyMaterialFees, updateAdmissionSequence } from "../actions";
+import { getSettings, getStudyMaterialFees, getNextAdmissionNumber } from "@/lib/settings";
 import { getClassOptions } from "@/lib/classes";
 import { SubmitButton } from "@/components/submit-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,10 +14,11 @@ export default async function AdminSettingsPage({
   searchParams: Promise<{ ok?: string; error?: string }>;
 }) {
   const { ok, error } = await searchParams;
-  const [s, grades, studyMaterialFees] = await Promise.all([
+  const [s, grades, studyMaterialFees, nextAdmissionNumber] = await Promise.all([
     getSettings(),
     getClassOptions(),
     getStudyMaterialFees(),
+    getNextAdmissionNumber(),
   ]);
 
   return (
@@ -162,6 +163,35 @@ export default async function AdminSettingsPage({
             <div className="flex items-end sm:col-span-3">
               <SubmitButton pendingText="Saving…">Save study material fees</SubmitButton>
             </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Admission number sequence</CardTitle>
+          <CardDescription>
+            Broadway&apos;s own school-wide admission numbers — a single running sequence, not
+            tied to class, grade, or year. Only change this to continue from your existing
+            records; it can&apos;t be set at or below a number already issued.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={updateAdmissionSequence} className="flex flex-wrap items-end gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="next_admission_number">Next admission number to be issued</Label>
+              <Input
+                id="next_admission_number"
+                name="next_admission_number"
+                type="number"
+                min={1}
+                step="1"
+                defaultValue={nextAdmissionNumber}
+                className="w-40"
+                required
+              />
+            </div>
+            <SubmitButton pendingText="Saving…">Save</SubmitButton>
           </form>
         </CardContent>
       </Card>
