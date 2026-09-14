@@ -32,8 +32,17 @@ export default async function ErpClassStudentsPage({
 }: {
   params: Promise<{ className: string }>;
 }) {
-  const { className } = await params;
-  if (!className) notFound();
+  const { className: rawClassName } = await params;
+  if (!rawClassName) notFound();
+  // The Link that navigates here encodes the class name (it can contain
+  // spaces, e.g. "KG 2-C - TULIP"); this version of Next.js does not decode
+  // dynamic segments itself, so do it explicitly here.
+  let className: string;
+  try {
+    className = decodeURIComponent(rawClassName);
+  } catch {
+    notFound();
+  }
 
   return (
     <div className="space-y-6">
