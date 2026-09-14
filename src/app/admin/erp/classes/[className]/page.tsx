@@ -3,10 +3,13 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { fetchErpClassStudents } from "@/lib/erp";
+import { bulkTransferErpStudents } from "../../actions";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
+import { SubmitButton } from "@/components/submit-button";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import type { BadgeTone } from "@/lib/types";
 
@@ -28,8 +31,10 @@ const STATUS_TONE: Record<string, BadgeTone> = {
 
 export default async function ErpClassStudentsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ className: string }>;
+  searchParams: Promise<{ ok?: string; error?: string }>;
 }) {
   const { className: rawClassName } = await params;
   if (!rawClassName) notFound();
@@ -42,6 +47,7 @@ export default async function ErpClassStudentsPage({
   } catch {
     notFound();
   }
+  const { ok, error } = await searchParams;
 
   return (
     <div className="space-y-6">
@@ -54,6 +60,9 @@ export default async function ErpClassStudentsPage({
           Live student roster from the ERP, cross-linked with this app&apos;s own records where available.
         </p>
       </div>
+
+      {ok && <Alert variant="success">{ok}</Alert>}
+      {error && <Alert variant="error">{error}</Alert>}
 
       <Suspense fallback={<ClassStudentsSkeleton />}>
         <ClassStudents className={className} />
@@ -77,7 +86,7 @@ function ClassStudentsSkeleton() {
 async function ClassStudents({ className }: { className: string }) {
   const admin = createSupabaseAdminClient();
 
-  const [roster, { data: pendingData }] = await Promise.all([
+  const [roster, { data: pendingData }, { data: classNameRows }] = await Promise.all([
     fetchErpClassStudents(className),
     admin
       .from("applications")
@@ -87,9 +96,13 @@ async function ClassStudents({ className }: { className: string }) {
       .eq("erp_class_name", className)
       .neq("erp_status", "synced")
       .order("admission_number", { ascending: true }),
+    admin.from("erp_classes").select("class_name").order("class_name", { ascending: true }),
   ]);
 
   const pending = (pendingData ?? []) as unknown as PendingRow[];
+  const targetOptions = (classNameRows ?? [])
+    .map((r) => r.class_name as string)
+    .filter((n) => n !== className);
 
   if (roster === null) {
     return (
@@ -107,6 +120,8 @@ async function ClassStudents({ className }: { className: string }) {
     );
   }
 
+  const transferableCount = roster.filter((s) => s.admission_id).length;
+
   return (
     <>
       <Card>
@@ -120,32 +135,77 @@ async function ClassStudents({ className }: { className: string }) {
           {roster.length === 0 ? (
             <p className="text-sm text-muted-foreground">No students in this class yet.</p>
           ) : (
-            <Table>
-              <THead>
-                <TR>
-                  <TH>Student ID</TH>
-                  <TH>Full name</TH>
-                  <TH>Tracked locally</TH>
-                </TR>
-              </THead>
-              <TBody>
-                {roster.map((s) => (
-                  <TR key={s.student_id}>
-                    <TD className="font-mono text-xs">{s.student_id}</TD>
-                    <TD className="font-medium">{s.full_name}</TD>
-                    <TD>
-                      {s.admission_id ? (
-                        <Link href={`/admin/applications/${s.admission_id}`} className="text-sm hover:underline">
-                          View application →
-                        </Link>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">Entered directly in the ERP</span>
-                      )}
-                    </TD>
-                  </TR>
-                ))}
-              </TBody>
-            </Table>
+            <form action={bulkTransferErpStudents} className="space-y-4">
+              <input type="hidden" name="from_class_name" value={className} />
+              <div className="w-full overflow-x-auto">
+                <Table>
+                  <THead>
+                    <TR>
+                      <TH className="w-8"></TH>
+                      <TH>Student ID</TH>
+                      <TH>Full name</TH>
+                      <TH>Tracked locally</TH>
+                    </TR>
+                  </THead>
+                  <TBody>
+                    {roster.map((s) => (
+                      <TR key={s.student_id}>
+                        <TD>
+                          {s.admission_id ? (
+                            <input
+                              type="checkbox"
+                              name="application_ids"
+                              value={s.admission_id}
+                              className="size-4 rounded border-input accent-primary"
+                              aria-label={`Select ${s.full_name} for transfer`}
+                            />
+                          ) : null}
+                        </TD>
+                        <TD className="font-mono text-xs">{s.student_id}</TD>
+                        <TD className="font-medium">{s.full_name}</TD>
+                        <TD>
+                          {s.admission_id ? (
+                            <Link href={`/admin/applications/${s.admission_id}`} className="text-sm hover:underline">
+                              View application →
+                            </Link>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">Entered directly in the ERP</span>
+                          )}
+                        </TD>
+                      </TR>
+                    ))}
+                  </TBody>
+                </Table>
+              </div>
+
+              {transferableCount > 0 ? (
+                <div className="flex flex-wrap items-end gap-3 border-t border-border pt-4">
+                  <div className="space-y-1.5">
+                    <label htmlFor="class_name" className="text-sm font-medium">
+                      Transfer selected to
+                    </label>
+                    <Select id="class_name" name="class_name" required className="w-56">
+                      <option value="">Choose a class…</option>
+                      {targetOptions.map((name) => (
+                        <option key={name} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                  <SubmitButton variant="outline" pendingText="Transferring…">
+                    Transfer selected students
+                  </SubmitButton>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  None of the students above can be transferred from here yet — only ones tracked
+                  locally (with a &quot;View application&quot; link) can be selected, since transferring
+                  needs the ERP&apos;s internal id, which the roster doesn&apos;t expose for
+                  directly-entered students.
+                </p>
+              )}
+            </form>
           )}
         </CardContent>
       </Card>

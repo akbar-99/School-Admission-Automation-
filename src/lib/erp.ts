@@ -21,6 +21,8 @@ const CLASS_DEACTIVATE_URL =
   "https://lxnwnkgyjywoolnqsrjy.supabase.co/functions/v1/admissions-class-deactivate";
 const STUDENT_DEACTIVATE_URL =
   "https://lxnwnkgyjywoolnqsrjy.supabase.co/functions/v1/admissions-student-deactivate";
+const STUDENT_TRANSFER_URL =
+  "https://lxnwnkgyjywoolnqsrjy.supabase.co/functions/v1/admissions-student-transfer";
 
 function authHeaders(): Record<string, string> {
   return { "x-admissions-secret": config.erp.secret };
@@ -335,6 +337,64 @@ export async function deactivateErpStudent(erpStudentId: string): Promise<Deacti
       return { ok: true, action, raw: json };
     }
     return { ok: false, error: `ERP student deactivate returned unexpected body: ${text}` };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Move one or more students to a different ERP class — one endpoint covers
+// both a single transfer and bulk promotion (many students into one
+// class_name at once). class_name must already exist and be active in the
+// ERP (push a new one via syncClassToErp first if it doesn't). A bad id
+// inside a bulk call is reported back in missingStudentIds rather than
+// failing the whole batch, so one stale record can't block a promotion.
+// Same shared secret as capacity/webhook. Never throws.
+//
+// Note: erpStudentIds must be the ERP's internal id (the same one
+// erp_student_id stores) — the human-readable admission number that
+// admissions-class-students shows is a different id space and won't work
+// here, which is why this only covers students this app has synced itself.
+// ---------------------------------------------------------------------------
+export type TransferErpStudentsResult =
+  | { ok: true; classId: string; transferredCount: number; missingStudentIds: string[] }
+  | { ok: false; error: string };
+
+export async function transferErpStudents(
+  erpStudentIds: string[],
+  className: string,
+): Promise<TransferErpStudentsResult> {
+  if (!config.erp.enabled) return { ok: false, error: "ERP integration not configured" };
+  if (erpStudentIds.length === 0) return { ok: false, error: "No students selected" };
+  try {
+    const body =
+      erpStudentIds.length === 1
+        ? { student_id: erpStudentIds[0], class_name: className }
+        : { student_ids: erpStudentIds, class_name: className };
+    const res = await fetch(STUDENT_TRANSFER_URL, {
+      method: "POST",
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      return { ok: false, error: `ERP transfer failed (${res.status}): ${text}` };
+    }
+    const json = JSON.parse(text) as {
+      success: boolean;
+      class_id: string;
+      transferred_count: number;
+      missing_student_ids?: string[];
+    };
+    if (!json.success) {
+      return { ok: false, error: `ERP transfer returned success:false: ${text}` };
+    }
+    return {
+      ok: true,
+      classId: json.class_id,
+      transferredCount: json.transferred_count,
+      missingStudentIds: json.missing_student_ids ?? [],
+    };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
