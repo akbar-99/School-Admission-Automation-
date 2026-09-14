@@ -63,11 +63,15 @@ export async function fetchErpClassCapacity(): Promise<ErpClassEntry[] | null> {
 }
 
 export interface ErpClassStudentEntry {
-  // The ERP's own human-readable admission number (e.g. "2892"), not an
-  // internal row id — confirmed with the ERP team this is the intended
-  // display value; kept consistent with how admission numbers read
-  // everywhere else in this app.
+  // The ERP's own human-readable admission number (e.g. "2892") — display
+  // only, confirmed with the ERP team as the intended value to show admins.
   student_id: string;
+  // The ERP's internal row id (a UUID) — the actual identifier
+  // admissions-student-transfer / admissions-student-deactivate require.
+  // Added after student_id turned out to be the wrong id space for those
+  // calls; present for every student in the roster, not just ones this app
+  // created itself.
+  internal_id: string;
   full_name: string;
   // This app's own applications.id — populated only when the student was
   // created via our admissions-webhook (same admission_id we send in that

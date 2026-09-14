@@ -71,18 +71,24 @@ export async function retryErpAdmission(formData: FormData) {
   back("Retry attempted — check the status below.");
 }
 
+const StudentRefSchema = z.object({
+  internal_id: z.string().min(1),
+  admission_id: z.string().uuid().nullable(),
+});
+
 const TransferSchema = z.object({
-  application_ids: z.array(z.string().uuid()).min(1),
+  students: z.array(z.string()).min(1),
   class_name: z.string().trim().min(1),
   from_class_name: z.string().trim().min(1),
 });
 
 // Admin-only: move one or more students (selected from a class's roster) to
 // a different ERP class — covers both a single transfer and bulk promotion.
-// Only works for students this app knows the ERP internal id for (i.e.
-// synced through our own webhook — the ERP roster's human-readable number
-// isn't the right id for this call), so selections without erp_student_id
-// are silently dropped rather than failing the whole request.
+// Each checkbox's value is a JSON blob of {internal_id, admission_id} built
+// from the roster the page already fetched from the ERP (see
+// admissions-class-students), so every student in the roster is eligible —
+// not just ones this app created itself — now that the ERP exposes each
+// student's real internal id there, not only the human-readable number.
 export async function bulkTransferErpStudents(formData: FormData) {
   const { profile } = await requireRole(["admin"]);
   const fromClassName = String(formData.get("from_class_name") ?? "");
@@ -98,28 +104,26 @@ export async function bulkTransferErpStudents(formData: FormData) {
   }
 
   const parsed = TransferSchema.safeParse({
-    application_ids: formData.getAll("application_ids"),
+    students: formData.getAll("students"),
     class_name: formData.get("class_name"),
     from_class_name: fromClassName,
   });
   if (!parsed.success) backToClass("Select at least one student and a target class.", "error");
-  const { application_ids, class_name } = parsed.data!;
+  const { students: rawStudents, class_name } = parsed.data!;
 
-  const admin = createSupabaseAdminClient();
-  const { data: rows } = await admin
-    .from("applications")
-    .select("id, erp_student_id")
-    .in("id", application_ids);
-
-  const withErpId = (rows ?? []).filter(
-    (r): r is { id: string; erp_student_id: string } => Boolean(r.erp_student_id),
-  );
-  if (withErpId.length === 0) {
-    backToClass("None of the selected students have been synced to the ERP yet.", "error");
-  }
+  const refs = rawStudents
+    .map((s) => {
+      try {
+        return StudentRefSchema.parse(JSON.parse(s));
+      } catch {
+        return null;
+      }
+    })
+    .filter((r): r is z.infer<typeof StudentRefSchema> => r !== null);
+  if (refs.length === 0) backToClass("Invalid selection — please try again.", "error");
 
   const result = await transferErpStudents(
-    withErpId.map((r) => r.erp_student_id),
+    refs.map((r) => r.internal_id),
     class_name,
   );
   if (!result.ok) {
@@ -127,10 +131,14 @@ export async function bulkTransferErpStudents(formData: FormData) {
   }
 
   // Keep this app's own erp_class_name in sync for whichever applications
-  // actually moved — the ones the ERP reported as missing didn't.
+  // actually moved (only meaningful for refs that have a local application
+  // in the first place) — the ones the ERP reported as missing didn't move.
   const missing = new Set(result.missingStudentIds);
-  const transferredAppIds = withErpId.filter((r) => !missing.has(r.erp_student_id)).map((r) => r.id);
+  const transferredAppIds = refs
+    .filter((r) => r.admission_id && !missing.has(r.internal_id))
+    .map((r) => r.admission_id!);
   if (transferredAppIds.length > 0) {
+    const admin = createSupabaseAdminClient();
     await admin.from("applications").update({ erp_class_name: class_name }).in("id", transferredAppIds);
   }
 
@@ -142,7 +150,7 @@ export async function bulkTransferErpStudents(formData: FormData) {
     details: {
       from_class_name: fromClassName,
       to_class_name: class_name,
-      requested: application_ids.length,
+      requested: refs.length,
       transferred: result.transferredCount,
       missing: result.missingStudentIds.length,
     },

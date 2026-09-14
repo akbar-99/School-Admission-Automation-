@@ -120,8 +120,6 @@ async function ClassStudents({ className }: { className: string }) {
     );
   }
 
-  const transferableCount = roster.filter((s) => s.admission_id).length;
-
   return (
     <>
       <Card>
@@ -149,17 +147,18 @@ async function ClassStudents({ className }: { className: string }) {
                   </THead>
                   <TBody>
                     {roster.map((s) => (
-                      <TR key={s.student_id}>
+                      <TR key={s.internal_id}>
                         <TD>
-                          {s.admission_id ? (
-                            <input
-                              type="checkbox"
-                              name="application_ids"
-                              value={s.admission_id}
-                              className="size-4 rounded border-input accent-primary"
-                              aria-label={`Select ${s.full_name} for transfer`}
-                            />
-                          ) : null}
+                          <input
+                            type="checkbox"
+                            name="students"
+                            value={JSON.stringify({
+                              internal_id: s.internal_id,
+                              admission_id: s.admission_id,
+                            })}
+                            className="size-4 rounded border-input accent-primary"
+                            aria-label={`Select ${s.full_name} for transfer`}
+                          />
                         </TD>
                         <TD className="font-mono text-xs">{s.student_id}</TD>
                         <TD className="font-medium">{s.full_name}</TD>
@@ -178,33 +177,29 @@ async function ClassStudents({ className }: { className: string }) {
                 </Table>
               </div>
 
-              {transferableCount > 0 ? (
-                <div className="flex flex-wrap items-end gap-3 border-t border-border pt-4">
-                  <div className="space-y-1.5">
-                    <label htmlFor="class_name" className="text-sm font-medium">
-                      Transfer selected to
-                    </label>
-                    <Select id="class_name" name="class_name" required className="w-56">
-                      <option value="">Choose a class…</option>
-                      {targetOptions.map((name) => (
-                        <option key={name} value={name}>
-                          {name}
-                        </option>
-                      ))}
-                    </Select>
-                  </div>
-                  <SubmitButton variant="outline" pendingText="Transferring…">
-                    Transfer selected students
-                  </SubmitButton>
+              <div className="flex flex-wrap items-end gap-3 border-t border-border pt-4">
+                <div className="space-y-1.5">
+                  <label htmlFor="class_name" className="text-sm font-medium">
+                    Transfer selected to
+                  </label>
+                  <Select id="class_name" name="class_name" required className="w-56">
+                    <option value="">Choose a class…</option>
+                    {targetOptions.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </Select>
                 </div>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  None of the students above can be transferred from here yet — only ones tracked
-                  locally (with a &quot;View application&quot; link) can be selected, since transferring
-                  needs the ERP&apos;s internal id, which the roster doesn&apos;t expose for
-                  directly-entered students.
-                </p>
-              )}
+                <SubmitButton variant="outline" pendingText="Transferring…">
+                  Transfer selected students
+                </SubmitButton>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Select students above (single transfer or a bulk promotion), pick a target class, and
+                submit — this moves them in the ERP and updates this app&apos;s own records for any that
+                are tracked locally.
+              </p>
             </form>
           )}
         </CardContent>
