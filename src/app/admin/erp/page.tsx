@@ -115,7 +115,8 @@ async function ErpBody() {
           <CardTitle>Cached ERP capacity ({classes.length})</CardTitle>
           <CardDescription>
             Reference only — not used for allocation. Useful for checking real ERP class names and
-            capacity while setting up the mapping under Admin → Sections.
+            capacity while setting up the mapping under Admin → Sections. Click a class name to see
+            which students this app has mapped to it.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -141,7 +142,14 @@ async function ErpBody() {
               <TBody>
                 {classes.map((c) => (
                   <TR key={c.class_name}>
-                    <TD className="font-medium">{c.class_name}</TD>
+                    <TD className="font-medium">
+                      <Link
+                        href={`/admin/erp/classes/${encodeURIComponent(c.class_name)}`}
+                        className="hover:underline"
+                      >
+                        {c.class_name}
+                      </Link>
+                    </TD>
                     <TD>{c.capacity}</TD>
                     <TD>{c.enrolled}</TD>
                     <TD className="whitespace-nowrap text-muted-foreground">
