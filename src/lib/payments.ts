@@ -203,11 +203,16 @@ export async function markPaymentCompleted(params: {
     // A study-material-only payment happens after enrollment (the parent
     // declined it at the main payment step and is paying separately later)
     // — the application is already ENROLLED, so there's no status transition
-    // here, just the study_material_paid flag.
+    // here, just the study_material_paid flag. The main payment sets that
+    // same flag too when the parent included study material in it (it isn't
+    // exclusively the "paid later" branch's job).
     const { error: appErr } = payment.includes_admission
       ? await admin
           .from("applications")
-          .update({ status: "PAYMENT_COMPLETED" })
+          .update({
+            status: "PAYMENT_COMPLETED",
+            ...(payment.includes_study_material ? { study_material_paid: true } : {}),
+          })
           .eq("id", payment.application_id)
           .eq("status", "PAYMENT_PENDING")
       : await admin
