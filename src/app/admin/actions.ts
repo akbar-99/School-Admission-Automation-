@@ -16,7 +16,7 @@ import {
   notifyTeacherSlotAssigned,
   syncSectionToErp,
 } from "@/lib/workflow";
-import { deactivateClassInErp } from "@/lib/erp";
+import { deactivateClassInErp, deactivateErpStudent } from "@/lib/erp";
 import { logAudit } from "@/lib/audit";
 import { config } from "@/lib/config";
 import { zonedTimeToUtcISO, toZonedInputValue } from "@/lib/utils";
@@ -413,10 +413,27 @@ export async function deleteApplication(formData: FormData) {
   const admin = createSupabaseAdminClient();
   const { data: app } = await admin
     .from("applications")
-    .select("id, parent_id, student_id, section_id")
+    .select("id, parent_id, student_id, section_id, erp_student_id")
     .eq("id", appId)
     .maybeSingle();
   if (!app) back("Application not found.", "error");
+
+  // Deactivate in the ERP before deleting locally — same reasoning as
+  // deleteSection: once this row (and its erp_student_id) is gone there's
+  // nothing left here to retry from, so a real failure blocks the delete
+  // rather than leaving a stale active student behind in the ERP. Skipped
+  // entirely if this applicant was never synced to the ERP in the first place.
+  let erpDeactivateAction: string | null = null;
+  if (app!.erp_student_id) {
+    const result = await deactivateErpStudent(app!.erp_student_id);
+    if (!result.ok) {
+      redirect(
+        `/admin/applications/${appId}?error=` +
+          encodeURIComponent(`Could not deactivate in the ERP: ${result.error}. Try again.`),
+      );
+    }
+    erpDeactivateAction = result.action;
+  }
 
   // Free the seat if one was allocated.
   if (app!.section_id) {
@@ -450,6 +467,7 @@ export async function deleteApplication(formData: FormData) {
     action: "application.deleted",
     entity: "application",
     entityId: appId,
+    details: erpDeactivateAction ? { erp_deactivate_action: erpDeactivateAction } : undefined,
   });
   back("Applicant deleted.");
 }

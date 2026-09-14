@@ -19,6 +19,8 @@ const CLASS_WEBHOOK_URL =
   "https://lxnwnkgyjywoolnqsrjy.supabase.co/functions/v1/admissions-class-webhook";
 const CLASS_DEACTIVATE_URL =
   "https://lxnwnkgyjywoolnqsrjy.supabase.co/functions/v1/admissions-class-deactivate";
+const STUDENT_DEACTIVATE_URL =
+  "https://lxnwnkgyjywoolnqsrjy.supabase.co/functions/v1/admissions-student-deactivate";
 
 function authHeaders(): Record<string, string> {
   return { "x-admissions-secret": config.erp.secret };
@@ -286,6 +288,53 @@ export async function deactivateClassInErp(externalClassId: string): Promise<Dea
       return { ok: true, action, raw: json };
     }
     return { ok: false, error: `ERP class deactivate returned unexpected body: ${text}` };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Deactivate a student in the ERP — called before permanently deleting an
+// applicant locally. Uses the same shared secret as capacity/webhook (not
+// classWebhookSecret) per the ERP team. Deactivating frees the student's
+// seat automatically on the ERP side (admissions-class-capacity and
+// admissions-class-students both filter to active students only) — nothing
+// extra needed here for that. "not_found" (a 404 — id unknown, or already
+// removed) and "unchanged" (already deactivated) both count as success, same
+// contract as deactivateClassInErp. Never throws.
+// ---------------------------------------------------------------------------
+export type DeactivateStudentResult =
+  | { ok: true; action: "deactivated" | "unchanged" | "not_found" | "skipped"; raw?: unknown }
+  | { ok: false; error: string };
+
+export async function deactivateErpStudent(erpStudentId: string): Promise<DeactivateStudentResult> {
+  if (!config.erp.enabled) return { ok: true, action: "skipped" };
+  try {
+    const res = await fetch(STUDENT_DEACTIVATE_URL, {
+      method: "POST",
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ student_id: erpStudentId }),
+    });
+    const text = await res.text();
+    let json: unknown = null;
+    try {
+      json = text ? JSON.parse(text) : null;
+    } catch {
+      // fall through with json = null; raw text still reported in the error
+    }
+
+    if (res.status === 404) {
+      return { ok: true, action: "not_found", raw: json ?? text };
+    }
+    if (!res.ok) {
+      return { ok: false, error: `ERP student deactivate failed (${res.status}): ${text}` };
+    }
+
+    const action = (json as { action?: string; success?: boolean } | null)?.action;
+    if (action === "deactivated" || action === "unchanged") {
+      return { ok: true, action, raw: json };
+    }
+    return { ok: false, error: `ERP student deactivate returned unexpected body: ${text}` };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
