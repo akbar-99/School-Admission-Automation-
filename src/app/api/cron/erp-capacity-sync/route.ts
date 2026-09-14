@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { syncErpCapacity } from "@/lib/erp";
+import { syncErpCapacity, syncErpStudents } from "@/lib/erp";
 import { config } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
@@ -10,6 +10,13 @@ export const dynamic = "force-dynamic";
 // not every admission, which claims its seat live via claim_erp_seat).
 // Reuses the same CRON_SECRET as the reminder route; both are equally-
 // trusted "an external pinger hits this" endpoints.
+//
+// Also refreshes the erp_students search cache (piggybacking on this same
+// external cron rather than needing a second scheduled job) — otherwise a
+// student added in the app or directly in the ERP would only show up in
+// Admin → ERP search after someone manually clicks "Sync now". A student
+// sync failure doesn't fail the whole request; capacity is the more
+// important half and already succeeded by that point.
 // Trigger with: GET /api/cron/erp-capacity-sync?secret=<CRON_SECRET>
 export async function GET(request: Request) {
   const secret =
@@ -22,5 +29,8 @@ export async function GET(request: Request) {
   if (count === null) {
     return NextResponse.json({ error: "ERP capacity fetch failed" }, { status: 502 });
   }
-  return NextResponse.json({ ok: true, classes: count });
+
+  const studentCount = await syncErpStudents();
+
+  return NextResponse.json({ ok: true, classes: count, students: studentCount });
 }

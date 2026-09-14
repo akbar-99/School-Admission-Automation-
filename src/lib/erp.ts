@@ -403,3 +403,78 @@ export async function transferErpStudents(
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Refresh the local erp_students cache — every student in every class the
+// capacity sync already knows about (erp_classes). Powers the admin search
+// by student name/ID, since the ERP has no cross-class search endpoint of
+// its own, only a per-class roster. Fetches classes in small concurrent
+// batches rather than all 185+ at once or fully sequentially, to stay
+// reasonable against the ERP's endpoint. One class's fetch failing doesn't
+// fail the whole sync — it's just skipped and will retry on the next sync.
+// Never throws; returns the number of students cached, or null if the class
+// list is empty or every single fetch failed.
+// ---------------------------------------------------------------------------
+const STUDENT_SYNC_CONCURRENCY = 8;
+
+interface CachedErpStudentRow {
+  internal_id: string;
+  student_id: string;
+  full_name: string;
+  class_name: string;
+  admission_id: string | null;
+  synced_at: string;
+}
+
+export async function syncErpStudents(): Promise<number | null> {
+  const admin = createSupabaseAdminClient();
+  const { data: classRows } = await admin.from("erp_classes").select("class_name");
+  const classNames = (classRows ?? []).map((r) => r.class_name as string);
+  if (classNames.length === 0) return null;
+
+  const rows: CachedErpStudentRow[] = [];
+  let anySucceeded = false;
+  const syncedAt = new Date().toISOString();
+
+  for (let i = 0; i < classNames.length; i += STUDENT_SYNC_CONCURRENCY) {
+    const batch = classNames.slice(i, i + STUDENT_SYNC_CONCURRENCY);
+    const results = await Promise.all(
+      batch.map(async (className) => ({ className, students: await fetchErpClassStudents(className) })),
+    );
+    for (const { className, students } of results) {
+      if (students === null) continue;
+      anySucceeded = true;
+      for (const s of students) {
+        rows.push({
+          internal_id: s.internal_id,
+          student_id: s.student_id,
+          full_name: s.full_name,
+          class_name: className,
+          admission_id: s.admission_id,
+          synced_at: syncedAt,
+        });
+      }
+    }
+  }
+
+  if (!anySucceeded) return null;
+
+  if (rows.length > 0) {
+    const { error: upsertErr } = await admin.from("erp_students").upsert(rows, { onConflict: "internal_id" });
+    if (upsertErr) {
+      console.error("[erp] students upsert failed", upsertErr);
+      return null;
+    }
+  }
+
+  // Drop cached students no longer present in any successfully-synced class
+  // (transferred out, deactivated, or the class itself is gone).
+  const currentIds = new Set(rows.map((r) => r.internal_id));
+  const { data: existing } = await admin.from("erp_students").select("internal_id");
+  const stale = (existing ?? []).map((r) => r.internal_id as string).filter((id) => !currentIds.has(id));
+  if (stale.length > 0) {
+    await admin.from("erp_students").delete().in("internal_id", stale);
+  }
+
+  return rows.length;
+}
