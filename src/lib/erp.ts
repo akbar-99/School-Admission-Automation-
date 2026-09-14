@@ -12,6 +12,8 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 const CAPACITY_URL =
   "https://lxnwnkgyjywoolnqsrjy.supabase.co/functions/v1/admissions-class-capacity";
+const CLASS_STUDENTS_URL =
+  "https://lxnwnkgyjywoolnqsrjy.supabase.co/functions/v1/admissions-class-students";
 const WEBHOOK_URL = "https://lxnwnkgyjywoolnqsrjy.supabase.co/functions/v1/admissions-webhook";
 const CLASS_WEBHOOK_URL =
   "https://lxnwnkgyjywoolnqsrjy.supabase.co/functions/v1/admissions-class-webhook";
@@ -52,6 +54,41 @@ export async function fetchErpClassCapacity(): Promise<ErpClassEntry[] | null> {
     return json.classes;
   } catch (err) {
     console.error("[erp] capacity fetch threw", err);
+    return null;
+  }
+}
+
+export interface ErpClassStudentEntry {
+  // The ERP's own human-readable admission number (e.g. "2892"), not an
+  // internal row id — confirmed with the ERP team this is the intended
+  // display value; kept consistent with how admission numbers read
+  // everywhere else in this app.
+  student_id: string;
+  full_name: string;
+  // This app's own applications.id — populated only when the student was
+  // created via our admissions-webhook (same admission_id we send in that
+  // payload); null when entered directly in the ERP. Uses the same shared
+  // secret as the capacity endpoint (ADMISSIONS_WEBHOOK_SECRET), not the
+  // separate class-webhook secret.
+  admission_id: string | null;
+}
+
+// Fetch the real student roster for one ERP class — same matching logic the
+// ERP already uses to compute admissions-class-capacity's "enrolled" count,
+// so this list and that count always agree. Never throws.
+export async function fetchErpClassStudents(className: string): Promise<ErpClassStudentEntry[] | null> {
+  if (!config.erp.enabled) return null;
+  try {
+    const url = `${CLASS_STUDENTS_URL}?class_name=${encodeURIComponent(className)}`;
+    const res = await fetch(url, { headers: authHeaders(), cache: "no-store" });
+    if (!res.ok) {
+      console.error(`[erp] class students fetch failed (${res.status}): ${await res.text()}`);
+      return null;
+    }
+    const json = (await res.json()) as { class_name: string; students: ErpClassStudentEntry[] };
+    return json.students;
+  } catch (err) {
+    console.error("[erp] class students fetch threw", err);
     return null;
   }
 }
