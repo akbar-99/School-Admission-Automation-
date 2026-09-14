@@ -103,7 +103,7 @@ export function Logo({
           {subtitle && (
             <span
               className={cn(
-                "font-sans uppercase tracking-[0.15em] text-muted-foreground",
+                "whitespace-nowrap font-sans uppercase tracking-[0.15em] text-muted-foreground",
                 sub,
               )}
             >
