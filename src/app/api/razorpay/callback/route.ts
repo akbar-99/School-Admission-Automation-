@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyPaymentSignature } from "@/lib/razorpay";
 import { markPaymentCompleted, markPaymentFailed } from "@/lib/payments";
+import { config } from "@/lib/config";
 
 // Where Razorpay's hosted checkout POSTs the result back to (required by the
 // payment aggregator's compliance review — replaces the old JS-popup +
@@ -36,7 +37,14 @@ function failedOrderId(form: FormData): string {
 
 export async function POST(request: NextRequest) {
   const url = new URL(request.url);
-  const origin = url.origin;
+  // Deliberately NOT url.origin: behind a self-hosted reverse proxy (Coolify/
+  // Traefik), the Host header Next.js sees on the incoming request can be the
+  // container's internal address rather than the public domain, sending the
+  // parent's browser to e.g. http://localhost:3000 after a real payment on
+  // the real domain. config.appUrl is the app's one trusted canonical origin,
+  // already used for every other parent-facing link (admission link,
+  // agreement, receipt) — use it here too instead of trusting the proxy.
+  const origin = config.appUrl;
   const token = url.searchParams.get("token") ?? "";
   if (!token) return NextResponse.json({ error: "Missing token" }, { status: 400 });
 
@@ -82,5 +90,5 @@ export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const token = url.searchParams.get("token") ?? "";
   if (!token) return NextResponse.json({ error: "Missing token" }, { status: 400 });
-  return redirectTo(url.origin, token);
+  return redirectTo(config.appUrl, token);
 }
