@@ -185,6 +185,7 @@ async function Content({
             <MinimalAdmissionForm
               token={token}
               gradeOptions={classOptions}
+              curriculumOptions={CURRICULUM_OPTIONS}
               defaultStudentName={app.lead_student_name}
             />
           </CardContent>
@@ -208,6 +209,7 @@ async function Content({
               grade={app.grade_applying ?? ""}
               curriculumOptions={CURRICULUM_OPTIONS}
               timingOptions={timingOptions}
+              defaultCurriculum={app.preferred_curriculum}
             />
           </CardContent>
         </Card>

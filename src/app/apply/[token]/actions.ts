@@ -31,6 +31,7 @@ const MinimalFormSchema = z.object({
   age: z.coerce.number().int().min(1, "Age is required").max(25, "Enter a valid age"),
   email: z.string().trim().email("A valid email address is required"),
   whatsapp: z.string().trim().min(7, "WhatsApp number is required"),
+  curriculum: z.string().trim().min(1, "Preferred curriculum is required"),
 });
 
 // Stage 2 — the remaining-details form (DETAILS_PENDING -> AGREEMENT_SENT):
@@ -173,6 +174,7 @@ export async function submitMinimalForm(formData: FormData) {
     age: formData.get("age"),
     email: formData.get("email"),
     whatsapp: formData.get("whatsapp"),
+    curriculum: formData.get("curriculum"),
   });
   if (!parsed.success) fail(token, parsed.error.issues[0].message);
   const input = parsed.data;
@@ -196,6 +198,7 @@ export async function submitMinimalForm(formData: FormData) {
     .update({
       lead_student_name: input.student_name,
       reported_age: input.age,
+      preferred_curriculum: input.curriculum,
       category,
       grade_applying: grade,
       status: "FORM_SUBMITTED",

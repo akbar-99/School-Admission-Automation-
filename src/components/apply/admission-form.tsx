@@ -37,10 +37,12 @@ function Section({
 export function MinimalAdmissionForm({
   token,
   gradeOptions,
+  curriculumOptions,
   defaultStudentName,
 }: {
   token: string;
   gradeOptions: readonly string[];
+  curriculumOptions: readonly string[];
   defaultStudentName?: string | null;
 }) {
   const [grade, setGrade] = useState("");
@@ -86,6 +88,19 @@ export function MinimalAdmissionForm({
             <Input id="age" name="age" type="number" min={1} max={25} required className="no-spinner" />
           </div>
           <div className="space-y-1.5">
+            <Label htmlFor="curriculum">Preferred curriculum *</Label>
+            <Select id="curriculum" name="curriculum" required defaultValue="">
+              <option value="" disabled>
+                Select…
+              </option>
+              {curriculumOptions.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div className="space-y-1.5">
             <Label htmlFor="email">Email address *</Label>
             <Input id="email" name="email" type="email" required />
           </div>
@@ -112,11 +127,13 @@ export function RemainingDetailsForm({
   grade,
   curriculumOptions,
   timingOptions,
+  defaultCurriculum,
 }: {
   token: string;
   grade: string;
   curriculumOptions: readonly string[];
   timingOptions: readonly string[];
+  defaultCurriculum?: string | null;
 }) {
   const [country, setCountry] = useState("");
   const isGrade = needsAssessment(grade);
@@ -178,7 +195,7 @@ export function RemainingDetailsForm({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="curriculum">Preferred curriculum *</Label>
-            <Select id="curriculum" name="curriculum" required defaultValue="">
+            <Select id="curriculum" name="curriculum" required defaultValue={defaultCurriculum ?? ""}>
               <option value="" disabled>
                 Select…
               </option>
