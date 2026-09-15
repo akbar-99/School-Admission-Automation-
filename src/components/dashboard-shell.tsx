@@ -69,13 +69,11 @@ export function DashboardShell({
           </nav>
           {/* Fades the trailing edge so a scrollable nav with more items off-screen
               doesn't look like it simply ends mid-list. Matches the header's own
-              .glass background formula (globals.css) rather than a plain solid
-              color, since the header is semi-transparent + blurred. */}
+              (now fully opaque) .glass background color (globals.css). */}
           <div
             className="pointer-events-none absolute inset-y-0 right-0 w-8"
             style={{
-              background:
-                "linear-gradient(to left, color-mix(in srgb, var(--card) 78%, transparent), transparent)",
+              background: "linear-gradient(to left, var(--card), transparent)",
             }}
           />
         </div>

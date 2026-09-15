@@ -97,10 +97,12 @@ body {
 .shadow-soft { box-shadow: var(--shadow-soft); }
 .shadow-luxe { box-shadow: var(--shadow-luxe); }
 
+/* Solid, not actually glass — used on sticky headers (admin/staff nav, the
+   apply portal, the login page). Was translucent + blurred, but that let
+   scrolled-past page content show through and visually overlap the nav
+   text, so it's a fully opaque card background instead. */
 .glass {
-  background: color-mix(in srgb, var(--card) 78%, transparent);
-  backdrop-filter: saturate(1.4) blur(14px);
-  -webkit-backdrop-filter: saturate(1.4) blur(14px);
+  background: var(--card);
 }
 
 .brand-gradient {
