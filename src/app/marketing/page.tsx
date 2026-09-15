@@ -28,6 +28,7 @@ interface Row {
   grade_applying: string | null;
   lead_student_name: string | null;
   lead_source: string | null;
+  lead_source_other: string | null;
   access_token: string;
   created_at: string;
   parents: { full_name: string; phone: string; email: string | null } | null;
@@ -55,7 +56,14 @@ export default async function MarketingPage({
 }) {
   const { created, error, duplicate, status, from, to } = await searchParams;
   let duplicateInfo: {
-    input: { parent_name: string; phone: string; email: string; student_name?: string; lead_source: string };
+    input: {
+      parent_name: string;
+      phone: string;
+      email: string;
+      student_name?: string;
+      lead_source: string;
+      lead_source_other?: string;
+    };
     matches: {
       id: string;
       status: string;
@@ -128,6 +136,7 @@ export default async function MarketingPage({
               <input type="hidden" name="email" value={duplicateInfo.input.email} />
               <input type="hidden" name="student_name" value={duplicateInfo.input.student_name ?? ""} />
               <input type="hidden" name="lead_source" value={duplicateInfo.input.lead_source} />
+              <input type="hidden" name="lead_source_other" value={duplicateInfo.input.lead_source_other ?? ""} />
               <input type="hidden" name="confirm_duplicate" value="on" />
               <SubmitButton pendingText="Creating…" variant="outline">
                 It&apos;s a different family — create anyway
@@ -217,7 +226,7 @@ async function LeadsTableSection({
   let query = admin
     .from("applications")
     .select(
-      "id, status, category, grade_applying, lead_student_name, lead_source, access_token, created_at, parents(full_name, phone, email), students(full_name)",
+      "id, status, category, grade_applying, lead_student_name, lead_source, lead_source_other, access_token, created_at, parents(full_name, phone, email), students(full_name)",
     )
     .order("created_at", { ascending: false })
     .limit(100);
@@ -350,7 +359,7 @@ async function LeadsTableSection({
                   </TD>
                   <TD>{r.students?.full_name ?? r.lead_student_name ?? "—"}</TD>
                   <TD>{r.category ?? "—"}</TD>
-                  <TD>{leadSourceLabel(r.lead_source)}</TD>
+                  <TD>{leadSourceLabel(r.lead_source, r.lead_source_other)}</TD>
                   <TD>{r.grade_applying ?? "—"}</TD>
                   <TD>
                     <StatusBadge status={r.status} />

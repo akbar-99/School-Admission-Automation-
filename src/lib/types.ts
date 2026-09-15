@@ -97,6 +97,7 @@ export interface Application {
   reported_age: number | null;
   preferred_class_timing: string | null;
   lead_source: string | null;
+  lead_source_other: string | null;
   preferred_assessment_date: string | null;
   preferred_assessment_date_alt: string | null;
   preferred_assessment_tz: string | null;
@@ -227,8 +228,12 @@ export const LEAD_SOURCE_LABEL: Record<LeadSource, string> = {
   referral: "Referral",
   other: "Other",
 };
-export function leadSourceLabel(source: string | null): string {
+// otherDetail is the free-text typed in when source is "other" (e.g.
+// "Newspaper ad") — shown in place of the generic "Other" label wherever
+// one's on file, so a source of "other" is never a dead end for the reader.
+export function leadSourceLabel(source: string | null, otherDetail?: string | null): string {
   if (!source) return "—";
+  if (source === "other" && otherDetail?.trim()) return otherDetail.trim();
   return (LEAD_SOURCE_LABEL as Record<string, string>)[source] ?? source;
 }
 

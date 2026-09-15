@@ -32,6 +32,7 @@ interface Row {
   grade_applying: string | null;
   admission_number: string | null;
   lead_source: string | null;
+  lead_source_other: string | null;
   created_at: string;
   parents: { full_name: string } | null;
   students: { full_name: string } | null;
@@ -214,6 +215,7 @@ async function ApplicationsTableSection({
     grade_applying: r.gradeApplying,
     admission_number: r.admissionNumber,
     lead_source: r.leadSource,
+    lead_source_other: r.leadSourceOther,
     created_at: r.createdAt,
     parents: { full_name: r.parentName },
     students: { full_name: r.studentName },
@@ -371,7 +373,7 @@ async function ApplicationsTableSection({
                     <StatusBadge status={r.status} />
                   </TD>
                   <TD className="font-mono text-xs">{r.admission_number ?? "—"}</TD>
-                  <TD>{leadSourceLabel(r.lead_source)}</TD>
+                  <TD>{leadSourceLabel(r.lead_source, r.lead_source_other)}</TD>
                   <TD>{r.sections ? `${r.sections.grade}-${r.sections.name}` : "—"}</TD>
                   <TD className="whitespace-nowrap text-muted-foreground">
                     {formatDateTime(r.created_at)}

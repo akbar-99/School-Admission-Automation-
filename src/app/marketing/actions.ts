@@ -9,13 +9,19 @@ import { notifyLeadCreated } from "@/lib/workflow";
 import { logAudit } from "@/lib/audit";
 import { LEAD_SOURCES, type Application, type Parent } from "@/lib/types";
 
-const LeadSchema = z.object({
-  parent_name: z.string().trim().min(2, "Parent name is required"),
-  phone: z.string().trim().min(7, "A valid phone number is required"),
-  email: z.string().trim().email("A valid email is required").or(z.literal("")),
-  student_name: z.string().trim().optional(),
-  lead_source: z.enum(LEAD_SOURCES, { error: "Select where this lead came from" }),
-});
+const LeadSchema = z
+  .object({
+    parent_name: z.string().trim().min(2, "Parent name is required"),
+    phone: z.string().trim().min(7, "A valid phone number is required"),
+    email: z.string().trim().email("A valid email is required").or(z.literal("")),
+    student_name: z.string().trim().optional(),
+    lead_source: z.enum(LEAD_SOURCES, { error: "Select where this lead came from" }),
+    lead_source_other: z.string().trim().max(120).optional(),
+  })
+  .refine((v) => v.lead_source !== "other" || Boolean(v.lead_source_other), {
+    message: "Type what the source is",
+    path: ["lead_source_other"],
+  });
 
 // Last-10-digits comparison so "+91 98765 43210", "098765 43210" and
 // "9876543210" are all recognized as the same number.
@@ -129,6 +135,7 @@ export async function createLead(formData: FormData) {
     email: formData.get("email") ?? "",
     student_name: formData.get("student_name") ?? "",
     lead_source: formData.get("lead_source") ?? "",
+    lead_source_other: formData.get("lead_source_other") ?? "",
   });
   if (!parsed.success) {
     redirect("/marketing?error=" + encodeURIComponent(parsed.error.issues[0].message));
@@ -171,6 +178,7 @@ export async function createLead(formData: FormData) {
       status: "LEAD_CREATED",
       lead_student_name: input.student_name || null,
       lead_source: input.lead_source,
+      lead_source_other: input.lead_source === "other" ? input.lead_source_other : null,
       created_by: profile.id,
     })
     .select("*")

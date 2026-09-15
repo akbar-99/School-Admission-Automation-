@@ -22,6 +22,7 @@ export interface AdmissionsReportRow {
   parentPhone: string;
   studentName: string;
   leadSource: string | null;
+  leadSourceOther: string | null;
   sectionGrade: string | null;
   sectionName: string | null;
 }
@@ -64,7 +65,7 @@ export async function fetchAdmissionsReportRows(
   let query = admin
     .from("applications")
     .select(
-      "id, status, category, grade_applying, admission_number, lead_source, created_at, lead_student_name, parents(full_name, phone), students(full_name), sections(grade, name)",
+      "id, status, category, grade_applying, admission_number, lead_source, lead_source_other, created_at, lead_student_name, parents(full_name, phone), students(full_name), sections(grade, name)",
     )
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -84,6 +85,7 @@ export async function fetchAdmissionsReportRows(
     grade_applying: string | null;
     admission_number: string | null;
     lead_source: string | null;
+    lead_source_other: string | null;
     created_at: string;
     lead_student_name: string | null;
     parents: { full_name: string; phone: string } | null;
@@ -96,6 +98,7 @@ export async function fetchAdmissionsReportRows(
     gradeApplying: r.grade_applying,
     admissionNumber: r.admission_number,
     leadSource: r.lead_source,
+    leadSourceOther: r.lead_source_other,
     createdAt: r.created_at,
     parentName: r.parents?.full_name ?? "—",
     parentPhone: r.parents?.phone ?? "—",

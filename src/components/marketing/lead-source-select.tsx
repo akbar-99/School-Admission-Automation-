@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { SearchSelect, type SearchOption } from "@/components/ui/search-select";
+import { Input } from "@/components/ui/input";
 import { MoreHorizontal, Users } from "lucide-react";
 import { InstagramIcon, FacebookIcon, WhatsappIcon, GoogleIcon } from "@/components/icons/lead-source-icons";
 
@@ -23,17 +24,36 @@ function Row({ icon, text }: { icon: React.ReactNode; text: string }) {
   );
 }
 
-export function LeadSourceSelect({ name = "lead_source" }: { name?: string }) {
-  const [value, setValue] = useState("");
+export function LeadSourceSelect({
+  name = "lead_source",
+  defaultValue = "",
+  defaultOther = "",
+}: {
+  name?: string;
+  defaultValue?: string;
+  defaultOther?: string;
+}) {
+  const [value, setValue] = useState(defaultValue);
   return (
-    <SearchSelect
-      name={name}
-      options={OPTIONS}
-      value={value}
-      onChange={setValue}
-      placeholder="Select source"
-      searchPlaceholder="Type to filter…"
-      ariaLabel="Source of enquiry"
-    />
+    <div className="space-y-2">
+      <SearchSelect
+        name={name}
+        options={OPTIONS}
+        value={value}
+        onChange={setValue}
+        placeholder="Select source"
+        searchPlaceholder="Type to filter…"
+        ariaLabel="Source of enquiry"
+      />
+      {value === "other" && (
+        <Input
+          name={`${name}_other`}
+          placeholder="Please specify"
+          required
+          defaultValue={defaultOther}
+          aria-label="Specify the source"
+        />
+      )}
+    </div>
   );
 }

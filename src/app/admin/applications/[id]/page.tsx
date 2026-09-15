@@ -143,7 +143,7 @@ export default async function ApplicationDetailPage({
         <Field label="Category" value={app.category ?? "—"} />
         <Field label="Class / grade" value={app.grade_applying ?? "—"} />
         <Field label="Preferred class timing" value={app.preferred_class_timing ?? "No preference"} />
-        <Field label="Source of enquiry" value={leadSourceLabel(app.lead_source)} />
+        <Field label="Source of enquiry" value={leadSourceLabel(app.lead_source, app.lead_source_other)} />
         <Field label="Admission number" value={app.admission_number ?? "—"} mono />
         <Field label="Section" value={section ? `${section.grade}-${section.name}` : "—"} />
         <Field label="Study material" value={app.study_material_paid ? "Paid" : "Not paid"} />
