@@ -94,7 +94,15 @@ const HEADERS = [
   "Curriculum",
   "PEN Number",
   "Enrolled On",
+  "Passport",
+  "Birth Certificate",
+  "Photo",
 ];
+
+// Index (0-based) of the first document-link column — everything from here
+// on is filled in by a separate USER_ENTERED pass (see appendEnrollmentRow),
+// never by the main RAW row write.
+const DOC_LINK_START_COLUMN = 19;
 
 export interface EnrollmentSheetRow {
   admissionNumber: string;
@@ -116,6 +124,14 @@ export interface EnrollmentSheetRow {
   curriculum: string | null;
   penNumber: string | null;
   enrolledOn: string;
+  // Long-lived signed URLs to each uploaded document, when available. Never
+  // written via the main RAW row (see DOC_LINK_START_COLUMN) — these go in
+  // through a separate USER_ENTERED HYPERLINK() pass, since RAW-inserted
+  // URLs aren't clickable and USER_ENTERED on the whole row would re-open
+  // the formula-injection risk RAW was chosen to close for free-text fields.
+  passportUrl: string | null;
+  birthCertificateUrl: string | null;
+  photoUrl: string | null;
 }
 
 function rowValues(r: EnrollmentSheetRow): string[] {
@@ -139,38 +155,38 @@ function rowValues(r: EnrollmentSheetRow): string[] {
     r.curriculum ?? "",
     r.penNumber ?? "",
     r.enrolledOn,
+    // Document-link columns are left blank here; filled in by a follow-up
+    // call if any URLs are present. Empty strings keep the row's column
+    // count aligned with HEADERS regardless.
+    "",
+    "",
+    "",
   ];
+}
+
+// A1 column letter for a 0-based column index (covers A-Z, AA-ZZ — this
+// sheet will never have anywhere near that many columns).
+function columnLetter(index: number): string {
+  let n = index;
+  let letters = "";
+  do {
+    letters = String.fromCharCode(65 + (n % 26)) + letters;
+    n = Math.floor(n / 26) - 1;
+  } while (n >= 0);
+  return letters;
+}
+
+// One HYPERLINK() formula per non-null URL, "" for a missing document —
+// entirely code-constructed (no parent/student free text ever reaches this),
+// so USER_ENTERED here carries none of the formula-injection risk the main
+// row write avoids by using RAW.
+function docLinkFormula(url: string | null): string {
+  return url ? `=HYPERLINK("${url}","View")` : "";
 }
 
 type OkOrError = { ok: true } | { ok: false; error: string };
 
-// Creates the tab with a header row if it doesn't exist yet. If two
-// enrollments race to create the same brand-new tab, a "already exists"
-// failure from the create call is treated as success rather than an error —
-// the other request's tab is just as good as one created here.
-async function ensureTabExists(accessToken: string, tabName: string): Promise<OkOrError> {
-  const metaRes = await fetch(
-    `${SHEETS_API}/${config.googleSheets.spreadsheetId}?fields=sheets.properties.title`,
-    { headers: { Authorization: `Bearer ${accessToken}` } },
-  );
-  if (!metaRes.ok) {
-    return { ok: false, error: `metadata fetch failed (${metaRes.status}): ${await metaRes.text()}` };
-  }
-  const meta = (await metaRes.json()) as { sheets?: { properties: { title: string } }[] };
-  const existing = new Set((meta.sheets ?? []).map((s) => s.properties.title));
-  if (existing.has(tabName)) return { ok: true };
-
-  const createRes = await fetch(`${SHEETS_API}/${config.googleSheets.spreadsheetId}:batchUpdate`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ requests: [{ addSheet: { properties: { title: tabName } } }] }),
-  });
-  if (!createRes.ok) {
-    const text = await createRes.text();
-    if (text.includes("already exists")) return { ok: true };
-    return { ok: false, error: `create tab failed (${createRes.status}): ${text}` };
-  }
-
+async function writeHeaderRow(accessToken: string, tabName: string): Promise<OkOrError> {
   const headerRes = await fetch(
     `${SHEETS_API}/${config.googleSheets.spreadsheetId}/values/${encodeURIComponent(a1Range(tabName, "A1"))}?valueInputOption=RAW`,
     {
@@ -183,6 +199,54 @@ async function ensureTabExists(accessToken: string, tabName: string): Promise<Ok
     return { ok: false, error: `header write failed (${headerRes.status}): ${await headerRes.text()}` };
   }
   return { ok: true };
+}
+
+// Creates the tab with a header row if it doesn't exist yet. If two
+// enrollments race to create the same brand-new tab, a "already exists"
+// failure from the create call is treated as success rather than an error —
+// the other request's tab is just as good as one created here. For a tab
+// that already exists, also checks its header row is still up to date with
+// the current HEADERS (e.g. a tab created before the document-link columns
+// were added) and rewrites it if not — safe to do any time since this only
+// touches row 1, never the data rows below it.
+async function ensureTabExists(accessToken: string, tabName: string): Promise<OkOrError> {
+  const metaRes = await fetch(
+    `${SHEETS_API}/${config.googleSheets.spreadsheetId}?fields=sheets.properties.title`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!metaRes.ok) {
+    return { ok: false, error: `metadata fetch failed (${metaRes.status}): ${await metaRes.text()}` };
+  }
+  const meta = (await metaRes.json()) as { sheets?: { properties: { title: string } }[] };
+  const existing = new Set((meta.sheets ?? []).map((s) => s.properties.title));
+
+  if (existing.has(tabName)) {
+    const headerRowRes = await fetch(
+      `${SHEETS_API}/${config.googleSheets.spreadsheetId}/values/${encodeURIComponent(a1Range(tabName, "1:1"))}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    if (!headerRowRes.ok) {
+      return { ok: false, error: `header row fetch failed (${headerRowRes.status}): ${await headerRowRes.text()}` };
+    }
+    const headerRowJson = (await headerRowRes.json()) as { values?: string[][] };
+    const currentHeader = headerRowJson.values?.[0] ?? [];
+    const isUpToDate = HEADERS.every((h, i) => currentHeader[i] === h);
+    if (isUpToDate) return { ok: true };
+    return writeHeaderRow(accessToken, tabName);
+  }
+
+  const createRes = await fetch(`${SHEETS_API}/${config.googleSheets.spreadsheetId}:batchUpdate`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ requests: [{ addSheet: { properties: { title: tabName } } }] }),
+  });
+  if (!createRes.ok) {
+    const text = await createRes.text();
+    if (text.includes("already exists")) return writeHeaderRow(accessToken, tabName);
+    return { ok: false, error: `create tab failed (${createRes.status}): ${text}` };
+  }
+
+  return writeHeaderRow(accessToken, tabName);
 }
 
 // Appends one enrolled student as a new row on their class's tab, creating
@@ -208,6 +272,34 @@ export async function appendEnrollmentRow(row: EnrollmentSheetRow, tabName: stri
     if (!appendRes.ok) {
       return { ok: false, error: `append failed (${appendRes.status}): ${await appendRes.text()}` };
     }
+
+    const docUrls = [row.passportUrl, row.birthCertificateUrl, row.photoUrl];
+    if (docUrls.some((u) => u)) {
+      const appendJson = (await appendRes.json()) as { updates?: { updatedRange?: string } };
+      const updatedRange = appendJson.updates?.updatedRange ?? "";
+      // e.g. "'G3-A'!A5:V5" -> row 5. The append is always a single row, so
+      // the start row of updatedRange is the row this student landed on.
+      const rowMatch = updatedRange.match(/![A-Za-z]+(\d+):/);
+      if (rowMatch) {
+        const rowNumber = rowMatch[1];
+        const startCol = columnLetter(DOC_LINK_START_COLUMN);
+        const endCol = columnLetter(DOC_LINK_START_COLUMN + docUrls.length - 1);
+        const linkRes = await fetch(
+          `${SHEETS_API}/${config.googleSheets.spreadsheetId}/values/${encodeURIComponent(a1Range(tabName, `${startCol}${rowNumber}:${endCol}${rowNumber}`))}?valueInputOption=USER_ENTERED`,
+          {
+            method: "PUT",
+            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ values: [docUrls.map(docLinkFormula)] }),
+          },
+        );
+        if (!linkRes.ok) {
+          // The student's row is already in — a failure here only means the
+          // document links didn't get attached, not that the whole thing failed.
+          console.error(`[google-sheets] document link write failed (${linkRes.status}): ${await linkRes.text()}`);
+        }
+      }
+    }
+
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };

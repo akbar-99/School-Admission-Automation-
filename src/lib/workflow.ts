@@ -974,6 +974,25 @@ export async function syncEnrollmentToGoogleSheet(app: Application, parent: Pare
       ? sanitizeTabName(`${section.grade}-${section.name}`)
       : sanitizeTabName(app.grade_applying ?? "Unassigned");
 
+    // 10-year signed URLs so the links stay valid for the sheet's whole
+    // practical lifetime, not just an admin-session-length window like the
+    // 1-hour ones used for in-app viewing.
+    const TEN_YEARS_SECONDS = 10 * 365 * 24 * 60 * 60;
+    const docs = app.documents ?? [];
+    const signDoc = async (category: string): Promise<string | null> => {
+      const doc = docs.find((d) => d.category === category);
+      if (!doc) return null;
+      const { data } = await admin.storage
+        .from("documents")
+        .createSignedUrl(doc.path, TEN_YEARS_SECONDS, { download: doc.name });
+      return data?.signedUrl ?? null;
+    };
+    const [passportUrl, birthCertificateUrl, photoUrl] = await Promise.all([
+      signDoc("passport"),
+      signDoc("birth_certificate"),
+      signDoc("photo"),
+    ]);
+
     const result = await appendEnrollmentRow(
       {
         admissionNumber,
@@ -995,6 +1014,9 @@ export async function syncEnrollmentToGoogleSheet(app: Application, parent: Pare
         curriculum: student?.curriculum ?? null,
         penNumber: student?.pen_number ?? null,
         enrolledOn: formatInZone(new Date(), config.school.timezone),
+        passportUrl,
+        birthCertificateUrl,
+        photoUrl,
       },
       tabName,
     );
