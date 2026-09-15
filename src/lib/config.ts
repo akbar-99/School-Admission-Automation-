@@ -85,15 +85,20 @@ export const config = {
   },
 
   // Google Sheets export (a service account, not user OAuth — same
-  // machine-to-machine pattern as Zoom/ERP). GOOGLE_SHEETS_PRIVATE_KEY is
-  // the service account JSON's private_key value; env vars can't hold real
-  // newlines, so it's usually stored with literal "\n", unescaped here.
-  // Also strips any \r — a host that stores a real-newline paste with CRLF
-  // line endings (observed on Coolify) breaks Node's PEM decoder otherwise,
-  // since it turns each line break into "\r\n" instead of "\n".
+  // machine-to-machine pattern as Zoom/ERP). The private key is a multi-line
+  // PEM, which is exactly the kind of value that gets mangled by copy-paste
+  // through a web UI (observed on Coolify: a stray literal backslash ended
+  // up glued to a real newline, not the plain "\n" two-char escape a normal
+  // .env file would use) — so GOOGLE_SHEETS_PRIVATE_KEY_B64 (the PEM,
+  // base64-encoded into one opaque line with no special characters at all)
+  // is the preferred, paste-proof way to set it. GOOGLE_SHEETS_PRIVATE_KEY
+  // (plain, with literal "\n"/"\r" unescaped) is kept as a fallback for
+  // local dev, where .env.local isn't going through any web-form mangling.
   googleSheets: {
     clientEmail: process.env.GOOGLE_SHEETS_CLIENT_EMAIL ?? "",
-    privateKey: (process.env.GOOGLE_SHEETS_PRIVATE_KEY ?? "").replace(/\\n/g, "\n").replace(/\r/g, ""),
+    privateKey: process.env.GOOGLE_SHEETS_PRIVATE_KEY_B64
+      ? Buffer.from(process.env.GOOGLE_SHEETS_PRIVATE_KEY_B64, "base64").toString("utf8")
+      : (process.env.GOOGLE_SHEETS_PRIVATE_KEY ?? "").replace(/\\n/g, "\n").replace(/\r/g, ""),
     spreadsheetId: process.env.GOOGLE_SHEETS_SPREADSHEET_ID ?? "",
     get enabled() {
       return Boolean(this.clientEmail && this.privateKey && this.spreadsheetId);
