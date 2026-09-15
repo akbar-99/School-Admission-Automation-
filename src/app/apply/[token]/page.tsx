@@ -520,19 +520,14 @@ async function Content({
 
               {slot.confirmed_at ? (
                 <Alert variant="success">✓ You&apos;ve confirmed you&apos;ll attend.</Alert>
-              ) : canReschedule ? (
-                <a
-                  href={`/api/assessment/confirm/${token}`}
-                  className={buttonVariants({ variant: "outline", size: "sm" })}
-                >
-                  Confirm I&apos;ll attend
-                </a>
               ) : (
-                msUntilStart > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    You&apos;ll get a reminder message closer to the date, with options to confirm or
-                    reschedule.
-                  </p>
+                canReschedule && (
+                  <a
+                    href={`/api/assessment/confirm/${token}`}
+                    className={buttonVariants({ variant: "outline", size: "sm" })}
+                  >
+                    Confirm I&apos;ll attend
+                  </a>
                 )
               )}
 
