@@ -105,7 +105,16 @@ export function EditableApplicantDetails({
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="edit_age">Age *</Label>
-                <Input id="edit_age" name="age" type="number" min={1} max={25} required defaultValue={age ?? ""} />
+                <Input
+                  id="edit_age"
+                  name="age"
+                  type="number"
+                  min={1}
+                  max={25}
+                  required
+                  defaultValue={age ?? ""}
+                  className="no-spinner"
+                />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="edit_email">Email address *</Label>

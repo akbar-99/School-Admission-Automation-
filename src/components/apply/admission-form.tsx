@@ -83,7 +83,7 @@ export function MinimalAdmissionForm({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="age">Age *</Label>
-            <Input id="age" name="age" type="number" min={1} max={25} required />
+            <Input id="age" name="age" type="number" min={1} max={25} required className="no-spinner" />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="email">Email address *</Label>
