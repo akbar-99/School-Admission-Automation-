@@ -87,10 +87,13 @@ export const config = {
   // Google Sheets export (a service account, not user OAuth — same
   // machine-to-machine pattern as Zoom/ERP). GOOGLE_SHEETS_PRIVATE_KEY is
   // the service account JSON's private_key value; env vars can't hold real
-  // newlines, so it's stored with literal "\n" and unescaped here.
+  // newlines, so it's usually stored with literal "\n", unescaped here.
+  // Also strips any \r — a host that stores a real-newline paste with CRLF
+  // line endings (observed on Coolify) breaks Node's PEM decoder otherwise,
+  // since it turns each line break into "\r\n" instead of "\n".
   googleSheets: {
     clientEmail: process.env.GOOGLE_SHEETS_CLIENT_EMAIL ?? "",
-    privateKey: (process.env.GOOGLE_SHEETS_PRIVATE_KEY ?? "").replace(/\\n/g, "\n"),
+    privateKey: (process.env.GOOGLE_SHEETS_PRIVATE_KEY ?? "").replace(/\\n/g, "\n").replace(/\r/g, ""),
     spreadsheetId: process.env.GOOGLE_SHEETS_SPREADSHEET_ID ?? "",
     get enabled() {
       return Boolean(this.clientEmail && this.privateKey && this.spreadsheetId);
