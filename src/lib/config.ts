@@ -84,6 +84,19 @@ export const config = {
     },
   },
 
+  // Google Sheets export (a service account, not user OAuth — same
+  // machine-to-machine pattern as Zoom/ERP). GOOGLE_SHEETS_PRIVATE_KEY is
+  // the service account JSON's private_key value; env vars can't hold real
+  // newlines, so it's stored with literal "\n" and unescaped here.
+  googleSheets: {
+    clientEmail: process.env.GOOGLE_SHEETS_CLIENT_EMAIL ?? "",
+    privateKey: (process.env.GOOGLE_SHEETS_PRIVATE_KEY ?? "").replace(/\\n/g, "\n"),
+    spreadsheetId: process.env.GOOGLE_SHEETS_SPREADSHEET_ID ?? "",
+    get enabled() {
+      return Boolean(this.clientEmail && this.privateKey && this.spreadsheetId);
+    },
+  },
+
   razorpay: {
     keyId: process.env.RAZORPAY_KEY_ID ?? "",
     keySecret: process.env.RAZORPAY_KEY_SECRET ?? "",

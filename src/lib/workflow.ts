@@ -9,6 +9,7 @@ import { formatINR, formatInZone, formatDate } from "@/lib/utils";
 import { generateResultPdf } from "@/lib/result-pdf";
 import { ensureZoomForApplication } from "@/lib/zoom";
 import { sendErpAdmission, syncClassToErp } from "@/lib/erp";
+import { appendEnrollmentRow, sanitizeTabName } from "@/lib/google-sheets";
 import { needsAssessment } from "@/lib/assessment";
 import { fetchSchoolLogo } from "@/lib/school-logo";
 import type { Application, Parent, Student, SubjectResult } from "@/lib/types";
@@ -950,6 +951,76 @@ export async function syncEnrollmentToErp(app: Application, parent: Parent, admi
   }
 }
 
+// ---------------------------------------------------------------------------
+// Export an enrolled student's details to Google Sheets — one spreadsheet,
+// one tab per class, so each class teacher can be pointed at just their own
+// tab. Purely a reporting convenience for staff who work out of Sheets
+// rather than this app: additive, independent of enrollment itself, and
+// never throws — a failure here is logged for admins to notice in the audit
+// log, not surfaced to the parent or retried automatically (unlike ERP sync,
+// this doesn't block anything the school depends on operationally).
+// ---------------------------------------------------------------------------
+export async function syncEnrollmentToGoogleSheet(app: Application, parent: Parent, admissionNumber: string) {
+  if (!config.googleSheets.enabled) return;
+  const admin = createSupabaseAdminClient();
+
+  try {
+    const [{ data: section }, { data: studentRow }] = await Promise.all([
+      admin.from("sections").select("grade, name, class_timing").eq("id", app.section_id).maybeSingle(),
+      admin.from("students").select("*").eq("id", app.student_id).maybeSingle(),
+    ]);
+    const student = studentRow as Student | null;
+    const tabName = section
+      ? sanitizeTabName(`${section.grade}-${section.name}`)
+      : sanitizeTabName(app.grade_applying ?? "Unassigned");
+
+    const result = await appendEnrollmentRow(
+      {
+        admissionNumber,
+        studentName: student?.full_name ?? parent.full_name,
+        dob: student?.dob ?? null,
+        gender: student?.gender ?? null,
+        grade: section?.grade ?? app.grade_applying,
+        sectionName: section?.name ?? null,
+        classTiming: section?.class_timing ?? null,
+        parentName: parent.full_name,
+        parentPhone: parent.phone,
+        parentEmail: parent.email,
+        fatherName: student?.father_name ?? null,
+        fatherPhone: student?.father_phone ?? null,
+        motherName: student?.mother_name ?? null,
+        motherPhone: student?.mother_phone ?? null,
+        address: student?.current_address ?? student?.permanent_address ?? null,
+        previousSchool: student?.previous_school ?? null,
+        curriculum: student?.curriculum ?? null,
+        penNumber: student?.pen_number ?? null,
+        enrolledOn: formatInZone(new Date(), config.school.timezone),
+      },
+      tabName,
+    );
+
+    if (!result.ok) {
+      console.error("[google-sheets] enrollment row append failed", result.error);
+      await logAudit({
+        action: "google_sheets.sync_failed",
+        entity: "application",
+        entityId: app.id,
+        details: { error: result.error, tab: tabName },
+      });
+      return;
+    }
+
+    await logAudit({
+      action: "google_sheets.synced",
+      entity: "application",
+      entityId: app.id,
+      details: { tab: tabName },
+    });
+  } catch (err) {
+    console.error("[google-sheets] syncEnrollmentToGoogleSheet threw unexpectedly", err);
+  }
+}
+
 // Admin "Retry" for erp_status = 'no_mapping' — re-checks the section's ERP
 // class name (an admin should have just set it under Admin → Sections) and
 // runs the send from scratch.
@@ -1259,6 +1330,7 @@ export async function handlePaymentCompleted(
 
   await logAudit({ action: "enrollment.completed", entity: "application", entityId: app.id, details: res });
   await syncEnrollmentToErp(app, parent, res.admission_number!);
+  await syncEnrollmentToGoogleSheet(app, parent, res.admission_number!);
   return { ...res, status: "ENROLLED" as const };
 }
 
