@@ -9,7 +9,7 @@ import { formatINR, formatInZone, formatDate } from "@/lib/utils";
 import { generateResultPdf } from "@/lib/result-pdf";
 import { ensureZoomForApplication } from "@/lib/zoom";
 import { sendErpAdmission, syncClassToErp } from "@/lib/erp";
-import { appendEnrollmentRow, sanitizeTabName } from "@/lib/google-sheets";
+import { appendEnrollmentRow, removeEnrollmentRow, sanitizeTabName } from "@/lib/google-sheets";
 import { needsAssessment } from "@/lib/assessment";
 import { fetchSchoolLogo } from "@/lib/school-logo";
 import type { Application, Parent, Student, SubjectResult } from "@/lib/types";
@@ -1051,6 +1051,46 @@ export async function syncEnrollmentToGoogleSheet(app: Application, parent: Pare
     });
   } catch (err) {
     console.error("[google-sheets] syncEnrollmentToGoogleSheet threw unexpectedly", err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Remove an applicant's row from Google Sheets — used when the applicant is
+// permanently deleted, and (paired with a fresh syncEnrollmentToGoogleSheet
+// call) when they transfer to a different section, so the row moves to the
+// new class's tab instead of a stale copy being left behind on the old one.
+// No-ops if they were never enrolled (no admission number, so never had a
+// row) or Sheets export isn't configured. Never throws.
+// ---------------------------------------------------------------------------
+export async function removeEnrollmentFromGoogleSheet(
+  applicationId: string,
+  admissionNumber: string | null,
+  sectionId: string | null,
+  gradeApplying: string | null,
+) {
+  if (!config.googleSheets.enabled || !admissionNumber) return;
+  const admin = createSupabaseAdminClient();
+
+  try {
+    const { data: section } = sectionId
+      ? await admin.from("sections").select("grade, name").eq("id", sectionId).maybeSingle()
+      : { data: null };
+    const tabName = section
+      ? sanitizeTabName(`${section.grade}-${section.name}`)
+      : sanitizeTabName(gradeApplying ?? "Unassigned");
+
+    const result = await removeEnrollmentRow(admissionNumber, tabName);
+    if (!result.ok) {
+      console.error("[google-sheets] enrollment row removal failed", result.error);
+      await logAudit({
+        action: "google_sheets.remove_failed",
+        entity: "application",
+        entityId: applicationId,
+        details: { error: result.error, tab: tabName },
+      });
+    }
+  } catch (err) {
+    console.error("[google-sheets] removeEnrollmentFromGoogleSheet threw unexpectedly", err);
   }
 }
 

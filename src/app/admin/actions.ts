@@ -14,6 +14,8 @@ import {
   notifyOpenSlotAvailable,
   notifySlotReassigned,
   notifyTeacherSlotAssigned,
+  removeEnrollmentFromGoogleSheet,
+  syncEnrollmentToGoogleSheet,
   syncSectionToErp,
 } from "@/lib/workflow";
 import { deactivateClassInErp, deactivateErpStudent } from "@/lib/erp";
@@ -21,6 +23,7 @@ import { logAudit } from "@/lib/audit";
 import { config } from "@/lib/config";
 import { zonedTimeToUtcISO, toZonedInputValue } from "@/lib/utils";
 import { needsAssessment } from "@/lib/assessment";
+import type { Application, Parent } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Weekly recurrence helpers — an admin picks a weekday (Monday, Tuesday…) and
@@ -413,7 +416,7 @@ export async function deleteApplication(formData: FormData) {
   const admin = createSupabaseAdminClient();
   const { data: app } = await admin
     .from("applications")
-    .select("id, parent_id, student_id, section_id, erp_student_id")
+    .select("id, parent_id, student_id, section_id, erp_student_id, admission_number, grade_applying")
     .eq("id", appId)
     .maybeSingle();
   if (!app) back("Application not found.", "error");
@@ -434,6 +437,11 @@ export async function deleteApplication(formData: FormData) {
     }
     erpDeactivateAction = result.action;
   }
+
+  // Remove their row from Google Sheets too, if they were ever enrolled —
+  // best-effort only (never blocks the delete): unlike the ERP, nothing
+  // operationally depends on the sheet, it's just a reporting convenience.
+  await removeEnrollmentFromGoogleSheet(app!.id, app!.admission_number, app!.section_id, app!.grade_applying);
 
   // Free the seat if one was allocated.
   if (app!.section_id) {
@@ -861,6 +869,21 @@ export async function transferStudentSection(formData: FormData) {
     details: { from_section_id: r.old_section_id, to_section_id: r.new_section_id },
   });
   await flagErpRecheckAfterTransfer(application_id);
+
+  // Move their Google Sheets row to the new class's tab — remove from the
+  // old one, then append fresh (app.section_id is already the new section by
+  // this point, so syncEnrollmentToGoogleSheet lands it on the right tab
+  // with fresh document links etc.). Best-effort, same as everywhere else
+  // this sync is called — never blocks the transfer itself.
+  const { data: transferredApp } = await admin.from("applications").select("*").eq("id", application_id).maybeSingle();
+  if (transferredApp?.admission_number) {
+    const app = transferredApp as Application;
+    const { data: parentRow } = await admin.from("parents").select("*").eq("id", app.parent_id).maybeSingle();
+    if (parentRow) {
+      await removeEnrollmentFromGoogleSheet(application_id, app.admission_number, r.old_section_id ?? null, app.grade_applying);
+      await syncEnrollmentToGoogleSheet(app, parentRow as Parent, app.admission_number!);
+    }
+  }
 
   revalidatePath("/admin/sections");
   revalidatePath(`/admin/applications/${application_id}`);

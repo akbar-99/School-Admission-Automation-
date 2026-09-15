@@ -305,3 +305,67 @@ export async function appendEnrollmentRow(row: EnrollmentSheetRow, tabName: stri
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
+
+// Finds the row on tabName whose Admission No. (column A) matches, and
+// deletes it — used when an applicant is deleted, or transferred to a
+// different class (delete from the old tab, then appendEnrollmentRow puts a
+// fresh row on the new one). A missing tab or a row that's already gone both
+// count as success, same idempotent-delete contract as deactivateErpStudent.
+// Never throws.
+export async function removeEnrollmentRow(admissionNumber: string, tabName: string): Promise<OkOrError> {
+  if (!config.googleSheets.enabled) return { ok: false, error: "Google Sheets integration not configured" };
+  try {
+    const token = await getAccessToken();
+    if (!token) return { ok: false, error: "Could not authenticate with Google" };
+
+    const metaRes = await fetch(
+      `${SHEETS_API}/${config.googleSheets.spreadsheetId}?fields=sheets.properties`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!metaRes.ok) {
+      return { ok: false, error: `metadata fetch failed (${metaRes.status}): ${await metaRes.text()}` };
+    }
+    const meta = (await metaRes.json()) as {
+      sheets?: { properties: { title: string; sheetId: number } }[];
+    };
+    const sheet = (meta.sheets ?? []).find((s) => s.properties.title === tabName);
+    if (!sheet) return { ok: true }; // tab doesn't exist — nothing to remove
+
+    const colRes = await fetch(
+      `${SHEETS_API}/${config.googleSheets.spreadsheetId}/values/${encodeURIComponent(a1Range(tabName, "A:A"))}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!colRes.ok) {
+      return { ok: false, error: `column fetch failed (${colRes.status}): ${await colRes.text()}` };
+    }
+    const colJson = (await colRes.json()) as { values?: string[][] };
+    const column = colJson.values ?? [];
+    const rowIndex = column.findIndex((row, i) => i > 0 && row[0] === admissionNumber); // skip header
+    if (rowIndex === -1) return { ok: true }; // already gone
+
+    const delRes = await fetch(`${SHEETS_API}/${config.googleSheets.spreadsheetId}:batchUpdate`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        requests: [
+          {
+            deleteDimension: {
+              range: {
+                sheetId: sheet.properties.sheetId,
+                dimension: "ROWS",
+                startIndex: rowIndex,
+                endIndex: rowIndex + 1,
+              },
+            },
+          },
+        ],
+      }),
+    });
+    if (!delRes.ok) {
+      return { ok: false, error: `row delete failed (${delRes.status}): ${await delRes.text()}` };
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
