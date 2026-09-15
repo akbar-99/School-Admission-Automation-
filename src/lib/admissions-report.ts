@@ -64,7 +64,7 @@ export async function fetchAdmissionsReportRows(
   let query = admin
     .from("applications")
     .select(
-      "id, status, category, grade_applying, admission_number, lead_source, created_at, parents(full_name, phone), students(full_name), sections(grade, name)",
+      "id, status, category, grade_applying, admission_number, lead_source, created_at, lead_student_name, parents(full_name, phone), students(full_name), sections(grade, name)",
     )
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -85,6 +85,7 @@ export async function fetchAdmissionsReportRows(
     admission_number: string | null;
     lead_source: string | null;
     created_at: string;
+    lead_student_name: string | null;
     parents: { full_name: string; phone: string } | null;
     students: { full_name: string } | null;
     sections: { grade: string; name: string } | null;
@@ -98,7 +99,10 @@ export async function fetchAdmissionsReportRows(
     createdAt: r.created_at,
     parentName: r.parents?.full_name ?? "—",
     parentPhone: r.parents?.phone ?? "—",
-    studentName: r.students?.full_name ?? "—",
+    // Before the full details form is submitted there's no students row yet
+    // — fall back to the name captured at lead creation rather than "—", so
+    // an in-progress applicant is still identifiable on the table/exports.
+    studentName: r.students?.full_name ?? r.lead_student_name ?? "—",
     sectionGrade: r.sections?.grade ?? null,
     sectionName: r.sections?.name ?? null,
   }));
