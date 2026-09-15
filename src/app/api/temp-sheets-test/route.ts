@@ -1,58 +1,30 @@
 import { NextResponse } from "next/server";
-import crypto from "node:crypto";
-import { config } from "@/lib/config";
-
-function base64url(input: Buffer | string): string {
-  return Buffer.from(input)
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-}
+import { appendEnrollmentRow } from "@/lib/google-sheets";
 
 export async function GET() {
-  const key = config.googleSheets.privateKey;
-  const diagnostics = {
-    clientEmail: config.googleSheets.clientEmail,
-    spreadsheetId: config.googleSheets.spreadsheetId,
-    privateKeyLength: key.length,
-    privateKeyStartsCorrectly: key.startsWith("-----BEGIN PRIVATE KEY-----"),
-    privateKeyEndsCorrectly: key.trim().endsWith("-----END PRIVATE KEY-----"),
-    privateKeyLineCount: key.split("\n").length,
-    privateKeyFirst40: key.slice(0, 40),
-    privateKeyLast40: key.slice(-40),
-  };
-
-  try {
-    const now = Math.floor(Date.now() / 1000);
-    const header = { alg: "RS256", typ: "JWT" };
-    const claim = {
-      iss: config.googleSheets.clientEmail,
-      scope: "https://www.googleapis.com/auth/spreadsheets",
-      aud: "https://oauth2.googleapis.com/token",
-      exp: now + 3600,
-      iat: now,
-    };
-    const unsigned = `${base64url(JSON.stringify(header))}.${base64url(JSON.stringify(claim))}`;
-    const signer = crypto.createSign("RSA-SHA256");
-    signer.update(unsigned);
-    const signature = base64url(signer.sign(key));
-    const jwt = `${unsigned}.${signature}`;
-
-    const res = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-        assertion: jwt,
-      }),
-    });
-    const text = await res.text();
-    return NextResponse.json({ diagnostics, tokenStatus: res.status, tokenResponse: text });
-  } catch (err) {
-    return NextResponse.json({
-      diagnostics,
-      signingError: err instanceof Error ? err.message : String(err),
-    });
-  }
+  const result = await appendEnrollmentRow(
+    {
+      admissionNumber: "TEST-PROD-002",
+      studentName: "Prod Test Student 2",
+      dob: "2015-01-01",
+      gender: "male",
+      grade: "G3",
+      sectionName: "A",
+      classTiming: "9:00 - 11:00",
+      parentName: "Prod Test Parent",
+      parentPhone: "+91 9999999999",
+      parentEmail: "test@example.com",
+      fatherName: "Prod Test Father",
+      fatherPhone: "+91 9999999999",
+      motherName: "Prod Test Mother",
+      motherPhone: "+91 8888888888",
+      address: "123 Test Street",
+      previousSchool: "Test Previous School",
+      curriculum: "IGCSE - Cambridge",
+      penNumber: "PEN123",
+      enrolledOn: new Date().toISOString(),
+    },
+    "TEST-DELETE-ME-PROD-FINAL",
+  );
+  return NextResponse.json(result);
 }
