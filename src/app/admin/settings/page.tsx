@@ -107,6 +107,26 @@ export default async function AdminSettingsPage({
                   during a Grade assessment.
                 </p>
               </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="assessment_reminder_2h_minutes">
+                  Assessment confirmation reminder — lead time (minutes)
+                </Label>
+                <Input
+                  id="assessment_reminder_2h_minutes"
+                  name="assessment_reminder_2h_minutes"
+                  type="number"
+                  min={15}
+                  max={1440}
+                  step={1}
+                  defaultValue={s.assessmentReminder2hMinutes}
+                />
+                <p className="text-xs text-muted-foreground">
+                  How long before an assessment the parent gets the &quot;please confirm / need to
+                  reschedule&quot; message. Depends on an external scheduler polling
+                  /api/cron/assessment-reminders every few minutes — this only sets how far ahead
+                  it fires, not how precisely.
+                </p>
+              </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="study_material">Onboarding — study material list</Label>
                 <Textarea

@@ -2,11 +2,11 @@ import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { notifyAssessmentReminder, notifyAssessmentReminder2h } from "@/lib/workflow";
 import { config } from "@/lib/config";
+import { getSettings } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 
 const REMINDER_LEAD_MINUTES = 10;
-const REMINDER_2H_LEAD_MINUTES = 120;
 
 interface DueSlot {
   id: string;
@@ -65,8 +65,11 @@ export async function GET(request: Request) {
   }
 
   // Same claim-via-UPDATE pattern, independent flag, wider window — a slot
-  // gets both reminders as it approaches, not one or the other.
-  const cutoff2h = new Date(now.getTime() + REMINDER_2H_LEAD_MINUTES * 60_000);
+  // gets both reminders as it approaches, not one or the other. Lead time is
+  // admin-editable (Admin -> Settings), not a fixed constant, so a change
+  // takes effect on the very next poll with no redeploy needed.
+  const { assessmentReminder2hMinutes } = await getSettings();
+  const cutoff2h = new Date(now.getTime() + assessmentReminder2hMinutes * 60_000);
   const { data: claimed2h, error: error2h } = await admin
     .from("assessment_slots")
     .update({ reminder_2h_sent: true })
@@ -82,7 +85,7 @@ export async function GET(request: Request) {
   } else {
     for (const slot of claimed2h ?? []) {
       try {
-        await notifyAssessmentReminder2h(slot);
+        await notifyAssessmentReminder2h(slot, assessmentReminder2hMinutes);
         sent2h += 1;
       } catch (err) {
         console.error("[cron/assessment-reminders] failed to send 2h reminder for slot", slot.id, err);

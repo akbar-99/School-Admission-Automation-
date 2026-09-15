@@ -399,10 +399,20 @@ export async function notifyAssessmentReminder(slot: {
 // portal where releasing the slot needs an explicit button click, since
 // that's a real state change (frees the slot for someone else to book).
 // ---------------------------------------------------------------------------
-export async function notifyAssessmentReminder2h(slot: {
-  application_id: string;
-  starts_at: string;
-}) {
+// Human-friendly form of the admin-configured lead time, e.g. 120 -> "2
+// hours", 90 -> "1 hour 30 minutes", 45 -> "45 minutes".
+function formatLeadTime(minutes: number): string {
+  if (minutes < 60) return `${minutes} minutes`;
+  const hours = Math.floor(minutes / 60);
+  const rem = minutes % 60;
+  const hourPart = `${hours} hour${hours === 1 ? "" : "s"}`;
+  return rem === 0 ? hourPart : `${hourPart} ${rem} minutes`;
+}
+
+export async function notifyAssessmentReminder2h(
+  slot: { application_id: string; starts_at: string },
+  leadMinutes: number,
+) {
   const admin = createSupabaseAdminClient();
   const { data: appRow } = await admin
     .from("applications")
@@ -418,15 +428,16 @@ export async function notifyAssessmentReminder2h(slot: {
   const when = `${formatInZone(slot.starts_at, config.school.timezone)} ${config.school.timezoneLabel}`;
   const confirmUrl = `${config.appUrl}/api/assessment/confirm/${app.access_token}`;
   const rescheduleUrl = applyUrl(app.access_token);
+  const lead = formatLeadTime(leadMinutes);
 
   await dispatch(
     multiChannel(
       {
         applicationId: app.id,
         event: "ASSESSMENT_REMINDER_2H",
-        subject: "Your assessment is in 2 hours",
+        subject: `Your assessment is in ${lead}`,
         body:
-          `Hello ${parent.full_name},\n\nYour assessment is coming up in 2 hours, at ${when}.\n\n` +
+          `Hello ${parent.full_name},\n\nYour assessment is coming up in ${lead}, at ${when}.\n\n` +
           `Please confirm you'll attend:\n${confirmUrl}\n\n` +
           `Need to reschedule instead? Visit your portal and release your slot to pick a new time:\n${rescheduleUrl}`,
       },

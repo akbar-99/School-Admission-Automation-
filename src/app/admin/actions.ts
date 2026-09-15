@@ -505,6 +505,14 @@ export async function updateSettings(formData: FormData) {
   }
   const feePaise = Math.round(feeRupees * 100);
 
+  const reminderMinutes = Number(formData.get("assessment_reminder_2h_minutes"));
+  if (!Number.isInteger(reminderMinutes) || reminderMinutes < 15 || reminderMinutes > 1440) {
+    redirect(
+      "/admin/settings?error=" +
+        encodeURIComponent("Enter a reminder lead time between 15 and 1440 minutes."),
+    );
+  }
+
   const rows = [
     { key: "admission_fee_paise", value: String(feePaise) },
     { key: "agreement_terms", value: String(formData.get("agreement_terms") ?? "").trim() },
@@ -515,6 +523,7 @@ export async function updateSettings(formData: FormData) {
     { key: "academic_orientation", value: String(formData.get("academic_orientation") ?? "").trim() },
     { key: "study_material", value: String(formData.get("study_material") ?? "").trim() },
     { key: "assessment_subjects", value: String(formData.get("assessment_subjects") ?? "").trim() },
+    { key: "assessment_reminder_2h_minutes", value: String(reminderMinutes) },
   ];
 
   const admin = createSupabaseAdminClient();
