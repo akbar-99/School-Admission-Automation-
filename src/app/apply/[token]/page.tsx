@@ -447,12 +447,21 @@ async function Content({
   }
 
   async function BookedSlot({ appId, parentTz }: { appId: string; parentTz: string | null }) {
-    const { data: slot } = await admin
-      .from("assessment_slots")
-      .select("starts_at, ends_at, zoom_join_url, zoom_passcode, confirmed_at")
-      .eq("application_id", appId)
-      .maybeSingle();
-    const canReschedule = slot && new Date(slot.starts_at).getTime() > Date.now();
+    const [{ data: slot }, { assessmentReminder2hMinutes }] = await Promise.all([
+      admin
+        .from("assessment_slots")
+        .select("starts_at, ends_at, zoom_join_url, zoom_passcode, confirmed_at")
+        .eq("application_id", appId)
+        .maybeSingle(),
+      getSettings(),
+    ]);
+    const msUntilStart = slot ? new Date(slot.starts_at).getTime() - Date.now() : -1;
+    // "Confirm I'll attend" / "Need to reschedule?" only show once the slot
+    // is close enough that the confirmation reminder would actually be sent
+    // (same lead time, Admin -> Settings) — not the moment it's booked,
+    // which could be weeks out. Before that window, the card below just
+    // shows the scheduled time/Zoom info with no action needed yet.
+    const canReschedule = Boolean(slot) && msUntilStart > 0 && msUntilStart <= assessmentReminder2hMinutes * 60_000;
     return (
       <Card>
         {slot && new Date(slot.starts_at).getTime() > Date.now() && (
@@ -511,14 +520,19 @@ async function Content({
 
               {slot.confirmed_at ? (
                 <Alert variant="success">✓ You&apos;ve confirmed you&apos;ll attend.</Alert>
+              ) : canReschedule ? (
+                <a
+                  href={`/api/assessment/confirm/${token}`}
+                  className={buttonVariants({ variant: "outline", size: "sm" })}
+                >
+                  Confirm I&apos;ll attend
+                </a>
               ) : (
-                canReschedule && (
-                  <a
-                    href={`/api/assessment/confirm/${token}`}
-                    className={buttonVariants({ variant: "outline", size: "sm" })}
-                  >
-                    Confirm I&apos;ll attend
-                  </a>
+                msUntilStart > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    You&apos;ll get a reminder message closer to the date, with options to confirm or
+                    reschedule.
+                  </p>
                 )
               )}
 
