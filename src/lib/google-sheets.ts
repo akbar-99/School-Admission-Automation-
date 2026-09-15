@@ -94,7 +94,7 @@ const HEADERS = [
   "Curriculum",
   "PEN Number",
   "Enrolled On",
-  "Passport",
+  "Passport/Aadhaar",
   "Birth Certificate",
   "Photo",
 ];
