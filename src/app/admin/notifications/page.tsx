@@ -41,7 +41,7 @@ async function NotificationsBody() {
   const [{ data: notifications }, { data: audit }] = await Promise.all([
     admin
       .from("notifications")
-      .select("id, event, channel, recipient, subject, status, created_at")
+      .select("id, event, channel, recipient, subject, status, error, created_at")
       .order("created_at", { ascending: false })
       .limit(100),
     admin
@@ -83,6 +83,9 @@ async function NotificationsBody() {
                       <Badge tone={n.status === "sent" ? "success" : n.status === "failed" ? "danger" : "neutral"}>
                         {n.status}
                       </Badge>
+                      {n.status === "failed" && n.error && (
+                        <div className="mt-1 max-w-56 text-xs text-muted-foreground">{n.error}</div>
+                      )}
                     </TD>
                     <TD className="whitespace-nowrap text-muted-foreground">{formatDateTime(n.created_at)}</TD>
                   </TR>
