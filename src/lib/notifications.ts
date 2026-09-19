@@ -22,6 +22,11 @@ export interface OutboundMessage {
   body: string;
   payload?: Record<string, unknown>;
   attachments?: EmailAttachment[]; // email-only; ignored by SMS/WhatsApp
+  // WhatsApp-only: when set and the channel is "whatsapp", send an approved
+  // template message (works outside the 24h session window) instead of the
+  // freeform `body` text (which only delivers if the recipient messaged
+  // first within the last 24 hours). Ignored by every other channel.
+  whatsappTemplate?: { name: string; params: string[] };
 }
 
 interface NotificationProvider {
@@ -105,6 +110,28 @@ class LiveProvider implements NotificationProvider {
         return;
       }
     } else if (msg.channel === "whatsapp" && config.notifications.whatsappToken) {
+      const payload = msg.whatsappTemplate
+        ? {
+            messaging_product: "whatsapp",
+            to: msg.recipient,
+            type: "template",
+            template: {
+              name: msg.whatsappTemplate.name,
+              language: { code: "en_US" },
+              components: [
+                {
+                  type: "body",
+                  parameters: msg.whatsappTemplate.params.map((text) => ({ type: "text", text })),
+                },
+              ],
+            },
+          }
+        : {
+            messaging_product: "whatsapp",
+            to: msg.recipient,
+            type: "text",
+            text: { body: msg.body },
+          };
       const res = await fetch(
         `https://graph.facebook.com/v20.0/${config.notifications.whatsappPhoneId}/messages`,
         {
@@ -113,12 +140,7 @@ class LiveProvider implements NotificationProvider {
             Authorization: `Bearer ${config.notifications.whatsappToken}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            messaging_product: "whatsapp",
-            to: msg.recipient,
-            type: "text",
-            text: { body: msg.body },
-          }),
+          body: JSON.stringify(payload),
         },
       );
       if (!res.ok) {

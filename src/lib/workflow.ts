@@ -32,7 +32,15 @@ function fanToStaff(
   contacts: { email: string | null; phone: string | null }[],
   base: Omit<OutboundMessage, "channel" | "recipient">,
 ): OutboundMessage[] {
-  return contacts.flatMap((c) => multiChannel(base, c, ["email", "whatsapp"]));
+  // Every staff-facing WhatsApp send reuses the one generic approved
+  // template (staff_alert_v2): {{1}} a short reference, {{2}} the detail —
+  // the subject/body pair every call site already provides fits this
+  // directly, so no per-event template is needed for internal alerts.
+  const withTemplate: Omit<OutboundMessage, "channel" | "recipient"> = {
+    ...base,
+    whatsappTemplate: { name: "staff_alert_v2", params: [base.subject ?? base.event, base.body] },
+  };
+  return contacts.flatMap((c) => multiChannel(withTemplate, c, ["email", "whatsapp"]));
 }
 
 // ---------------------------------------------------------------------------
@@ -40,13 +48,15 @@ function fanToStaff(
 // ---------------------------------------------------------------------------
 export async function notifyLeadCreated(app: Application, parent: Parent) {
   const link = applyUrl(app.access_token);
+  const expiry = new Date(app.token_expires_at).toDateString();
   await dispatch(
     multiChannel(
       {
         applicationId: app.id,
         event: "N-1",
         subject: "Complete your school admission",
-        body: `Hello ${parent.full_name},\n\nPlease complete the admission form using your secure link:\n${link}\n\nThis link expires on ${new Date(app.token_expires_at).toDateString()}.`,
+        body: `Hello ${parent.full_name},\n\nPlease complete the admission form using your secure link:\n${link}\n\nThis link expires on ${expiry}.`,
+        whatsappTemplate: { name: "admission_link_v2", params: [parent.full_name, link, expiry] },
       },
       parent,
     ),
@@ -93,6 +103,10 @@ export async function sendAgreement(app: Application, parent: Parent) {
         event: "N-6",
         subject: "Admission agreement & payment",
         body: `Hello ${parent.full_name},\n\nCongratulations! Your admission agreement is ready.\nReview the agreement and complete your payment here:\n${portal}\n\nAdmission fee: ${formatINR(feePaise)}${studyMaterialLine}\n\n(You can read the full agreement on that page before paying.)`,
+        whatsappTemplate: {
+          name: "agreement_ready",
+          params: [parent.full_name, app.grade_applying ?? app.category ?? "your child", formatINR(feePaise), portal],
+        },
       },
       parent,
     ),
@@ -440,6 +454,10 @@ export async function notifyAssessmentReminder2h(
           `Hello ${parent.full_name},\n\nYour assessment is coming up in ${lead}, at ${when}.\n\n` +
           `Please confirm you'll attend:\n${confirmUrl}\n\n` +
           `Need to reschedule instead? Visit your portal and release your slot to pick a new time:\n${rescheduleUrl}`,
+        whatsappTemplate: {
+          name: "assessment_reminder",
+          params: [parent.full_name, lead, when, confirmUrl, rescheduleUrl],
+        },
       },
       parent,
     ),
@@ -805,6 +823,7 @@ export async function handleAssessmentResult(
         subject: "Assessment result",
         body: parentBody,
         attachments,
+        whatsappTemplate: { name: "assessment_result", params: [parent.full_name, portal] },
       },
       parent,
     ),
@@ -1363,6 +1382,7 @@ export async function handlePaymentCompleted(
     (studyMaterialAmount > 0 ? `- Study material: ${formatINR(studyMaterialAmount)}\n` : "") +
     `\nA receipt is available in your portal: ${applyUrl(app.access_token)}`;
 
+  const receiptUrl = `${config.appUrl}/api/receipt/${app.access_token}`;
   const receiptMessages = sendReceipt
     ? [
         ...multiChannel(
@@ -1371,6 +1391,10 @@ export async function handlePaymentCompleted(
             event: "N-7",
             subject: "Payment received",
             body: receiptBody,
+            whatsappTemplate: {
+              name: "payment_received",
+              params: [parent.full_name, formatINR(totalPaid), receiptUrl],
+            },
           },
           parent,
         ),
@@ -1390,6 +1414,10 @@ export async function handlePaymentCompleted(
         event: "N-8",
         subject: "Welcome — admission confirmed",
         body: `Hello ${parent.full_name},\n\nWelcome! Admission is confirmed.\nAdmission number: ${res.admission_number}\nClass & section: ${res.section}\n\nOnboarding details (study material list, academic calendar and contacts) are available in your portal: ${applyUrl(app.access_token)}`,
+        whatsappTemplate: {
+          name: "admission_confirmed",
+          params: [parent.full_name, res.admission_number ?? "—", res.section ?? "—", applyUrl(app.access_token)],
+        },
       },
       parent,
     ),
