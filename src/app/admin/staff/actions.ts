@@ -198,6 +198,72 @@ export async function setStaffPhone(formData: FormData) {
   back(phone ? "Phone number updated." : "Phone number cleared.");
 }
 
+// Admin-only: email a staff member a one-time link to set a new password
+// themselves. Deliberately admin-triggered rather than a public "forgot
+// password" page on /login — the school wants password resets to always go
+// through an admin, not be self-service. Mirrors inviteStaff's approach
+// exactly: generateLink (type "recovery") to mint the token, then deliver
+// the link ourselves through the app's own SMTP via dispatch() rather than
+// Supabase's built-in email, for the same reason noted there (not
+// rate-limited by Supabase). Reuses the same /auth/confirm + /auth/set-password
+// pages already used for invites.
+const PasswordResetSchema = z.object({ user_id: z.string().uuid() });
+
+export async function sendPasswordReset(formData: FormData) {
+  const { profile } = await requireRole(["admin"]);
+  const parsed = PasswordResetSchema.safeParse({ user_id: formData.get("user_id") });
+  if (!parsed.success) back("Invalid staff member.", "error");
+  const { user_id } = parsed.data!;
+
+  const admin = createSupabaseAdminClient();
+  const { data: target } = await admin
+    .from("users")
+    .select("email, full_name, disabled")
+    .eq("id", user_id)
+    .maybeSingle();
+  if (!target) back("Staff member not found.", "error");
+  if (target.disabled) back("This staff member's access is removed — reactivate them first.", "error");
+
+  const { data, error } = await admin.auth.admin.generateLink({
+    type: "recovery",
+    email: target.email!,
+    options: {
+      redirectTo: `${config.appUrl}/auth/set-password`,
+    },
+  });
+  if (error || !data?.properties?.hashed_token) {
+    back(error?.message ?? "Could not generate a reset link.", "error");
+  }
+
+  const tokenHash = data!.properties!.hashed_token;
+  const link = `${config.appUrl}/auth/confirm?token_hash=${tokenHash}&type=recovery&next=${encodeURIComponent("/auth/set-password")}`;
+
+  await dispatch([
+    {
+      event: "STAFF_PASSWORD_RESET",
+      channel: "email",
+      recipient: target.email!,
+      subject: "Reset your Broadway Admissions password",
+      body:
+        `Hello ${target.full_name ?? ""},\n\n` +
+        `An admin requested a password reset for your account.\n\n` +
+        `Set a new password here:\n${link}\n\n` +
+        `This link can be used once and will expire. If you weren't expecting this, contact your admin.`,
+    },
+  ]);
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "staff.password_reset_sent",
+    entity: "user",
+    entityId: user_id,
+    details: { email: target.email },
+  });
+
+  back(`Password reset link sent to ${target.email}.`);
+}
+
 const StaffIdSchema = z.object({ user_id: z.string().uuid() });
 
 // Admin-only: revoke a staff member's access. Bans the auth account rather

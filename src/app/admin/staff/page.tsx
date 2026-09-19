@@ -9,6 +9,7 @@ import {
   removeStaff,
   reactivateStaff,
   deleteStaffPermanently,
+  sendPasswordReset,
 } from "./actions";
 import { SubmitButton } from "@/components/submit-button";
 import { RemoveStaffButton, DeleteStaffButton } from "@/components/admin/remove-staff-button";
@@ -242,11 +243,19 @@ async function StaffTable() {
                           />
                         </div>
                       ) : (
-                        <RemoveStaffButton
-                          action={removeStaff}
-                          userId={s.id}
-                          name={s.full_name ?? s.email ?? "this staff member"}
-                        />
+                        <div className="flex items-center justify-end gap-1.5">
+                          <form action={sendPasswordReset} className="inline-flex">
+                            <input type="hidden" name="user_id" value={s.id} />
+                            <SubmitButton size="sm" variant="outline" pendingText="…">
+                              Reset password
+                            </SubmitButton>
+                          </form>
+                          <RemoveStaffButton
+                            action={removeStaff}
+                            userId={s.id}
+                            name={s.full_name ?? s.email ?? "this staff member"}
+                          />
+                        </div>
                       )}
                     </TD>
                   </TR>
