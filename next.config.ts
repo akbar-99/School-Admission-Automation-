@@ -48,6 +48,11 @@ const nextConfig: NextConfig = {
         headers: [
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Content-Security-Policy", value: ContentSecurityPolicy },
+          // Uploaded admission documents (PDF/JPG/PNG) are the only
+          // user-supplied files this app ever serves back out (via signed
+          // storage URLs) — stop the browser from MIME-sniffing them into
+          // something else if a declared type is ever wrong.
+          { key: "X-Content-Type-Options", value: "nosniff" },
         ],
       },
     ];

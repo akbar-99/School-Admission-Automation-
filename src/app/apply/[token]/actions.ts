@@ -130,6 +130,21 @@ async function findAddressDuplicate(
   return null;
 }
 
+// Real file-content signatures for each allowed type, checked against the
+// actual bytes rather than trusting the browser-reported `file.type` (which
+// a crafted multipart request can set to anything regardless of the file's
+// real content).
+const MAGIC_BYTES: Record<string, number[]> = {
+  "application/pdf": [0x25, 0x50, 0x44, 0x46, 0x2d], // %PDF-
+  "image/jpeg": [0xff, 0xd8, 0xff],
+  "image/png": [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
+};
+function matchesDeclaredType(buffer: Buffer, declaredType: string): boolean {
+  const signature = MAGIC_BYTES[declaredType];
+  if (!signature) return false;
+  return signature.every((byte, i) => buffer[i] === byte);
+}
+
 // Validate + upload a single required document into a typed slot.
 async function uploadDocument(
   admin: ReturnType<typeof createSupabaseAdminClient>,
@@ -145,9 +160,12 @@ async function uploadDocument(
   const file = value;
   if (!ALLOWED.has(file.type)) fail(token, `${label}: unsupported file type. Use PDF, JPG or PNG.`);
   if (file.size > MAX_FILE) fail(token, `${label} exceeds the 5 MB limit.`);
+  const buffer = Buffer.from(await file.arrayBuffer());
+  if (!matchesDeclaredType(buffer, file.type)) {
+    fail(token, `${label}: file content doesn't match a PDF, JPG or PNG. Please re-check the file.`);
+  }
   const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
   const path = `${appId}/${category}_${Date.now()}_${safe}`;
-  const buffer = Buffer.from(await file.arrayBuffer());
   const { error: upErr } = await admin.storage
     .from("documents")
     .upload(path, buffer, { contentType: file.type, upsert: false });
