@@ -28,19 +28,31 @@ async function staffContacts(
   return (data ?? []).map((u) => ({ email: u.email, phone: u.phone }));
 }
 
+// Every staff-facing WhatsApp send reuses the one generic approved template
+// (staff_alert_v2): {{1}} a short reference, {{2}} the detail — the
+// subject/body pair every call site already provides fits this directly, so
+// no per-event template is needed for internal alerts. Freeform text only
+// delivers within a 24h window the recipient opened themselves — outside
+// that window the WhatsApp Cloud API can still accept the request (logged
+// here as "sent") and then silently fail to deliver it async, with no
+// webhook configured to report that back — so every staff/teacher WhatsApp
+// send, fanned out or to one specific person, must go through this.
+function toStaffMember(
+  contact: { email: string | null; phone: string | null },
+  base: Omit<OutboundMessage, "channel" | "recipient">,
+): OutboundMessage[] {
+  return multiChannel(
+    { ...base, whatsappTemplate: { name: "staff_alert_v2", params: [base.subject ?? base.event, base.body] } },
+    contact,
+    ["email", "whatsapp"],
+  );
+}
+
 function fanToStaff(
   contacts: { email: string | null; phone: string | null }[],
   base: Omit<OutboundMessage, "channel" | "recipient">,
 ): OutboundMessage[] {
-  // Every staff-facing WhatsApp send reuses the one generic approved
-  // template (staff_alert_v2): {{1}} a short reference, {{2}} the detail —
-  // the subject/body pair every call site already provides fits this
-  // directly, so no per-event template is needed for internal alerts.
-  const withTemplate: Omit<OutboundMessage, "channel" | "recipient"> = {
-    ...base,
-    whatsappTemplate: { name: "staff_alert_v2", params: [base.subject ?? base.event, base.body] },
-  };
-  return contacts.flatMap((c) => multiChannel(withTemplate, c, ["email", "whatsapp"]));
+  return contacts.flatMap((c) => toStaffMember(c, base));
 }
 
 // ---------------------------------------------------------------------------
@@ -253,15 +265,14 @@ export async function handleSlotBooked(
       .maybeSingle();
     if (t) {
       messages.push(
-        ...multiChannel(
+        ...toStaffMember(
+          { email: t.email, phone: t.phone },
           {
             applicationId: app.id,
             event: "N-4",
             subject: "Assessment booked for your slot",
             body: `A parent booked your assessment slot on ${when} (Grade ${app.grade_applying}).${hostLine}`,
           },
-          { email: t.email, phone: t.phone },
-          ["email", "whatsapp"],
         ),
       );
     }
@@ -317,15 +328,14 @@ export async function backfillZoomLink(appId: string): Promise<boolean> {
       .maybeSingle();
     if (t) {
       messages.push(
-        ...multiChannel(
+        ...toStaffMember(
+          { email: t.email, phone: t.phone },
           {
             applicationId: app.id,
             event: "ZOOM_LINK_READY",
             subject: "Zoom link ready for your assessment",
             body: `The Zoom meeting for your assessment on ${when} (Grade ${app.grade_applying}) is ready.\n\nStart as host:\n${meeting.startUrl}`,
           },
-          { email: t.email, phone: t.phone },
-          ["email", "whatsapp"],
         ),
       );
     }
@@ -387,15 +397,14 @@ export async function notifyAssessmentReminder(slot: {
     if (t) {
       const hostLine = slot.zoom_start_url ? `\n\nStart as host:\n${slot.zoom_start_url}` : "";
       messages.push(
-        ...multiChannel(
+        ...toStaffMember(
+          { email: t.email, phone: t.phone },
           {
             applicationId: app.id,
             event: "ASSESSMENT_REMINDER",
             subject: "Your assessment starts in 10 minutes",
             body: `Hello,\n\nYour assessment${app.grade_applying ? ` with a Grade ${app.grade_applying} applicant` : ""} starts in 10 minutes, at ${when}.${hostLine}`,
           },
-          { email: t.email, phone: t.phone },
-          ["email", "whatsapp"],
         ),
       );
     }
@@ -511,15 +520,14 @@ export async function notifySlotReleased(
     const { data: t } = await admin.from("users").select("email, phone").eq("id", slotInfo.teacher_id).maybeSingle();
     if (t) {
       messages.push(
-        ...multiChannel(
+        ...toStaffMember(
+          { email: t.email, phone: t.phone },
           {
             applicationId: app.id,
             event: "ASSESSMENT_RESCHEDULED",
             subject: "A booked slot was released",
             body: `Your ${when} assessment slot was released by the parent and is open again.`,
           },
-          { email: t.email, phone: t.phone },
-          ["email", "whatsapp"],
         ),
       );
     }
@@ -543,14 +551,13 @@ export async function notifyTeacherSlotAssigned(
   if (!t) return;
   const when = `${formatInZone(slot.starts_at, config.school.timezone)} ${config.school.timezoneLabel}`;
   await dispatch(
-    multiChannel(
+    toStaffMember(
+      { email: t.email, phone: t.phone },
       {
         event: "SLOT_ASSIGNED",
         subject: "New assessment slot assigned to you",
         body: `An assessment slot on ${when} has been assigned to you. It will appear on your dashboard.`,
       },
-      { email: t.email, phone: t.phone },
-      ["email", "whatsapp"],
     ),
   );
 }
@@ -649,14 +656,13 @@ export async function notifySlotReassigned(input: {
       .maybeSingle();
     if (old) {
       messages.push(
-        ...multiChannel(
+        ...toStaffMember(
+          { email: old.email, phone: old.phone },
           {
             event: "SLOT_REASSIGNED",
             subject: "Assessment reassigned away from you",
             body: `Your assessment on ${when} has been reassigned to another teacher. It's been removed from your dashboard.`,
           },
-          { email: old.email, phone: old.phone },
-          ["email", "whatsapp"],
         ),
       );
     }
@@ -669,14 +675,13 @@ export async function notifySlotReassigned(input: {
     .maybeSingle();
   if (newT) {
     messages.push(
-      ...multiChannel(
+      ...toStaffMember(
+        { email: newT.email, phone: newT.phone },
         {
           event: "SLOT_REASSIGNED",
           subject: "Assessment reassigned to you",
           body: `An assessment on ${when} has been reassigned to you. Check your dashboard for details.`,
         },
-        { email: newT.email, phone: newT.phone },
-        ["email", "whatsapp"],
       ),
     );
   }
