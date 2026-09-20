@@ -29,13 +29,14 @@ async function staffContacts(
 }
 
 // Every staff-facing WhatsApp send reuses the one generic approved template
-// (staff_alert_v3): {{1}} a short reference, {{2}} the detail — the
+// (staff_alert_v4): {{1}} a short reference, {{2}} the detail — the
 // subject/body pair every call site already provides fits this directly, so
-// no per-event template is needed for internal alerts. Deliberately generic
-// wording ("Check your dashboard for details") rather than anything
-// role-specific (an earlier version said "Open the admin portal", which was
-// wrong for teacher-only events like a slot assignment) — this one template
-// covers admins and teachers alike. Freeform text only delivers within a 24h
+// no per-event template is needed for internal alerts. v2 said "Open the
+// admin portal", wrong for teacher-only events like a slot assignment; v3's
+// reword ("Check your dashboard for details") got auto-reclassified from
+// Utility to Marketing by Meta's classifier. v4 keeps v2's exact proven-Utility
+// structure and swaps only the broken CTA to something role-neutral. Freeform
+// text only delivers within a 24h
 // window the recipient opened themselves — outside that window the WhatsApp
 // Cloud API can still accept the request (logged here as "sent") and then
 // silently fail to deliver it async, with no webhook configured to report
@@ -51,7 +52,7 @@ function toStaffMember(
   // original, unmodified body.
   const detail = base.body.replace(/\s*\n+\s*/g, " ").trim();
   return multiChannel(
-    { ...base, whatsappTemplate: { name: "staff_alert_v3", params: [base.subject ?? base.event, detail] } },
+    { ...base, whatsappTemplate: { name: "staff_alert_v4", params: [base.subject ?? base.event, detail] } },
     contact,
     ["email", "whatsapp"],
   );
