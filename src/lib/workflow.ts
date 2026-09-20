@@ -29,20 +29,29 @@ async function staffContacts(
 }
 
 // Every staff-facing WhatsApp send reuses the one generic approved template
-// (staff_alert_v2): {{1}} a short reference, {{2}} the detail — the
+// (staff_alert_v3): {{1}} a short reference, {{2}} the detail — the
 // subject/body pair every call site already provides fits this directly, so
-// no per-event template is needed for internal alerts. Freeform text only
-// delivers within a 24h window the recipient opened themselves — outside
-// that window the WhatsApp Cloud API can still accept the request (logged
-// here as "sent") and then silently fail to deliver it async, with no
-// webhook configured to report that back — so every staff/teacher WhatsApp
-// send, fanned out or to one specific person, must go through this.
+// no per-event template is needed for internal alerts. Deliberately generic
+// wording ("Check your dashboard for details") rather than anything
+// role-specific (an earlier version said "Open the admin portal", which was
+// wrong for teacher-only events like a slot assignment) — this one template
+// covers admins and teachers alike. Freeform text only delivers within a 24h
+// window the recipient opened themselves — outside that window the WhatsApp
+// Cloud API can still accept the request (logged here as "sent") and then
+// silently fail to deliver it async, with no webhook configured to report
+// that back — so every staff/teacher WhatsApp send, fanned out or to one
+// specific person, must go through this.
 function toStaffMember(
   contact: { email: string | null; phone: string | null },
   base: Omit<OutboundMessage, "channel" | "recipient">,
 ): OutboundMessage[] {
+  // WhatsApp template parameters reject newline/tab characters outright —
+  // several staff bodies are multi-line (Zoom join/host links, etc.), so
+  // collapse to one line for the template param only; email still gets the
+  // original, unmodified body.
+  const detail = base.body.replace(/\s*\n+\s*/g, " ").trim();
   return multiChannel(
-    { ...base, whatsappTemplate: { name: "staff_alert_v2", params: [base.subject ?? base.event, base.body] } },
+    { ...base, whatsappTemplate: { name: "staff_alert_v3", params: [base.subject ?? base.event, detail] } },
     contact,
     ["email", "whatsapp"],
   );
