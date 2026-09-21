@@ -18,6 +18,7 @@ import {
 } from "@/lib/utils";
 import { bookSlot, acceptAgreement, releaseSlot } from "./actions";
 import { MinimalAdmissionForm, RemainingDetailsForm } from "@/components/apply/admission-form";
+import { BookingDone } from "@/components/apply/booking-done";
 import { EditableApplicantDetails } from "@/components/apply/editable-applicant-details";
 import { PaymentSelector, StudyMaterialPayPanel } from "@/components/apply/pay-panel";
 import { StatusBadge } from "@/components/status-badge";
@@ -519,6 +520,8 @@ async function Content({
                   Your Zoom link will appear here shortly and is also sent to your email.
                 </p>
               )}
+
+              <BookingDone />
 
               {slot.confirmed_at ? (
                 <Alert variant="success">✓ You&apos;ve confirmed you&apos;ll attend.</Alert>
