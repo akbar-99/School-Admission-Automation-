@@ -393,6 +393,18 @@ export async function notifyAssessmentReminder(slot: {
         event: "ASSESSMENT_REMINDER",
         subject: "Your assessment starts in 10 minutes",
         body: `Hello ${parent.full_name},\n\nYour assessment starts in 10 minutes, at ${when}.${joinLine}`,
+        // Only attach the template when there's a real join link to put in
+        // it — the template's {{4}} is required, unlike the freeform body's
+        // joinLine, which is allowed to be blank if Zoom isn't set up. Falls
+        // back to freeform text in that edge case, same as before.
+        ...(slot.zoom_join_url
+          ? {
+              whatsappTemplate: {
+                name: "assessment_starting_soon",
+                params: [parent.full_name, "10 minutes", when, slot.zoom_join_url],
+              },
+            }
+          : {}),
       },
       parent,
     ),
