@@ -120,7 +120,9 @@ export function SearchSelect({
               }}
               onKeyDown={onKeyDown}
               placeholder={searchPlaceholder}
-              className="w-full rounded-sm bg-transparent px-2 py-1.5 text-sm focus:outline-none"
+              // text-base (16px) — see input.tsx: a real <input>, so under
+              // 16px iOS Safari auto-zooms on focus and it tends to stick.
+              className="w-full rounded-sm bg-transparent px-2 py-1.5 text-base focus:outline-none"
             />
           </div>
           <ul className="max-h-56 overflow-auto p-1">
