@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { setPassword } from "./actions";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/password-input";
 import { Label } from "@/components/ui/label";
 import { Alert } from "@/components/ui/alert";
 import { SubmitButton } from "@/components/submit-button";
@@ -48,10 +48,9 @@ export default async function SetPasswordPage({
                 <form action={setPassword} className="space-y-4">
                   <div className="space-y-1.5">
                     <Label htmlFor="password">New password</Label>
-                    <Input
+                    <PasswordInput
                       id="password"
                       name="password"
-                      type="password"
                       autoComplete="new-password"
                       minLength={8}
                       required
@@ -59,10 +58,9 @@ export default async function SetPasswordPage({
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="confirm">Confirm password</Label>
-                    <Input
+                    <PasswordInput
                       id="confirm"
                       name="confirm"
-                      type="password"
                       autoComplete="new-password"
                       minLength={8}
                       required
