@@ -36,10 +36,10 @@ export default async function ApplyPage({
   searchParams,
 }: {
   params: Promise<{ token: string }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; ok?: string }>;
 }) {
   const { token } = await params;
-  const { error } = await searchParams;
+  const { error, ok } = await searchParams;
   const { bundle, reason } = await loadApplicationByToken(token);
 
   return (
@@ -66,7 +66,7 @@ export default async function ApplyPage({
             </CardHeader>
           </Card>
         ) : (
-          <Content token={token} error={error} bundle={bundle} />
+          <Content token={token} error={error} ok={ok} bundle={bundle} />
         )}
       </div>
     </div>
@@ -76,10 +76,12 @@ export default async function ApplyPage({
 async function Content({
   token,
   error,
+  ok,
   bundle,
 }: {
   token: string;
   error?: string;
+  ok?: string;
   bundle: Awaited<ReturnType<typeof loadApplicationByToken>>["bundle"];
 }) {
   if (!bundle) return null;
@@ -157,6 +159,7 @@ async function Content({
       </div>
 
       {error && <Alert variant="error">{error}</Alert>}
+      {ok && <Alert variant="success">{ok}</Alert>}
 
       {student && status !== "LEAD_CREATED" && <StudentDetailsCard />}
 
