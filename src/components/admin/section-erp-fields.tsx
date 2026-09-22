@@ -75,7 +75,7 @@ function ClassTimingPicker({
       >
         <option value="">No timing set</option>
         {TIMING_GROUPS.map((group) => (
-          <optgroup key={group.label} label={group.label}>
+          <optgroup key={group.label} label={group.label} className="timing-optgroup">
             {group.options.map((p) => (
               <option key={p} value={p}>
                 {p}

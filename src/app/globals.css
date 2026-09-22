@@ -134,3 +134,14 @@ body {
 ::selection {
   background: color-mix(in srgb, var(--primary) 22%, transparent);
 }
+
+/* <optgroup> labels in a native <select> popup render faded/gray by the
+   browser itself, not our CSS — most rules targeting them are ignored. Color
+   is one of the few exceptions Chrome does respect. Scoped to dark mode only:
+   the popup's own background follows the OS color scheme, so forcing white
+   unconditionally would make the label invisible against a light popup. */
+@media (prefers-color-scheme: dark) {
+  .timing-optgroup {
+    color: #ffffff;
+  }
+}
