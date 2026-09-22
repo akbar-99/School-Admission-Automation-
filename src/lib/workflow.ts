@@ -49,8 +49,10 @@ function toStaffMember(
   // WhatsApp template parameters reject newline/tab characters outright —
   // several staff bodies are multi-line (Zoom join/host links, etc.), so
   // collapse to one line for the template param only; email still gets the
-  // original, unmodified body.
-  const detail = base.body.replace(/\s*\n+\s*/g, " ").trim();
+  // original, unmodified body. Also strip a trailing period: the template's
+  // own fixed text already ends {{2}} with one ("Status: {{2}}."), so a body
+  // that already ends in "." produced a stray double period.
+  const detail = base.body.replace(/\s*\n+\s*/g, " ").trim().replace(/\.+$/, "");
   return multiChannel(
     { ...base, whatsappTemplate: { name: "staff_alert_v4", params: [base.subject ?? base.event, detail] } },
     contact,
