@@ -496,7 +496,8 @@ export async function notifyAssessmentReminder2h(
 }
 
 // Called by GET /api/assessment/confirm/[token] — a plain link click from
-// the 2h reminder. Idempotent: confirming twice just no-ops the second time.
+// the 2h reminder. Idempotent: confirming twice just no-ops the second time
+// (and only notifies on the genuine first confirmation).
 export async function confirmAssessmentSlot(applicationId: string): Promise<boolean> {
   const admin = createSupabaseAdminClient();
   const { data, error } = await admin
@@ -504,15 +505,62 @@ export async function confirmAssessmentSlot(applicationId: string): Promise<bool
     .update({ confirmed_at: new Date().toISOString() })
     .eq("application_id", applicationId)
     .is("confirmed_at", null)
-    .select("id");
+    .select("id, starts_at, teacher_id");
   if (error) {
     console.error("[workflow] confirmAssessmentSlot failed", error);
     return false;
   }
   if (data && data.length > 0) {
     await logAudit({ action: "assessment.confirmed", entity: "application", entityId: applicationId, details: {} });
+    await notifyAssessmentConfirmed(applicationId, data[0] as { starts_at: string; teacher_id: string | null });
   }
   return true;
+}
+
+// Tells admin + the assigned teacher a parent confirmed attendance — the
+// mirror of notifySlotReleased's recipients for the opposite action, so
+// a teacher finds out either way rather than only when a slot falls through.
+async function notifyAssessmentConfirmed(
+  applicationId: string,
+  slot: { starts_at: string; teacher_id: string | null },
+) {
+  const admin = createSupabaseAdminClient();
+  const { data: appRow } = await admin.from("applications").select("*").eq("id", applicationId).maybeSingle();
+  if (!appRow) return;
+  const app = appRow as Application;
+  const { data: parentRow } = await admin.from("parents").select("*").eq("id", app.parent_id).maybeSingle();
+  const parent = parentRow as Parent | null;
+
+  const when = `${formatInZone(slot.starts_at, config.school.timezone)} ${config.school.timezoneLabel}`;
+  const who = parent?.full_name ?? "The parent";
+
+  const messages: OutboundMessage[] = [
+    ...fanToStaff(await staffContacts(["admin"]), {
+      applicationId: app.id,
+      event: "ASSESSMENT_CONFIRMED",
+      subject: "Parent confirmed attendance",
+      body: `${who} confirmed they'll attend the ${when} assessment (Grade ${app.grade_applying ?? "—"}).`,
+    }),
+  ];
+
+  if (slot.teacher_id) {
+    const { data: t } = await admin.from("users").select("email, phone").eq("id", slot.teacher_id).maybeSingle();
+    if (t) {
+      messages.push(
+        ...toStaffMember(
+          { email: t.email, phone: t.phone },
+          {
+            applicationId: app.id,
+            event: "ASSESSMENT_CONFIRMED",
+            subject: "Parent confirmed attendance",
+            body: `${who} confirmed they'll attend your ${when} assessment.`,
+          },
+        ),
+      );
+    }
+  }
+
+  await dispatch(messages);
 }
 
 // Called after release_assessment_slot succeeds — lets the teacher and admin
