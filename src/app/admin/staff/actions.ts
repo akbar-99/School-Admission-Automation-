@@ -107,10 +107,16 @@ export async function inviteStaff(formData: FormData) {
   const tokenHash = data!.properties?.hashed_token;
   const link = `${config.appUrl}/auth/confirm?token_hash=${tokenHash}&type=invite&next=${encodeURIComponent("/auth/set-password")}`;
 
-  await dispatch([
+  // WhatsApp deliberately never carries the invite link itself — Meta
+  // rejected template submissions containing an account-access link twice
+  // (INCORRECT_CATEGORY: it wants links like that routed through their
+  // locked-down Authentication template type, which only supports numeric
+  // codes, not URLs) — so the WhatsApp copy just points back to email,
+  // which has no such restriction and is where the real link lives.
+  const inviteMessages = [
     {
       event: "STAFF_INVITE",
-      channel: "email",
+      channel: "email" as const,
       recipient: email,
       subject: "You're invited to the Broadway Admissions portal",
       body:
@@ -119,7 +125,22 @@ export async function inviteStaff(formData: FormData) {
         `Set your password to activate your account:\n${link}\n\n` +
         `This link can be used once and will expire. If you weren't expecting this, you can ignore this email.`,
     },
-  ]);
+    ...(phone
+      ? [
+          {
+            event: "STAFF_INVITE",
+            channel: "whatsapp" as const,
+            recipient: phone,
+            body: `${full_name}, you've been added to the Broadway Admissions portal as "${role}". Check your email (${email}) for your setup link.`,
+            whatsappTemplate: {
+              name: "staff_invite_v3",
+              params: [full_name, role, email],
+            },
+          },
+        ]
+      : []),
+  ];
+  await dispatch(inviteMessages);
 
   await logAudit({
     actorId: profile.id,
