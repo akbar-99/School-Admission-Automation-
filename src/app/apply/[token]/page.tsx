@@ -524,8 +524,6 @@ async function Content({
                 </p>
               )}
 
-              <BookingDone />
-
               {slot.confirmed_at ? (
                 <Alert variant="success">✓ You&apos;ve confirmed you&apos;ll attend.</Alert>
               ) : (
@@ -555,6 +553,8 @@ async function Content({
                   </form>
                 </details>
               )}
+
+              <BookingDone />
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">Slot details unavailable.</p>
