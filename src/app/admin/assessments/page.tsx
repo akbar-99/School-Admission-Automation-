@@ -525,8 +525,8 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
                   <TH>Self-claimed</TH>
                   <TH>Upcoming</TH>
                   <TH>Attended</TH>
-                  <TH>Pass</TH>
-                  <TH>Fail</TH>
+                  <TH>Eligible</TH>
+                  <TH>Not Eligible</TH>
                 </TR>
               </THead>
               <TBody>

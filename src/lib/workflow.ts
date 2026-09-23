@@ -12,7 +12,7 @@ import { sendErpAdmission, syncClassToErp } from "@/lib/erp";
 import { appendEnrollmentRow, removeEnrollmentRow, sanitizeTabName } from "@/lib/google-sheets";
 import { needsAssessment } from "@/lib/assessment";
 import { fetchSchoolLogo } from "@/lib/school-logo";
-import type { Application, Parent, Student, SubjectResult } from "@/lib/types";
+import { outcomeLabel, type Application, type Parent, type Student, type SubjectResult } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Recipients
@@ -881,7 +881,7 @@ export async function handleAssessmentResult(
       : `\nYou can also view the full results online here:\n${portal}`;
   const parentBody =
     `Hello ${parent.full_name},\n\n` +
-    `Your child's assessment result is: ${outcome}.\n` +
+    `Your child's assessment result is: ${outcomeLabel(outcome)}.\n` +
     (subjectLines ? `\nSubject scores:\n${subjectLines}\n` : "") +
     (remarks ? `\nRemarks: ${remarks}\n` : "") +
     (pdfAttached
@@ -906,7 +906,7 @@ export async function handleAssessmentResult(
       applicationId: app.id,
       event: "N-5",
       subject: "Assessment result recorded",
-      body: `Result for Grade ${app.grade_applying} applicant: ${outcome}.`,
+      body: `Result for Grade ${app.grade_applying} applicant: ${outcomeLabel(outcome)}.`,
     }),
   ]);
 

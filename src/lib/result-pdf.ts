@@ -161,7 +161,7 @@ export async function generateResultPdf(input: ResultPdfInput): Promise<Buffer> 
   // ---- Overall result pill ----
   const pass = input.outcome.toUpperCase() === "PASS";
   const pillColor = pass ? GREEN : RED;
-  const pillText = `RESULT:  ${input.outcome.toUpperCase()}`;
+  const pillText = `RESULT:  ${pass ? "ELIGIBLE" : "NOT ELIGIBLE"}`;
   const pillW = bold.widthOfTextAtSize(pillText, 12) + 28;
   page.drawRectangle({ x: M, y: y - 26, width: pillW, height: 26, color: pillColor });
   text(page, pillText, M + 14, y - 18, 12, bold, rgb(1, 1, 1));

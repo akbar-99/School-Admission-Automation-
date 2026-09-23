@@ -345,8 +345,8 @@ async function TeacherBody() {
                   <div className="space-y-1.5">
                     <Label>Overall result</Label>
                     <Select name="outcome" defaultValue="PASS">
-                      <option value="PASS">Pass</option>
-                      <option value="FAIL">Fail</option>
+                      <option value="PASS">Eligible</option>
+                      <option value="FAIL">Not Eligible</option>
                     </Select>
                   </div>
                   <div className="space-y-1.5">

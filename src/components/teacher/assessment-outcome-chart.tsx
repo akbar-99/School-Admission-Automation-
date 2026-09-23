@@ -5,8 +5,8 @@
 export function AssessmentOutcomeChart({ pass, fail }: { pass: number; fail: number }) {
   const total = pass + fail;
   const segments = [
-    { key: "pass", label: "Pass", count: pass, color: "#2f8f6b" },
-    { key: "fail", label: "Fail", count: fail, color: "#c0392b" },
+    { key: "pass", label: "Eligible", count: pass, color: "#2f8f6b" },
+    { key: "fail", label: "Not Eligible", count: fail, color: "#c0392b" },
   ];
   const legend = segments.map((s) => ({
     ...s,
@@ -64,7 +64,7 @@ export function AssessmentOutcomeChart({ pass, fail }: { pass: number; fail: num
             width={170}
             height={170}
             role="img"
-            aria-label="Pass/fail breakdown"
+            aria-label="Eligible / not eligible breakdown"
           >
             <circle cx={cx} cy={cy} r={R} fill="none" strokeWidth={stroke} style={{ stroke: "var(--muted)" }} />
             <g transform={`rotate(-90 ${cx} ${cy})`}>{arcs}</g>

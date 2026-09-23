@@ -6,7 +6,7 @@ import { formatDate, formatInZone } from "@/lib/utils";
 import { AssessmentOutcomeChart } from "@/components/teacher/assessment-outcome-chart";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import type { SubjectResult } from "@/lib/types";
+import { outcomeLabel, type SubjectResult } from "@/lib/types";
 
 interface ResultRow {
   id: string;
@@ -84,7 +84,7 @@ async function HistoryBody() {
     <>
       <Card>
         <CardHeader>
-          <CardTitle>Your pass/fail record</CardTitle>
+          <CardTitle>Your eligibility record</CardTitle>
         </CardHeader>
         <CardContent>
           <AssessmentOutcomeChart pass={passCount} fail={failCount} />
@@ -143,7 +143,7 @@ async function HistoryBody() {
                       )}
                     </div>
                   </div>
-                  <Badge tone={r.outcome === "PASS" ? "success" : "danger"}>{r.outcome}</Badge>
+                  <Badge tone={r.outcome === "PASS" ? "success" : "danger"}>{outcomeLabel(r.outcome)}</Badge>
                 </div>
 
                 {r.subjects && r.subjects.length > 0 && (

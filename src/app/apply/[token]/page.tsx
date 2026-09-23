@@ -29,7 +29,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { buttonVariants } from "@/components/ui/button";
-import type { AppStatus, SubjectResult } from "@/lib/types";
+import { outcomeLabel, type AppStatus, type SubjectResult } from "@/lib/types";
 
 export default async function ApplyPage({
   params,
@@ -639,7 +639,7 @@ async function Content({
           <div className="flex items-center gap-2 text-sm">
             <span className="text-muted-foreground">Overall result:</span>
             <Badge tone={assessmentResult.outcome === "PASS" ? "success" : "danger"}>
-              {assessmentResult.outcome}
+              {outcomeLabel(assessmentResult.outcome)}
             </Badge>
           </div>
           {assessmentResult.remarks && (

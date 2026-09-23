@@ -26,6 +26,14 @@ export type AppStatus =
 export type Category = "KG" | "GRADE";
 export type Gender = "male" | "female" | "other";
 export type AssessmentOutcome = "PASS" | "FAIL";
+// Display label only — the stored/compared value stays PASS/FAIL everywhere
+// (DB column, RPC checks, template params) to avoid a migration; this is
+// purely what staff and parents see. Takes a plain string (not
+// AssessmentOutcome) since several call sites read `outcome` off a loosely
+// typed DB row shape rather than the narrowed union.
+export function outcomeLabel(outcome: string): string {
+  return outcome === "PASS" ? "Eligible" : "Not Eligible";
+}
 export type PaymentState =
   | "created"
   | "pending"

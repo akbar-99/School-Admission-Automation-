@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Alert } from "@/components/ui/alert";
 import { deleteApplication, rotateAccessToken } from "../../actions";
 import { needsAssessment } from "@/lib/assessment";
-import { leadSourceLabel, type Application, type Student, type Parent, type Payment, type SubjectResult } from "@/lib/types";
+import { leadSourceLabel, outcomeLabel, type Application, type Student, type Parent, type Payment, type SubjectResult, type AssessmentOutcome } from "@/lib/types";
 
 const DOC_LABEL: Record<string, string> = {
   passport: "Passport/Aadhaar",
@@ -202,7 +202,10 @@ export default async function ApplicationDetailPage({
             value={slot ? `${formatInZone(slot.starts_at, schoolTz)} ${schoolLabel}` : "Not scheduled"}
           />
           <Field label="Assigned teacher" value={slot?.users?.full_name ?? "—"} />
-          <Field label="Result" value={result ? result.outcome : "Pending"} />
+          <Field
+            label="Result"
+            value={result ? outcomeLabel(result.outcome as AssessmentOutcome) : "Pending"}
+          />
           {result?.remarks && <Field label="Remarks" value={result.remarks} wide />}
           {subjectRows.length > 0 && (
             <div className="space-y-2 sm:col-span-2 lg:col-span-3">
