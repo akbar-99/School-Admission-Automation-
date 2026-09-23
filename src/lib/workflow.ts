@@ -28,6 +28,27 @@ async function staffContacts(
   return (data ?? []).map((u) => ({ email: u.email, phone: u.phone }));
 }
 
+// Every lead is created by a marketing staff member (applications.created_by)
+// — parent-facing messages point back to that specific person rather than a
+// generic school line, since they're who actually knows this lead's
+// context. Falls back to the general school contact if the lead has no
+// recorded creator, or that staff member has no phone on file.
+async function leadCreatorContact(app: Application): Promise<{ name: string; phone: string }> {
+  const admin = createSupabaseAdminClient();
+  if (app.created_by) {
+    const { data: creator } = await admin
+      .from("users")
+      .select("full_name, phone")
+      .eq("id", app.created_by)
+      .maybeSingle();
+    if (creator?.phone) {
+      return { name: creator.full_name, phone: creator.phone };
+    }
+  }
+  const { schoolName, schoolPhone } = await getSettings();
+  return { name: `the ${schoolName} team`, phone: schoolPhone };
+}
+
 // Every staff-facing WhatsApp send reuses the one generic approved template
 // (staff_alert_v4): {{1}} a short reference, {{2}} the detail — the
 // subject/body pair every call site already provides fits this directly, so
@@ -73,13 +94,19 @@ function fanToStaff(
 export async function notifyLeadCreated(app: Application, parent: Parent) {
   const link = applyUrl(app.access_token);
   const expiry = new Date(app.token_expires_at).toDateString();
+  const contact = await leadCreatorContact(app);
   await dispatch(
     multiChannel(
       {
         applicationId: app.id,
         event: "N-1",
         subject: "Complete your school admission",
-        body: `Hello ${parent.full_name},\n\nPlease complete the admission form using your secure link:\n${link}\n\nThis link expires on ${expiry}.`,
+        body:
+          `Hello ${parent.full_name},\n\nPlease complete the admission form using your secure link:\n${link}\n\n` +
+          `This link expires on ${expiry}.\n\nQuestions? Contact ${contact.name} at ${contact.phone}.`,
+        // WhatsApp still uses the old template/params here — swapped to a
+        // version carrying the creator's contact once that new template is
+        // approved (submitted separately, see the WhatsApp template list).
         whatsappTemplate: { name: "admission_link_v2", params: [parent.full_name, link, expiry] },
       },
       parent,
@@ -120,13 +147,17 @@ export async function sendAgreement(app: Application, parent: Parent) {
     studyMaterialFeePaise > 0
       ? `\nStudy material (optional, can also be paid later): ${formatINR(studyMaterialFeePaise)}`
       : "";
+  const contact = await leadCreatorContact(app);
   await dispatch(
     multiChannel(
       {
         applicationId: app.id,
         event: "N-6",
         subject: "Admission agreement & payment",
-        body: `Hello ${parent.full_name},\n\nCongratulations! Your admission agreement is ready.\nReview the agreement and complete your payment here:\n${portal}\n\nAdmission fee: ${formatINR(feePaise)}${studyMaterialLine}\n\n(You can read the full agreement on that page before paying.)`,
+        body:
+          `Hello ${parent.full_name},\n\nCongratulations! Your admission agreement is ready.\nReview the agreement and complete your payment here:\n${portal}\n\n` +
+          `Admission fee: ${formatINR(feePaise)}${studyMaterialLine}\n\n(You can read the full agreement on that page before paying.)\n\n` +
+          `Questions? Contact ${contact.name} at ${contact.phone}.`,
         whatsappTemplate: {
           name: "agreement_ready",
           params: [parent.full_name, app.grade_applying ?? app.category ?? "your child", formatINR(feePaise), portal],
@@ -387,6 +418,7 @@ export async function notifyAssessmentReminder(slot: {
   const joinLine = slot.zoom_join_url
     ? `\n\nJoin here:\n${slot.zoom_join_url}${slot.zoom_passcode ? `\nPasscode: ${slot.zoom_passcode}` : ""}`
     : "";
+  const contact = await leadCreatorContact(app);
 
   const messages: OutboundMessage[] = [
     ...multiChannel(
@@ -394,16 +426,20 @@ export async function notifyAssessmentReminder(slot: {
         applicationId: app.id,
         event: "ASSESSMENT_REMINDER",
         subject: "Your assessment starts in 10 minutes",
-        body: `Hello ${parent.full_name},\n\nYour assessment starts in 10 minutes, at ${when}.${joinLine}`,
+        body:
+          `Hello ${parent.full_name},\n\nYour assessment starts in 10 minutes, at ${when}.${joinLine}\n\n` +
+          `Questions? Contact ${contact.name} at ${contact.phone}.`,
         // v1 put the raw Zoom link straight in the template and only
         // attached it when zoom_join_url existed — real slots without Zoom
         // set up (confirmed happens) silently fell back to unreliable
         // freeform text. v2 points to the portal link instead (which the
         // ZoomLinkGate there already resolves once Zoom is ready), so it
-        // works unconditionally regardless of Zoom's state.
+        // works unconditionally regardless of Zoom's state. v3 (this one)
+        // adds the lead creator's contact — v2 was still Pending review, so
+        // redesigning it once more here costs nothing extra.
         whatsappTemplate: {
-          name: "assessment_starting_soon_v2",
-          params: [parent.full_name, "10 minutes", when, applyUrl(app.access_token)],
+          name: "assessment_starting_soon_v3",
+          params: [parent.full_name, "10 minutes", when, applyUrl(app.access_token), contact.name, contact.phone],
         },
       },
       parent,
@@ -474,6 +510,7 @@ export async function notifyAssessmentReminder2h(
   const confirmUrl = `${config.appUrl}/api/assessment/confirm/${app.access_token}`;
   const rescheduleUrl = applyUrl(app.access_token);
   const lead = formatLeadTime(leadMinutes);
+  const contact = await leadCreatorContact(app);
 
   await dispatch(
     multiChannel(
@@ -484,7 +521,10 @@ export async function notifyAssessmentReminder2h(
         body:
           `Hello ${parent.full_name},\n\nYour assessment is coming up in ${lead}, at ${when}.\n\n` +
           `Please confirm you'll attend:\n${confirmUrl}\n\n` +
-          `Need to reschedule instead? Visit your portal and release your slot to pick a new time:\n${rescheduleUrl}`,
+          `Need to reschedule instead? Visit your portal and release your slot to pick a new time:\n${rescheduleUrl}\n\n` +
+          `Questions? Contact ${contact.name} at ${contact.phone}.`,
+        // WhatsApp still uses the old template/params — swapped once the
+        // contact-carrying version is approved (submitted separately).
         whatsappTemplate: {
           name: "assessment_reminder",
           params: [parent.full_name, lead, when, confirmUrl, rescheduleUrl],
@@ -871,6 +911,7 @@ export async function handleAssessmentResult(
 
   const hasFiles = subjects.some((s) => s.file);
   const portal = applyUrl(app.access_token);
+  const contact = await leadCreatorContact(app);
   // On a PASS, fold the "complete your details" call-to-action (previously a
   // separate N-2b send right after this one) into the same message — the two
   // always fired back-to-back with no parent action in between, so sending
@@ -887,7 +928,8 @@ export async function handleAssessmentResult(
     (pdfAttached
       ? `\nYour detailed assessment report (PDF)${hasFiles ? " and the subject sheets are" : " is"} attached.`
       : "") +
-    nextStepLine;
+    nextStepLine +
+    `\n\nQuestions? Contact ${contact.name} at ${contact.phone}.`;
 
   // N-5 result to parent (with per-subject scores + attached files) + admin
   await dispatch([
@@ -929,7 +971,7 @@ export async function handleAssessmentResult(
           applicationId: app.id,
           event: "N-10",
           subject: "Admission update",
-          body: `Hello ${parent.full_name},\n\nThank you for your interest. Unfortunately we are unable to offer admission at this time. We wish your child the very best.`,
+          body: `Hello ${parent.full_name},\n\nThank you for your interest. Unfortunately we are unable to offer admission at this time. We wish your child the very best.\n\nQuestions? Contact ${contact.name} at ${contact.phone}.`,
         },
         parent,
       ),
@@ -1450,12 +1492,14 @@ export async function handlePaymentCompleted(
   const admissionAmount = payRow?.admission_amount ?? 0;
   const studyMaterialAmount = payRow?.includes_study_material ? payRow.study_material_amount ?? 0 : 0;
   const totalPaid = admissionAmount + studyMaterialAmount;
+  const contact = await leadCreatorContact(app);
   const receiptBody =
     `Hello ${parent.full_name},\n\n` +
     `We have received your payment of ${formatINR(totalPaid)}:\n` +
     `- Admission fee: ${formatINR(admissionAmount)}\n` +
     (studyMaterialAmount > 0 ? `- Study material: ${formatINR(studyMaterialAmount)}\n` : "") +
-    `\nA receipt is available in your portal: ${applyUrl(app.access_token)}`;
+    `\nA receipt is available in your portal: ${applyUrl(app.access_token)}\n\n` +
+    `Questions? Contact ${contact.name} at ${contact.phone}.`;
 
   const receiptUrl = `${config.appUrl}/api/receipt/${app.access_token}`;
   const receiptMessages = sendReceipt
@@ -1488,7 +1532,10 @@ export async function handlePaymentCompleted(
         applicationId: app.id,
         event: "N-8",
         subject: "Welcome — admission confirmed",
-        body: `Hello ${parent.full_name},\n\nWelcome! Admission is confirmed.\nAdmission number: ${res.admission_number}\nClass & section: ${res.section}\n\nOnboarding details (study material list, academic calendar and contacts) are available in your portal: ${applyUrl(app.access_token)}`,
+        body:
+          `Hello ${parent.full_name},\n\nWelcome! Admission is confirmed.\nAdmission number: ${res.admission_number}\nClass & section: ${res.section}\n\n` +
+          `Onboarding details (study material list, academic calendar and contacts) are available in your portal: ${applyUrl(app.access_token)}\n\n` +
+          `Questions? Contact ${contact.name} at ${contact.phone}.`,
         whatsappTemplate: {
           name: "admission_confirmed",
           params: [parent.full_name, res.admission_number ?? "—", res.section ?? "—", applyUrl(app.access_token)],
@@ -1531,6 +1578,7 @@ export async function handleStudyMaterialPaymentCompleted(applicationId: string)
     .limit(1)
     .maybeSingle();
   const amount = (payRow?.study_material_amount as number | undefined) ?? 0;
+  const contact = await leadCreatorContact(app);
 
   await dispatch([
     ...multiChannel(
@@ -1538,7 +1586,9 @@ export async function handleStudyMaterialPaymentCompleted(applicationId: string)
         applicationId: app.id,
         event: "N-11",
         subject: "Study material payment received",
-        body: `Hello ${parent.full_name},\n\nWe have received your study material payment of ${formatINR(amount)}. A receipt is available in your portal: ${applyUrl(app.access_token)}`,
+        body:
+          `Hello ${parent.full_name},\n\nWe have received your study material payment of ${formatINR(amount)}. A receipt is available in your portal: ${applyUrl(app.access_token)}\n\n` +
+          `Questions? Contact ${contact.name} at ${contact.phone}.`,
       },
       parent,
     ),
