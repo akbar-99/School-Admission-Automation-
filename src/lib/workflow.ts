@@ -49,6 +49,27 @@ async function leadCreatorContact(app: Application): Promise<{ name: string; pho
   return { name: `the ${schoolName} team`, phone: schoolPhone };
 }
 
+// Student name, for staff messages — a teacher/admin juggling several
+// applicants can't identify which one a generic "Grade G4 applicant" message
+// is about. Before Stage 2, the students row doesn't exist yet, so
+// lead_student_name (captured at Stage 1) is the fallback; once it does,
+// that's authoritative (a parent can edit the name after Stage 1).
+async function studentLabel(app: Application): Promise<string> {
+  if (app.student_id) {
+    const admin = createSupabaseAdminClient();
+    const { data } = await admin.from("students").select("full_name").eq("id", app.student_id).maybeSingle();
+    if (data?.full_name) return data.full_name;
+  }
+  return app.lead_student_name ?? "the student";
+}
+
+// Prefixed onto every staff-facing (admin/teacher) body below that has a
+// specific application in scope, so a WhatsApp message alone is enough to
+// identify who it's about — never just "Grade G4 applicant".
+function staffContextLine(studentName: string, parentName: string): string {
+  return `Student: ${studentName} | Parent: ${parentName}. `;
+}
+
 // Every staff-facing WhatsApp send reuses the one generic approved template
 // (staff_alert_v4): {{1}} a short reference, {{2}} the detail — the
 // subject/body pair every call site already provides fits this directly, so
@@ -229,6 +250,8 @@ export async function handleFormSubmitted(appId: string) {
     ),
   );
 
+  const context = staffContextLine(await studentLabel(app), parent.full_name);
+
   if (!needsAssessment(app.grade_applying ?? "")) {
     // KG 1: never has an assessment, so the remaining-details form unlocks
     // immediately rather than waiting on anything.
@@ -237,7 +260,7 @@ export async function handleFormSubmitted(appId: string) {
         applicationId: app.id,
         event: "N-2",
         subject: "New KG application",
-        body: `A new KG application was submitted for review.`,
+        body: `${context}A new KG application was submitted for review.`,
       }),
     );
     await admin
@@ -254,7 +277,7 @@ export async function handleFormSubmitted(appId: string) {
         applicationId: app.id,
         event: "N-2",
         subject: "New Grade applicant — schedule assessment",
-        body: `A new Grade applicant (${app.grade_applying}) requires an assessment. Please create and assign a slot.`,
+        body: `${context}A new Grade applicant (${app.grade_applying}) requires an assessment. Please create and assign a slot.`,
       }),
     );
     await dispatch(messages);
@@ -288,6 +311,8 @@ export async function handleSlotBooked(
     ? `\n\nStart the meeting as host (do not share this link):\n${meeting.startUrl}`
     : "";
 
+  const context = staffContextLine(await studentLabel(app), parent.full_name);
+
   const messages: OutboundMessage[] = [
     ...multiChannel(
       {
@@ -302,7 +327,7 @@ export async function handleSlotBooked(
       applicationId: app.id,
       event: "N-4",
       subject: "Assessment slot booked",
-      body: `An assessment slot was booked for ${when} (Grade ${app.grade_applying}).`,
+      body: `${context}An assessment slot was booked for ${when} (Grade ${app.grade_applying}).`,
     }),
   ];
 
@@ -321,7 +346,7 @@ export async function handleSlotBooked(
             applicationId: app.id,
             event: "N-4",
             subject: "Assessment booked for your slot",
-            body: `A parent booked your assessment slot on ${when} (Grade ${app.grade_applying}).${hostLine}`,
+            body: `${context}A parent booked your assessment slot on ${when} (Grade ${app.grade_applying}).${hostLine}`,
           },
         ),
       );
@@ -356,6 +381,7 @@ export async function backfillZoomLink(appId: string): Promise<boolean> {
   const { data: parentRow } = await admin.from("parents").select("*").eq("id", app.parent_id).single();
   const parent = parentRow as Parent;
   const when = `${formatInZone(slot.starts_at, config.school.timezone)} ${config.school.timezoneLabel}`;
+  const context = staffContextLine(await studentLabel(app), parent.full_name);
 
   const messages: OutboundMessage[] = [
     ...multiChannel(
@@ -384,7 +410,7 @@ export async function backfillZoomLink(appId: string): Promise<boolean> {
             applicationId: app.id,
             event: "ZOOM_LINK_READY",
             subject: "Zoom link ready for your assessment",
-            body: `The Zoom meeting for your assessment on ${when} (Grade ${app.grade_applying}) is ready.\n\nStart as host:\n${meeting.startUrl}`,
+            body: `${context}The Zoom meeting for your assessment on ${when} (Grade ${app.grade_applying}) is ready.\n\nStart as host:\n${meeting.startUrl}`,
           },
         ),
       );
@@ -426,6 +452,7 @@ export async function notifyAssessmentReminder(slot: {
     ? `\n\nJoin here:\n${slot.zoom_join_url}${slot.zoom_passcode ? `\nPasscode: ${slot.zoom_passcode}` : ""}`
     : "";
   const contact = await leadCreatorContact(app);
+  const context = staffContextLine(await studentLabel(app), parent.full_name);
 
   const messages: OutboundMessage[] = [
     ...multiChannel(
@@ -468,7 +495,7 @@ export async function notifyAssessmentReminder(slot: {
             applicationId: app.id,
             event: "ASSESSMENT_REMINDER",
             subject: "Your assessment starts in 10 minutes",
-            body: `Hello,\n\nYour assessment${app.grade_applying ? ` with a Grade ${app.grade_applying} applicant` : ""} starts in 10 minutes, at ${when}.${hostLine}`,
+            body: `${context}Your assessment${app.grade_applying ? ` with a Grade ${app.grade_applying} applicant` : ""} starts in 10 minutes, at ${when}.${hostLine}`,
           },
         ),
       );
@@ -579,13 +606,14 @@ async function notifyAssessmentConfirmed(
 
   const when = `${formatInZone(slot.starts_at, config.school.timezone)} ${config.school.timezoneLabel}`;
   const who = parent?.full_name ?? "The parent";
+  const context = staffContextLine(await studentLabel(app), who);
 
   const messages: OutboundMessage[] = [
     ...fanToStaff(await staffContacts(["admin"]), {
       applicationId: app.id,
       event: "ASSESSMENT_CONFIRMED",
       subject: "Parent confirmed attendance",
-      body: `${who} confirmed they'll attend the ${when} assessment (Grade ${app.grade_applying ?? "—"}).`,
+      body: `${context}${who} confirmed they'll attend the ${when} assessment (Grade ${app.grade_applying ?? "—"}).`,
     }),
   ];
 
@@ -599,7 +627,7 @@ async function notifyAssessmentConfirmed(
             applicationId: app.id,
             event: "ASSESSMENT_CONFIRMED",
             subject: "Parent confirmed attendance",
-            body: `${who} confirmed they'll attend your ${when} assessment.`,
+            body: `${context}${who} confirmed they'll attend your ${when} assessment.`,
           },
         ),
       );
@@ -624,12 +652,14 @@ export async function notifySlotReleased(
   const parent = parentRow as Parent | null;
 
   const when = `${formatInZone(slotInfo.starts_at, config.school.timezone)} ${config.school.timezoneLabel}`;
+  const who = parent?.full_name ?? "A parent";
+  const context = staffContextLine(await studentLabel(app), who);
   const messages: OutboundMessage[] = [
     ...fanToStaff(await staffContacts(["admin"]), {
       applicationId: app.id,
       event: "ASSESSMENT_RESCHEDULED",
       subject: "Assessment rescheduled by parent",
-      body: `${parent?.full_name ?? "A parent"} released their ${when} slot to pick a new time (Grade ${app.grade_applying ?? "—"}).`,
+      body: `${context}${who} released their ${when} slot to pick a new time (Grade ${app.grade_applying ?? "—"}).`,
     }),
   ];
   if (slotInfo.teacher_id) {
@@ -642,7 +672,7 @@ export async function notifySlotReleased(
             applicationId: app.id,
             event: "ASSESSMENT_RESCHEDULED",
             subject: "A booked slot was released",
-            body: `Your ${when} assessment slot was released by the parent and is open again.`,
+            body: `${context}Your ${when} assessment slot was released by the parent and is open again.`,
           },
         ),
       );
@@ -762,6 +792,19 @@ export async function notifySlotReassigned(input: {
   const admin = createSupabaseAdminClient();
   const when = `${formatInZone(input.slotStartsAt, config.school.timezone)} ${config.school.timezoneLabel}`;
 
+  // Fetched up front (not just inside the applicationId branch below) so the
+  // outgoing/incoming teacher messages can name the student too, not just
+  // the eventual parent confirmation.
+  let app: Application | null = null;
+  let parent: Parent | null = null;
+  if (input.applicationId) {
+    const { data: appRow } = await admin.from("applications").select("*").eq("id", input.applicationId).single();
+    app = appRow as Application;
+    const { data: parentRow } = await admin.from("parents").select("*").eq("id", app.parent_id).single();
+    parent = parentRow as Parent;
+  }
+  const context = app && parent ? staffContextLine(await studentLabel(app), parent.full_name) : "";
+
   const messages: OutboundMessage[] = [];
 
   if (input.oldTeacherId) {
@@ -777,7 +820,7 @@ export async function notifySlotReassigned(input: {
           {
             event: "SLOT_REASSIGNED",
             subject: "Assessment reassigned away from you",
-            body: `Your assessment on ${when} has been reassigned to another teacher. It's been removed from your dashboard.`,
+            body: `${context}Your assessment on ${when} has been reassigned to another teacher. It's been removed from your dashboard.`,
           },
         ),
       );
@@ -796,28 +839,16 @@ export async function notifySlotReassigned(input: {
         {
           event: "SLOT_REASSIGNED",
           subject: "Assessment reassigned to you",
-          body: `An assessment on ${when} has been reassigned to you. Check your dashboard for details.`,
+          body: `${context}An assessment on ${when} has been reassigned to you. Check your dashboard for details.`,
         },
       ),
     );
   }
 
-  if (input.applicationId) {
+  if (app && parent) {
     // Regenerate the Zoom meeting under the new teacher before notifying the
     // parent, so the confirmation carries a working link.
-    const meeting = await ensureZoomForApplication(input.applicationId);
-    const { data: appRow } = await admin
-      .from("applications")
-      .select("*")
-      .eq("id", input.applicationId)
-      .single();
-    const app = appRow as Application;
-    const { data: parentRow } = await admin
-      .from("parents")
-      .select("*")
-      .eq("id", app.parent_id)
-      .single();
-    const parent = parentRow as Parent;
+    const meeting = await ensureZoomForApplication(input.applicationId!);
     const joinLine = meeting
       ? `\n\nJoin the online assessment here at your slot time:\n${meeting.joinUrl}${
           meeting.passcode ? `\nPasscode: ${meeting.passcode}` : ""
@@ -957,7 +988,7 @@ export async function handleAssessmentResult(
       applicationId: app.id,
       event: "N-5",
       subject: "Assessment result recorded",
-      body: `Result for Grade ${app.grade_applying} applicant: ${outcomeLabel(outcome)}.`,
+      body: `${staffContextLine(await studentLabel(app), parent.full_name)}Result for Grade ${app.grade_applying} applicant: ${outcomeLabel(outcome)}.`,
     }),
   ]);
 
@@ -1470,7 +1501,7 @@ export async function handlePaymentCompleted(
           applicationId: app.id,
           event: "N-9",
           subject: "Action needed: all sections full",
-          body: `All sections for ${app.grade_applying ?? app.category} are full. Manual seat allocation required for admission.`,
+          body: `${staffContextLine(await studentLabel(app), parent.full_name)}All sections for ${app.grade_applying ?? app.category} are full. Manual seat allocation required for admission.`,
         }),
       );
       await logAudit({ action: "enrollment.needs_admin", entity: "application", entityId: app.id, details: res });
@@ -1502,6 +1533,7 @@ export async function handlePaymentCompleted(
   const studyMaterialAmount = payRow?.includes_study_material ? payRow.study_material_amount ?? 0 : 0;
   const totalPaid = admissionAmount + studyMaterialAmount;
   const contact = await leadCreatorContact(app);
+  const context = staffContextLine(await studentLabel(app), parent.full_name);
   const receiptBody =
     `Hello ${parent.full_name},\n\n` +
     `We have received your payment of ${formatINR(totalPaid)}:\n` +
@@ -1530,7 +1562,7 @@ export async function handlePaymentCompleted(
           applicationId: app.id,
           event: "N-7",
           subject: "Payment received",
-          body: `Admission fee received for application ${app.id}.`,
+          body: `${context}Admission fee received for application ${app.id}.`,
         }),
       ]
     : [];
@@ -1563,7 +1595,7 @@ export async function handlePaymentCompleted(
       applicationId: app.id,
       event: "N-8",
       subject: "New student assigned",
-      body: `A new student has been enrolled and assigned to ${res.section} (admission no. ${res.admission_number}).`,
+      body: `${context}A new student has been enrolled and assigned to ${res.section} (admission no. ${res.admission_number}).`,
     }),
   ]);
 
@@ -1612,7 +1644,7 @@ export async function handleStudyMaterialPaymentCompleted(applicationId: string)
       applicationId: app.id,
       event: "N-11",
       subject: "Study material payment received",
-      body: `Study material fee (${formatINR(amount)}) received for admission no. ${app.admission_number ?? app.id}.`,
+      body: `${staffContextLine(await studentLabel(app), parent.full_name)}Study material fee (${formatINR(amount)}) received for admission no. ${app.admission_number ?? app.id}.`,
     }),
   ]);
 }
