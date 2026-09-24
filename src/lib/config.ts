@@ -160,7 +160,7 @@ export const GRADE_OPTIONS = [
 ] as const;
 
 // Curriculum options offered on the admission form (editable).
-export const CURRICULUM_OPTIONS = ["IGCSE - Cambridge", "CBSE"] as const;
+export const CURRICULUM_OPTIONS = ["Cambridge", "CBSE"] as const;
 
 // Subjects scored during a Grade assessment. The teacher records a score,
 // a comment and an optional file (PDF / Excel) per subject.
