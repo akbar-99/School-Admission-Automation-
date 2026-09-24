@@ -104,10 +104,10 @@ export async function notifyLeadCreated(app: Application, parent: Parent) {
         body:
           `Hello ${parent.full_name},\n\nPlease complete the admission form using your secure link:\n${link}\n\n` +
           `This link expires on ${expiry}.\n\nQuestions? Contact ${contact.name} at ${contact.phone}.`,
-        // WhatsApp still uses the old template/params here — swapped to a
-        // version carrying the creator's contact once that new template is
-        // approved (submitted separately, see the WhatsApp template list).
-        whatsappTemplate: { name: "admission_link_v2", params: [parent.full_name, link, expiry] },
+        whatsappTemplate: {
+          name: "admission_link_v3",
+          params: [parent.full_name, link, expiry, contact.name, contact.phone],
+        },
       },
       parent,
     ),
@@ -159,8 +159,15 @@ export async function sendAgreement(app: Application, parent: Parent) {
           `Admission fee: ${formatINR(feePaise)}${studyMaterialLine}\n\n(You can read the full agreement on that page before paying.)\n\n` +
           `Questions? Contact ${contact.name} at ${contact.phone}.`,
         whatsappTemplate: {
-          name: "agreement_ready",
-          params: [parent.full_name, app.grade_applying ?? app.category ?? "your child", formatINR(feePaise), portal],
+          name: "agreement_ready_v2",
+          params: [
+            parent.full_name,
+            app.grade_applying ?? app.category ?? "your child",
+            formatINR(feePaise),
+            portal,
+            contact.name,
+            contact.phone,
+          ],
         },
       },
       parent,
@@ -524,10 +531,9 @@ export async function notifyAssessmentReminder2h(
           `Need to reschedule instead? Visit your portal and release your slot to pick a new time:\n${rescheduleUrl}\n\n` +
           `Questions? Contact ${contact.name} at ${contact.phone}.`,
         // WhatsApp still uses the old template/params — swapped once the
-        // contact-carrying version is approved (submitted separately).
         whatsappTemplate: {
-          name: "assessment_reminder",
-          params: [parent.full_name, lead, when, confirmUrl, rescheduleUrl],
+          name: "assessment_reminder_v2",
+          params: [parent.full_name, lead, when, confirmUrl, rescheduleUrl, contact.name, contact.phone],
         },
       },
       parent,
@@ -940,7 +946,10 @@ export async function handleAssessmentResult(
         subject: "Assessment result",
         body: parentBody,
         attachments,
-        whatsappTemplate: { name: "assessment_result", params: [parent.full_name, portal] },
+        whatsappTemplate: {
+          name: "assessment_result_v2",
+          params: [parent.full_name, portal, contact.name, contact.phone],
+        },
       },
       parent,
     ),
@@ -1511,8 +1520,8 @@ export async function handlePaymentCompleted(
             subject: "Payment received",
             body: receiptBody,
             whatsappTemplate: {
-              name: "payment_received",
-              params: [parent.full_name, formatINR(totalPaid), receiptUrl],
+              name: "payment_received_v2",
+              params: [parent.full_name, formatINR(totalPaid), receiptUrl, contact.name, contact.phone],
             },
           },
           parent,
@@ -1537,8 +1546,15 @@ export async function handlePaymentCompleted(
           `Onboarding details (study material list, academic calendar and contacts) are available in your portal: ${applyUrl(app.access_token)}\n\n` +
           `Questions? Contact ${contact.name} at ${contact.phone}.`,
         whatsappTemplate: {
-          name: "admission_confirmed",
-          params: [parent.full_name, res.admission_number ?? "—", res.section ?? "—", applyUrl(app.access_token)],
+          name: "admission_confirmed_v2",
+          params: [
+            parent.full_name,
+            res.admission_number ?? "—",
+            res.section ?? "—",
+            applyUrl(app.access_token),
+            contact.name,
+            contact.phone,
+          ],
         },
       },
       parent,
