@@ -76,7 +76,7 @@ export function sanitizeTabName(name: string): string {
 
 const HEADERS = [
   "Admission No.",
-  "Student Name",
+  "Student's Name",
   "DOB",
   "Gender",
   "Grade",
