@@ -1059,8 +1059,8 @@ export async function handleAssessmentResult(
       .update({ status: "REJECTED" })
       .eq("id", app.id)
       .eq("status", "ASSESSMENT_COMPLETED");
-    await dispatch(
-      multiChannel(
+    await dispatch([
+      ...multiChannel(
         {
           applicationId: app.id,
           event: "N-10",
@@ -1069,7 +1069,13 @@ export async function handleAssessmentResult(
         },
         parent,
       ),
-    );
+      ...(await notifyLeadCreator(app, {
+        applicationId: app.id,
+        event: "N-10",
+        subject: "Your lead was not eligible",
+        body: `${resultContext}Not Eligible. The application is closed and the parent has been sent a courteous decline.`,
+      })),
+    ]);
   }
 }
 
