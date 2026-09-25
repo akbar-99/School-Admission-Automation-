@@ -24,7 +24,8 @@ async function staffContacts(
   const { data } = await admin
     .from("users")
     .select("email, phone, role")
-    .in("role", roles);
+    .in("role", roles)
+    .eq("notify_broadcasts", true);
   return (data ?? []).map((u) => ({ email: u.email, phone: u.phone }));
 }
 

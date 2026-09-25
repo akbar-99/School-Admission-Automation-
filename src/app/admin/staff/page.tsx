@@ -6,6 +6,7 @@ import {
   inviteStaff,
   setZoomEmail,
   setStaffPhone,
+  setNotifyBroadcasts,
   removeStaff,
   reactivateStaff,
   deleteStaffPermanently,
@@ -31,6 +32,7 @@ interface StaffRow {
   role: UserRole;
   zoom_email: string | null;
   disabled: boolean;
+  notify_broadcasts: boolean;
   created_at: string;
 }
 
@@ -140,7 +142,7 @@ async function StaffTable() {
   const admin = createSupabaseAdminClient();
   const { data } = await admin
     .from("users")
-    .select("id, full_name, email, phone, role, zoom_email, disabled, created_at")
+    .select("id, full_name, email, phone, role, zoom_email, disabled, notify_broadcasts, created_at")
     .order("created_at", { ascending: true });
   const staff = (data ?? []) as StaffRow[];
 
@@ -161,6 +163,7 @@ async function StaffTable() {
                   <TH>Role</TH>
                   <TH>Phone (WhatsApp)</TH>
                   <TH>Zoom account</TH>
+                  <TH>Broadcast alerts</TH>
                   <TH>Added</TH>
                   <TH className="text-right">Access</TH>
                 </TR>
@@ -221,6 +224,29 @@ async function StaffTable() {
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}
+                    </TD>
+                    <TD>
+                      <form action={setNotifyBroadcasts} className="flex items-center gap-1.5">
+                        <input type="hidden" name="user_id" value={s.id} />
+                        <label className="flex items-center gap-1.5 text-sm">
+                          <input
+                            type="checkbox"
+                            name="notify_broadcasts"
+                            defaultChecked={s.notify_broadcasts}
+                            disabled={s.disabled}
+                            className="size-4 rounded border-input accent-primary"
+                          />
+                          Get role alerts
+                        </label>
+                        <SubmitButton
+                          size="sm"
+                          variant="outline"
+                          pendingText="…"
+                          disabled={s.disabled || undefined}
+                        >
+                          Save
+                        </SubmitButton>
+                      </form>
                     </TD>
                     <TD className="whitespace-nowrap text-muted-foreground">
                       {formatDateTime(s.created_at)}

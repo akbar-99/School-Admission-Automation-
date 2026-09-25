@@ -38,6 +38,11 @@ const PhoneSchema = z.object({
   phone: z.string().trim().min(7, "Enter a valid phone number").or(z.literal("")),
 });
 
+const NotifyBroadcastsSchema = z.object({
+  user_id: z.string().uuid(),
+  notify_broadcasts: z.boolean(),
+});
+
 function back(msg: string, type: "ok" | "error" = "ok"): never {
   redirect(`/admin/staff?${type}=${encodeURIComponent(msg)}`);
 }
@@ -217,6 +222,39 @@ export async function setStaffPhone(formData: FormData) {
 
   revalidatePath("/admin/staff");
   back(phone ? "Phone number updated." : "Phone number cleared.");
+}
+
+// Admin-only: turn role-broadcast alerts (fanToStaff) on/off for one staff
+// account — for someone holding two accounts (e.g. an "admin" account kept
+// purely for elevated permissions, sharing a phone with their real
+// "marketing" account), so the admin-role broadcasts don't also land on a
+// phone that's there for marketing-specific messages. Doesn't affect
+// messages sent to them individually (like a lead-creator notification).
+export async function setNotifyBroadcasts(formData: FormData) {
+  const { profile } = await requireRole(["admin"]);
+
+  const parsed = NotifyBroadcastsSchema.safeParse({
+    user_id: formData.get("user_id"),
+    notify_broadcasts: formData.get("notify_broadcasts") === "on",
+  });
+  if (!parsed.success) back("Invalid request.", "error");
+  const { user_id, notify_broadcasts } = parsed.data!;
+
+  const admin = createSupabaseAdminClient();
+  const { error } = await admin.from("users").update({ notify_broadcasts }).eq("id", user_id);
+  if (error) back(error.message, "error");
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "staff.notify_broadcasts_set",
+    entity: "user",
+    entityId: user_id,
+    details: { notify_broadcasts },
+  });
+
+  revalidatePath("/admin/staff");
+  back(notify_broadcasts ? "Broadcast alerts turned on." : "Broadcast alerts turned off.");
 }
 
 // Admin-only: email a staff member a one-time link to set a new password

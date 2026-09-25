@@ -53,6 +53,12 @@ export interface AppUser {
   zoom_email: string | null;
   // Set when an admin removes this staff member's access (see removeStaff).
   disabled: boolean;
+  // Off for an account that shouldn't get role-broadcast alerts (fanToStaff)
+  // — e.g. an "admin" account that exists purely for elevated permissions,
+  // held by someone whose actual working phone/email is their separate
+  // marketing account. Doesn't affect messages sent to them individually
+  // (like notifyLeadCreator), only broadcasts to every member of a role.
+  notify_broadcasts: boolean;
   created_at: string;
   updated_at: string;
 }
