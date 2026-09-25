@@ -41,7 +41,7 @@ export type PaymentState =
   | "failed"
   | "abandoned";
 export type NotificationChannel = "email" | "sms" | "whatsapp";
-export type NotificationStatus = "queued" | "sent" | "failed";
+export type NotificationStatus = "queued" | "sent" | "delivered" | "read" | "failed";
 
 export interface AppUser {
   id: string;

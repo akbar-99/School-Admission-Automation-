@@ -80,7 +80,15 @@ async function NotificationsBody() {
                     <TD className="max-w-40 truncate">{n.recipient}</TD>
                     <TD className="max-w-48 truncate">{n.subject}</TD>
                     <TD>
-                      <Badge tone={n.status === "sent" ? "success" : n.status === "failed" ? "danger" : "neutral"}>
+                      <Badge
+                        tone={
+                          n.status === "failed"
+                            ? "danger"
+                            : n.status === "read" || n.status === "delivered" || n.status === "sent"
+                              ? "success"
+                              : "neutral"
+                        }
+                      >
                         {n.status}
                       </Badge>
                       {n.status === "failed" && n.error && (

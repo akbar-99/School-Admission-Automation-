@@ -122,6 +122,12 @@ export const config = {
     msg91AuthKey: process.env.MSG91_AUTH_KEY ?? "",
     whatsappToken: process.env.WHATSAPP_TOKEN ?? "",
     whatsappPhoneId: process.env.WHATSAPP_PHONE_ID ?? "",
+    // Meta App secret (not the system-user token) — used to verify the
+    // x-hub-signature-256 header on the delivery-status webhook.
+    whatsappAppSecret: process.env.WHATSAPP_APP_SECRET ?? "",
+    // Arbitrary string chosen by us, entered into the Meta App Dashboard's
+    // webhook subscription form to prove the GET handshake request is real.
+    whatsappWebhookVerifyToken: process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN ?? "",
     // SMTP email transport (e.g. Hostinger). Preferred over Resend when set.
     smtp: {
       host: process.env.SMTP_HOST ?? "",

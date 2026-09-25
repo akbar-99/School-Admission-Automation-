@@ -30,17 +30,21 @@ export interface OutboundMessage {
 }
 
 interface NotificationProvider {
-  send(msg: OutboundMessage): Promise<void>;
+  // Returns Meta's WhatsApp message id when the channel is whatsapp (so the
+  // delivery-status webhook can later match a status callback back to this
+  // row); undefined for every other channel.
+  send(msg: OutboundMessage): Promise<string | undefined>;
 }
 
 // Dev default: log to console (provider is a no-op transport).
 class LogProvider implements NotificationProvider {
-  async send(msg: OutboundMessage): Promise<void> {
+  async send(msg: OutboundMessage): Promise<string | undefined> {
     console.log(
       `[notify:${msg.channel}] ${msg.event} -> ${msg.recipient}` +
         (msg.subject ? ` | ${msg.subject}` : "") +
         `\n  ${msg.body.replace(/\n/g, "\n  ")}`,
     );
+    return undefined;
   }
 }
 
@@ -65,7 +69,7 @@ function smtpTransport(): Transporter {
 class LiveProvider implements NotificationProvider {
   private fallback = new LogProvider();
 
-  async send(msg: OutboundMessage): Promise<void> {
+  async send(msg: OutboundMessage): Promise<string | undefined> {
     if (msg.channel === "email") {
       const smtp = config.notifications.smtp;
       if (smtp.enabled) {
@@ -80,7 +84,7 @@ class LiveProvider implements NotificationProvider {
             contentType: a.contentType,
           })),
         });
-        return;
+        return undefined;
       }
       if (config.notifications.resendApiKey) {
         const res = await fetch("https://api.resend.com/emails", {
@@ -107,7 +111,7 @@ class LiveProvider implements NotificationProvider {
         if (!res.ok) {
           throw new Error(`Resend failed: ${res.status} ${await res.text()}`);
         }
-        return;
+        return undefined;
       }
     } else if (msg.channel === "whatsapp" && config.notifications.whatsappToken) {
       const payload = msg.whatsappTemplate
@@ -146,10 +150,11 @@ class LiveProvider implements NotificationProvider {
       if (!res.ok) {
         throw new Error(`WhatsApp failed: ${res.status} ${await res.text()}`);
       }
-      return;
+      const json = (await res.json()) as { messages?: { id?: string }[] };
+      return json.messages?.[0]?.id;
     }
     // SMS (MSG91) and any unconfigured channel -> log fallback.
-    await this.fallback.send(msg);
+    return this.fallback.send(msg);
   }
 }
 
@@ -170,8 +175,9 @@ export async function dispatch(messages: OutboundMessage[]): Promise<void> {
     messages.map(async (msg) => {
       let status: "sent" | "failed" = "sent";
       let error: string | null = null;
+      let providerMessageId: string | undefined;
       try {
-        await p.send(msg);
+        providerMessageId = await p.send(msg);
       } catch (err) {
         status = "failed";
         error = err instanceof Error ? err.message : String(err);
@@ -186,6 +192,7 @@ export async function dispatch(messages: OutboundMessage[]): Promise<void> {
         payload: msg.payload ?? null,
         status,
         error,
+        provider_message_id: providerMessageId ?? null,
       });
     }),
   );
