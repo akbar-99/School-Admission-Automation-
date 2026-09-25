@@ -109,6 +109,27 @@ function fanToStaff(
   return contacts.flatMap((c) => toStaffMember(c, base));
 }
 
+// Keeps the specific marketing staff member who created a lead in the loop
+// on that lead's own progress through the funnel — until now their only
+// role was creating it; they had zero visibility afterward, even though
+// they're often the person a parent calls back with questions. Returns []
+// (composes into an existing messages array like fanToStaff) when the lead
+// has no recorded creator or that account has neither contact method.
+async function notifyLeadCreator(
+  app: Application,
+  base: Omit<OutboundMessage, "channel" | "recipient">,
+): Promise<OutboundMessage[]> {
+  if (!app.created_by) return [];
+  const admin = createSupabaseAdminClient();
+  const { data: creator } = await admin
+    .from("users")
+    .select("email, phone")
+    .eq("id", app.created_by)
+    .maybeSingle();
+  if (!creator || (!creator.email && !creator.phone)) return [];
+  return toStaffMember({ email: creator.email, phone: creator.phone }, base);
+}
+
 // ---------------------------------------------------------------------------
 // N-1 Lead created — admission link to parent
 // ---------------------------------------------------------------------------
@@ -169,8 +190,8 @@ export async function sendAgreement(app: Application, parent: Parent) {
       ? `\nStudy material (optional, can also be paid later): ${formatINR(studyMaterialFeePaise)}`
       : "";
   const contact = await leadCreatorContact(app);
-  await dispatch(
-    multiChannel(
+  await dispatch([
+    ...multiChannel(
       {
         applicationId: app.id,
         event: "N-6",
@@ -193,7 +214,13 @@ export async function sendAgreement(app: Application, parent: Parent) {
       },
       parent,
     ),
-  );
+    ...(await notifyLeadCreator(app, {
+      applicationId: app.id,
+      event: "N-6",
+      subject: "Your lead's admission agreement is ready",
+      body: `${staffContextLine(await studentLabel(app), parent.full_name)}Agreement sent, admission fee ${formatINR(feePaise)}.`,
+    })),
+  ]);
 }
 
 // ---------------------------------------------------------------------------
@@ -262,6 +289,12 @@ export async function handleFormSubmitted(appId: string) {
         subject: "New KG application",
         body: `${context}A new KG application was submitted for review.`,
       }),
+      ...(await notifyLeadCreator(app, {
+        applicationId: app.id,
+        event: "N-2",
+        subject: "Your lead submitted their form",
+        body: `${context}Their KG application was just submitted for review.`,
+      })),
     );
     await admin
       .from("applications")
@@ -279,6 +312,12 @@ export async function handleFormSubmitted(appId: string) {
         subject: "New Grade applicant — schedule assessment",
         body: `${context}A new Grade applicant (${app.grade_applying}) requires an assessment. Please create and assign a slot.`,
       }),
+      ...(await notifyLeadCreator(app, {
+        applicationId: app.id,
+        event: "N-2",
+        subject: "Your lead submitted their form",
+        body: `${context}Their Grade ${app.grade_applying} application was just submitted — an assessment will be scheduled.`,
+      })),
     );
     await dispatch(messages);
   }
@@ -329,6 +368,12 @@ export async function handleSlotBooked(
       subject: "Assessment slot booked",
       body: `${context}An assessment slot was booked for ${when} (Grade ${app.grade_applying}).`,
     }),
+    ...(await notifyLeadCreator(app, {
+      applicationId: app.id,
+      event: "N-4",
+      subject: "Your lead booked an assessment slot",
+      body: `${context}Their assessment is booked for ${when}.`,
+    })),
   ];
 
   // Notify the assigned teacher specifically.
@@ -968,6 +1013,8 @@ export async function handleAssessmentResult(
     nextStepLine +
     `\n\nQuestions? Contact ${contact.name} at ${contact.phone}.`;
 
+  const resultContext = staffContextLine(await studentLabel(app), parent.full_name);
+
   // N-5 result to parent (with per-subject scores + attached files) + admin
   await dispatch([
     ...multiChannel(
@@ -988,8 +1035,14 @@ export async function handleAssessmentResult(
       applicationId: app.id,
       event: "N-5",
       subject: "Assessment result recorded",
-      body: `${staffContextLine(await studentLabel(app), parent.full_name)}Result for Grade ${app.grade_applying} applicant: ${outcomeLabel(outcome)}.`,
+      body: `${resultContext}Result for Grade ${app.grade_applying} applicant: ${outcomeLabel(outcome)}.`,
     }),
+    ...(await notifyLeadCreator(app, {
+      applicationId: app.id,
+      event: "N-5",
+      subject: "Your lead's assessment result is in",
+      body: `${resultContext}Result: ${outcomeLabel(outcome)}.`,
+    })),
   ]);
 
   if (outcome === "PASS") {
@@ -1597,6 +1650,12 @@ export async function handlePaymentCompleted(
       subject: "New student assigned",
       body: `${context}A new student has been enrolled and assigned to ${res.section} (admission no. ${res.admission_number}).`,
     }),
+    ...(await notifyLeadCreator(app, {
+      applicationId: app.id,
+      event: "N-8",
+      subject: "Your lead enrolled!",
+      body: `${context}Payment complete and admission confirmed — admission no. ${res.admission_number}, ${res.section}.`,
+    })),
   ]);
 
   await logAudit({ action: "enrollment.completed", entity: "application", entityId: app.id, details: res });
