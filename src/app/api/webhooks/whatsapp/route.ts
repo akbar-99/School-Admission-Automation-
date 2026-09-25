@@ -51,18 +51,6 @@ export async function POST(request: Request) {
   const raw = await request.text();
   const signature = request.headers.get("x-hub-signature-256");
 
-  // TEMP DIAGNOSTIC — logging every raw POST hit (before signature check) to
-  // find out whether Meta is calling this endpoint for status events at all.
-  // Remove once resolved.
-  await createSupabaseAdminClient().from("notifications").insert({
-    event: "WEBHOOK_DEBUG_RAW",
-    channel: "email",
-    recipient: "debug",
-    subject: signature ? "sig-present" : "sig-missing",
-    body: raw.slice(0, 2000),
-    status: "sent",
-  });
-
   if (!verifySignature(raw, signature)) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
