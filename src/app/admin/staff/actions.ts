@@ -12,7 +12,7 @@ import { logAudit } from "@/lib/audit";
 const InviteSchema = z.object({
   full_name: z.string().trim().min(2, "Full name is required"),
   email: z.string().trim().email("A valid email is required"),
-  role: z.enum(["marketing", "teacher", "class_teacher", "admin"]),
+  role: z.enum(["marketing", "teacher", "class_teacher", "admin", "coo"]),
   // WhatsApp-capable phone, in international format (e.g. 9199...). Optional.
   phone: z.string().trim().min(7, "Enter a valid phone number").optional().or(z.literal("")),
   // Optional Zoom host email (assessment teachers). Defaults to the login email.
