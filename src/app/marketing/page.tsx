@@ -39,6 +39,7 @@ interface UnclaimedRow {
   id: string;
   lead_source: string | null;
   lead_source_other: string | null;
+  lead_message: string | null;
   created_at: string;
   parents: { full_name: string } | null;
 }
@@ -225,7 +226,7 @@ async function UnclaimedLeadsSection() {
   const admin = createSupabaseAdminClient();
   const { data } = await admin
     .from("applications")
-    .select("id, lead_source, lead_source_other, created_at, parents(full_name)")
+    .select("id, lead_source, lead_source_other, lead_message, created_at, parents(full_name)")
     .is("created_by", null)
     .order("created_at", { ascending: true });
   const rows = (data ?? []) as unknown as UnclaimedRow[];
@@ -250,6 +251,11 @@ async function UnclaimedLeadsSection() {
               <div className="text-xs text-muted-foreground">
                 {leadSourceLabel(r.lead_source, r.lead_source_other)} · {formatDateTime(r.created_at)}
               </div>
+              {r.lead_message && (
+                <div className="mt-1 max-w-md text-sm italic text-foreground/80">
+                  &quot;{r.lead_message}&quot;
+                </div>
+              )}
             </div>
             <form action={claimLead}>
               <input type="hidden" name="application_id" value={r.id} />

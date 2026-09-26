@@ -115,6 +115,7 @@ export interface Application {
   lead_source: string | null;
   lead_source_other: string | null;
   external_contact_id: string | null;
+  lead_message: string | null;
   preferred_assessment_date: string | null;
   preferred_assessment_date_alt: string | null;
   preferred_assessment_tz: string | null;

@@ -69,7 +69,7 @@ export async function POST(request: Request) {
     if (!igsid) continue;
 
     const profile = await fetchInstagramProfile(igsid);
-    await handleInboundInstagramMessage(igsid, profile);
+    await handleInboundInstagramMessage(igsid, profile, event.message.text);
   }
 
   // Meta requires 200 within a few seconds regardless of outcome, or it

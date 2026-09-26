@@ -174,6 +174,7 @@ export async function notifyLeadCreated(app: Application, parent: Parent) {
 export async function handleInboundInstagramMessage(
   igsid: string,
   profile: { name?: string | null; username?: string | null },
+  messageText?: string | null,
 ): Promise<void> {
   const admin = createSupabaseAdminClient();
 
@@ -204,6 +205,7 @@ export async function handleInboundInstagramMessage(
       status: "LEAD_CREATED",
       lead_source: "instagram",
       lead_source_other: profile.username ? `@${profile.username}` : null,
+      lead_message: messageText?.trim() || null,
       external_contact_id: igsid,
       created_by: null,
     })
@@ -221,12 +223,13 @@ export async function handleInboundInstagramMessage(
 // notifyOpenSlotAvailable's fan-out shape for the teacher slot pool.
 async function notifyNewUnclaimedLead(app: Application, parent: Parent): Promise<void> {
   const source = leadSourceLabel(app.lead_source, app.lead_source_other);
+  const quoted = app.lead_message ? ` They wrote: "${app.lead_message}".` : "";
   await dispatch(
     fanToStaff(await staffContacts(["marketing"]), {
       applicationId: app.id,
       event: "UNCLAIMED_LEAD",
       subject: "New enquiry — claim it",
-      body: `${parent.full_name} enquired via ${source}. Claim it on your Leads page before someone else does.`,
+      body: `${parent.full_name} enquired via ${source}.${quoted} Claim it on your Leads page before someone else does.`,
     }),
   );
 }
