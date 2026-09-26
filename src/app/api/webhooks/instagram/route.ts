@@ -57,8 +57,14 @@ export async function POST(request: Request) {
 
   for (const event of events) {
     // is_echo marks a message this business account itself sent (e.g. a
-    // rep replying from the native Instagram app) — never a new enquiry.
+    // rep replying from the native Instagram app) — never a new enquiry. A
+    // "like"/heart-react on a message has no `message` field at all (it's a
+    // separate reaction event), so it's already excluded here too.
     if (!event.message || event.message.is_echo) continue;
+    // An emoji-only/no-real-words message (a stray 👍 or similar) isn't a
+    // genuine enquiry signal — skip it. A real (even short) message like
+    // "Hi" or "fees?" still passes, in any script.
+    if (!hasRealText(event.message.text)) continue;
     const igsid = event.sender?.id;
     if (!igsid) continue;
 
@@ -84,6 +90,13 @@ async function fetchInstagramProfile(igsid: string): Promise<{ name: string | nu
     console.error("[webhooks/instagram] profile lookup failed", err);
     return { name: null, username: null };
   }
+}
+
+// At least one real letter or digit, in any script — excludes emoji-only,
+// punctuation-only, or empty messages, without penalizing short-but-genuine
+// ones like "Hi" or non-English enquiries.
+function hasRealText(text: string | undefined): boolean {
+  return Boolean(text && /[\p{L}\p{N}]/u.test(text));
 }
 
 function verifySignature(rawBody: string, signature: string | null): boolean {
