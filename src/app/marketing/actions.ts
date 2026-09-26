@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireRole } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { notifyLeadCreated } from "@/lib/workflow";
+import { notifyLeadCreated, notifyLeadClaimed } from "@/lib/workflow";
 import { logAudit } from "@/lib/audit";
 import { LEAD_SOURCES, type Application, type Parent } from "@/lib/types";
 
@@ -200,4 +200,101 @@ export async function createLead(formData: FormData) {
 
   revalidatePath("/marketing");
   redirect("/marketing?created=" + app.access_token);
+}
+
+const ClaimLeadSchema = z.object({ application_id: z.string().uuid() });
+
+// Atomically claim an unclaimed inbound lead (Instagram DM, etc.) — first to
+// submit wins. Mirrors claimAssessmentSlot (src/app/teacher/actions.ts) and
+// its claim_assessment_slot RPC exactly, applied to leads instead of slots.
+// Does NOT send the N-1 admission link — an inbound-captured lead has no
+// phone/email yet; that only happens once addContactInfo below is used.
+export async function claimLead(formData: FormData) {
+  const { profile } = await requireRole(["marketing", "admin", "coo"]);
+  const parsed = ClaimLeadSchema.safeParse({ application_id: formData.get("application_id") });
+  if (!parsed.success) {
+    redirect("/marketing?error=" + encodeURIComponent("Invalid enquiry."));
+  }
+
+  const admin = createSupabaseAdminClient();
+  const { data, error } = await admin.rpc("claim_lead", {
+    p_application: parsed.data!.application_id,
+    p_user: profile.id,
+  });
+  if (error) {
+    redirect("/marketing?error=" + encodeURIComponent("That enquiry was just claimed by someone else."));
+  }
+  const claimed = data as { id: string; parent_id: string };
+
+  const { data: parentRow } = await admin.from("parents").select("*").eq("id", claimed.parent_id).maybeSingle();
+  const { data: appRow } = await admin.from("applications").select("*").eq("id", claimed.id).maybeSingle();
+  if (parentRow && appRow) {
+    await notifyLeadClaimed(profile.id, appRow as Application, parentRow as Parent);
+  }
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "lead.claimed",
+    entity: "application",
+    entityId: claimed.id,
+  });
+
+  revalidatePath("/marketing");
+  redirect("/marketing?claimed=1");
+}
+
+const AddContactInfoSchema = z.object({
+  application_id: z.string().uuid(),
+  phone: z.string().trim().min(7, "A valid phone number is required"),
+  email: z.string().trim().email("A valid email is required").or(z.literal("")),
+});
+
+// Fills in a claimed-but-contactless lead's phone/email (an Instagram DM
+// enquiry has neither until a rep gets them mid-conversation), then sends
+// the N-1 admission link now that this app can actually reach the family.
+export async function addContactInfo(formData: FormData) {
+  const { profile } = await requireRole(["marketing", "admin", "coo"]);
+  const parsed = AddContactInfoSchema.safeParse({
+    application_id: formData.get("application_id"),
+    phone: formData.get("phone"),
+    email: formData.get("email") ?? "",
+  });
+  if (!parsed.success) {
+    redirect("/marketing?error=" + encodeURIComponent(parsed.error.issues[0].message));
+  }
+  const input = parsed.data!;
+
+  const admin = createSupabaseAdminClient();
+  const { data: app } = await admin
+    .from("applications")
+    .select("*")
+    .eq("id", input.application_id)
+    .eq("created_by", profile.id)
+    .maybeSingle();
+  if (!app) {
+    redirect("/marketing?error=" + encodeURIComponent("Enquiry not found."));
+  }
+
+  const { data: parent, error: pErr } = await admin
+    .from("parents")
+    .update({ phone: input.phone, email: input.email || null })
+    .eq("id", app!.parent_id)
+    .select("*")
+    .single();
+  if (pErr || !parent) {
+    redirect("/marketing?error=" + encodeURIComponent(pErr?.message ?? "Could not save contact info."));
+  }
+
+  await notifyLeadCreated(app as Application, parent as Parent);
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "lead.contact_info_added",
+    entity: "application",
+    entityId: app!.id,
+  });
+
+  revalidatePath("/marketing");
+  redirect("/marketing?created=" + app!.access_token);
 }

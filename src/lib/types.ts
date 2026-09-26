@@ -68,7 +68,7 @@ export interface Parent {
   id: string;
   full_name: string;
   email: string | null;
-  phone: string;
+  phone: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -114,6 +114,7 @@ export interface Application {
   preferred_curriculum: string | null;
   lead_source: string | null;
   lead_source_other: string | null;
+  external_contact_id: string | null;
   preferred_assessment_date: string | null;
   preferred_assessment_date_alt: string | null;
   preferred_assessment_tz: string | null;

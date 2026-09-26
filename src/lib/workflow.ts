@@ -12,7 +12,14 @@ import { sendErpAdmission, syncClassToErp } from "@/lib/erp";
 import { appendEnrollmentRow, removeEnrollmentRow, sanitizeTabName } from "@/lib/google-sheets";
 import { needsAssessment } from "@/lib/assessment";
 import { fetchSchoolLogo } from "@/lib/school-logo";
-import { outcomeLabel, type Application, type Parent, type Student, type SubjectResult } from "@/lib/types";
+import {
+  outcomeLabel,
+  leadSourceLabel,
+  type Application,
+  type Parent,
+  type Student,
+  type SubjectResult,
+} from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Recipients
@@ -154,6 +161,89 @@ export async function notifyLeadCreated(app: Application, parent: Parent) {
       },
       parent,
     ),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Inbound Instagram DM from an unrecognized sender — captured as an
+// unclaimed lead (created_by null) for any marketing team member to pick up
+// via claim_lead. No N-1 admission link goes out yet: there's no phone/email
+// to send it to until a rep gets the parent's number from the DM
+// conversation and submits it via addContactInfo.
+// ---------------------------------------------------------------------------
+export async function handleInboundInstagramMessage(
+  igsid: string,
+  profile: { name?: string | null; username?: string | null },
+): Promise<void> {
+  const admin = createSupabaseAdminClient();
+
+  // Already-known sender (any status) — an ordinary reply, not a new lead.
+  // Also makes a duplicate webhook delivery of the same message a no-op.
+  const { data: existing } = await admin
+    .from("applications")
+    .select("id")
+    .eq("external_contact_id", igsid)
+    .maybeSingle();
+  if (existing) return;
+
+  const displayName = profile.name?.trim() || profile.username?.trim() || "Instagram enquiry";
+  const { data: parent, error: pErr } = await admin
+    .from("parents")
+    .insert({ full_name: displayName, phone: null, email: null })
+    .select("*")
+    .single();
+  if (pErr || !parent) {
+    console.error("[workflow] failed to create parent for inbound Instagram DM", pErr);
+    return;
+  }
+
+  const { data: app, error: aErr } = await admin
+    .from("applications")
+    .insert({
+      parent_id: parent.id,
+      status: "LEAD_CREATED",
+      lead_source: "instagram",
+      lead_source_other: profile.username ? `@${profile.username}` : null,
+      external_contact_id: igsid,
+      created_by: null,
+    })
+    .select("*")
+    .single();
+  if (aErr || !app) {
+    console.error("[workflow] failed to create application for inbound Instagram DM", aErr);
+    return;
+  }
+
+  await notifyNewUnclaimedLead(app as Application, parent as Parent);
+}
+
+// A new unclaimed inbound lead is ready to be picked up — mirrors
+// notifyOpenSlotAvailable's fan-out shape for the teacher slot pool.
+async function notifyNewUnclaimedLead(app: Application, parent: Parent): Promise<void> {
+  const source = leadSourceLabel(app.lead_source, app.lead_source_other);
+  await dispatch(
+    fanToStaff(await staffContacts(["marketing"]), {
+      applicationId: app.id,
+      event: "UNCLAIMED_LEAD",
+      subject: "New enquiry — claim it",
+      body: `${parent.full_name} enquired via ${source}. Claim it on your Leads page before someone else does.`,
+    }),
+  );
+}
+
+// A marketing team member claimed an unclaimed lead — let admins know who
+// has it, mirroring notifySlotClaimed's admin-visibility shape.
+export async function notifyLeadClaimed(userId: string, app: Application, parent: Parent): Promise<void> {
+  const admin = createSupabaseAdminClient();
+  const { data: u } = await admin.from("users").select("full_name, email").eq("id", userId).maybeSingle();
+  const source = leadSourceLabel(app.lead_source, app.lead_source_other);
+  await dispatch(
+    fanToStaff(await staffContacts(["admin"]), {
+      applicationId: app.id,
+      event: "LEAD_CLAIMED",
+      subject: "Enquiry claimed",
+      body: `${u?.full_name ?? u?.email ?? "A team member"} claimed the ${source} enquiry from ${parent.full_name}.`,
+    }),
   );
 }
 
@@ -1250,7 +1340,7 @@ export async function syncEnrollmentToGoogleSheet(app: Application, parent: Pare
         sectionName: section?.name ?? null,
         classTiming: section?.class_timing ?? null,
         parentName: parent.full_name,
-        parentPhone: parent.phone,
+        parentPhone: parent.phone ?? "",
         parentEmail: parent.email,
         fatherName: student?.father_name ?? null,
         fatherPhone: student?.father_phone ?? null,

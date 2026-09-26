@@ -315,7 +315,7 @@ async function Content({
                   razorpayKeyId={config.razorpay.publicKeyId}
                   parentName={parent.full_name}
                   parentEmail={parent.email}
-                  parentPhone={parent.phone}
+                  parentPhone={parent.phone ?? ""}
                 />
               </>
             )}
@@ -360,7 +360,7 @@ async function Content({
               razorpayKeyId={config.razorpay.publicKeyId}
               parentName={parent.full_name}
               parentEmail={parent.email}
-              parentPhone={parent.phone}
+              parentPhone={parent.phone ?? ""}
             />
           </CardContent>
         </Card>

@@ -134,7 +134,7 @@ export async function GET(
     ${row("Curriculum", esc(student?.curriculum ?? "—"))}
     ${row("PEN number", esc(student?.pen_number ?? "—"))}
     ${row("Parent / guardian", esc(parent.full_name))}
-    ${row("Contact", esc(parent.phone) + (parent.email ? " · " + esc(parent.email) : ""))}
+    ${row("Contact", esc(parent.phone ?? "—") + (parent.email ? " · " + esc(parent.email) : ""))}
     <div class="row fee-row"><span class="k">Admission fee</span><span class="v">${formatINR(s.feePaise)}</span></div>
     ${
       studyMaterialFeePaise > 0

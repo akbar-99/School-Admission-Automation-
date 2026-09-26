@@ -127,7 +127,14 @@ export const config = {
     whatsappAppSecret: process.env.WHATSAPP_APP_SECRET ?? "",
     // Arbitrary string chosen by us, entered into the Meta App Dashboard's
     // webhook subscription form to prove the GET handshake request is real.
+    // Shared across both the WhatsApp and Instagram webhooks (same Meta App).
     whatsappWebhookVerifyToken: process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN ?? "",
+    // Page/system-user token used to look up an Instagram sender's
+    // name/username via the Graph API. Falls back to the WhatsApp system
+    // user token, which may already carry instagram_manage_messages once
+    // granted on the same Meta App — set INSTAGRAM_TOKEN explicitly if a
+    // separate token ends up being required.
+    instagramToken: process.env.INSTAGRAM_TOKEN || process.env.WHATSAPP_TOKEN || "",
     // SMTP email transport (e.g. Hostinger). Preferred over Resend when set.
     smtp: {
       host: process.env.SMTP_HOST ?? "",

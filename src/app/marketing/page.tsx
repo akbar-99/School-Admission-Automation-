@@ -4,7 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireRole } from "@/lib/auth";
 import { applyUrl } from "@/lib/parent";
 import { formatDateTime } from "@/lib/utils";
-import { createLead } from "./actions";
+import { createLead, claimLead, addContactInfo } from "./actions";
 import { LeadSourceSelect } from "@/components/marketing/lead-source-select";
 import { describeFilters, parseAdmissionsFilters } from "@/lib/admissions-report";
 import { StatusBadge } from "@/components/status-badge";
@@ -31,8 +31,16 @@ interface Row {
   lead_source_other: string | null;
   access_token: string;
   created_at: string;
-  parents: { full_name: string; phone: string; email: string | null } | null;
+  parents: { full_name: string; phone: string | null; email: string | null } | null;
   students: { full_name: string } | null;
+}
+
+interface UnclaimedRow {
+  id: string;
+  lead_source: string | null;
+  lead_source_other: string | null;
+  created_at: string;
+  parents: { full_name: string } | null;
 }
 
 function isoDate(d: Date): string {
@@ -52,9 +60,10 @@ export default async function MarketingPage({
     status?: string;
     from?: string;
     to?: string;
+    claimed?: string;
   }>;
 }) {
-  const { created, error, duplicate, status, from, to } = await searchParams;
+  const { created, error, duplicate, status, from, to, claimed } = await searchParams;
   let duplicateInfo: {
     input: {
       parent_name: string;
@@ -103,6 +112,7 @@ export default async function MarketingPage({
         </Alert>
       )}
       {error && <Alert variant="error">{error}</Alert>}
+      {claimed && <Alert variant="success">Enquiry claimed — it&apos;s now in your leads below.</Alert>}
 
       {duplicateInfo && (
         <Alert variant="warning" className="space-y-3">
@@ -148,6 +158,10 @@ export default async function MarketingPage({
           </div>
         </Alert>
       )}
+
+      <Suspense fallback={null}>
+        <UnclaimedLeadsSection />
+      </Suspense>
 
       <Card>
         <CardHeader>
@@ -201,6 +215,49 @@ function LeadsTableSkeleton() {
       <CardContent className="space-y-2">
         {[0, 1, 2, 3, 4].map((i) => (
           <div key={i} className="h-10 w-full animate-pulse rounded bg-muted" />
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+async function UnclaimedLeadsSection() {
+  const admin = createSupabaseAdminClient();
+  const { data } = await admin
+    .from("applications")
+    .select("id, lead_source, lead_source_other, created_at, parents(full_name)")
+    .is("created_by", null)
+    .order("created_at", { ascending: true });
+  const rows = (data ?? []) as unknown as UnclaimedRow[];
+  if (rows.length === 0) return null;
+
+  return (
+    <Card className="border-primary/30">
+      <CardHeader>
+        <CardTitle>Unclaimed enquiries ({rows.length})</CardTitle>
+        <CardDescription>
+          Captured automatically from social media DMs — first to claim it owns it.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {rows.map((r) => (
+          <div
+            key={r.id}
+            className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 px-3.5 py-2.5"
+          >
+            <div>
+              <div className="font-medium">{r.parents?.full_name ?? "—"}</div>
+              <div className="text-xs text-muted-foreground">
+                {leadSourceLabel(r.lead_source, r.lead_source_other)} · {formatDateTime(r.created_at)}
+              </div>
+            </div>
+            <form action={claimLead}>
+              <input type="hidden" name="application_id" value={r.id} />
+              <SubmitButton size="sm" pendingText="Claiming…">
+                Claim
+              </SubmitButton>
+            </form>
+          </div>
         ))}
       </CardContent>
     </Card>
@@ -355,7 +412,18 @@ async function LeadsTableSection({
                 <TR key={r.id}>
                   <TD>
                     <div className="font-medium">{r.parents?.full_name ?? "—"}</div>
-                    <div className="text-xs text-muted-foreground">{r.parents?.phone}</div>
+                    {r.parents?.phone ? (
+                      <div className="text-xs text-muted-foreground">{r.parents.phone}</div>
+                    ) : (
+                      <form action={addContactInfo} className="mt-1 flex flex-wrap items-center gap-1.5">
+                        <input type="hidden" name="application_id" value={r.id} />
+                        <PhoneField id={`phone-${r.id}`} name="phone" placeholder="9XXXXXXXXX" required />
+                        <Input name="email" type="email" placeholder="Email (optional)" className="h-9 w-36" />
+                        <SubmitButton size="sm" variant="outline" pendingText="…">
+                          Save
+                        </SubmitButton>
+                      </form>
+                    )}
                   </TD>
                   <TD>{r.students?.full_name ?? r.lead_student_name ?? "—"}</TD>
                   <TD>{r.category ?? "—"}</TD>
