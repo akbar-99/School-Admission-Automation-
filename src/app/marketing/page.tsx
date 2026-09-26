@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { getSessionUser, requireRole } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { applyUrl } from "@/lib/parent";
 import { formatDateTime } from "@/lib/utils";
 import { createLead } from "./actions";
@@ -64,7 +64,6 @@ export default async function MarketingPage({
       lead_source: string;
       lead_source_other?: string;
     };
-    assignedTo?: string;
     matches: {
       id: string;
       status: string;
@@ -84,20 +83,6 @@ export default async function MarketingPage({
     }
   }
   const hasFilters = Boolean(status || from || to);
-
-  const session = await getSessionUser();
-  const canAssign = session?.profile?.role !== "marketing";
-  let marketingStaff: { id: string; full_name: string | null; email: string | null }[] = [];
-  if (canAssign) {
-    const admin = createSupabaseAdminClient();
-    const { data } = await admin
-      .from("users")
-      .select("id, full_name, email")
-      .eq("role", "marketing")
-      .eq("disabled", false)
-      .order("full_name", { ascending: true });
-    marketingStaff = data ?? [];
-  }
 
   return (
     <div className="space-y-6">
@@ -152,7 +137,6 @@ export default async function MarketingPage({
               <input type="hidden" name="student_name" value={duplicateInfo.input.student_name ?? ""} />
               <input type="hidden" name="lead_source" value={duplicateInfo.input.lead_source} />
               <input type="hidden" name="lead_source_other" value={duplicateInfo.input.lead_source_other ?? ""} />
-              <input type="hidden" name="assigned_to" value={duplicateInfo.assignedTo ?? ""} />
               <input type="hidden" name="confirm_duplicate" value="on" />
               <SubmitButton pendingText="Creating…" variant="outline">
                 It&apos;s a different family — create anyway
@@ -194,21 +178,6 @@ export default async function MarketingPage({
               <Label htmlFor="lead_source">Source of enquiry *</Label>
               <LeadSourceSelect name="lead_source" />
             </div>
-            {canAssign && (
-              <div className="space-y-1.5">
-                <Label htmlFor="assigned_to">Assign to *</Label>
-                <Select id="assigned_to" name="assigned_to" required defaultValue="">
-                  <option value="" disabled>
-                    Select a team member…
-                  </option>
-                  {marketingStaff.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.full_name ?? m.email}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-            )}
             <div className="sm:col-span-2">
               <SubmitButton pendingText="Creating…">Create lead &amp; send link</SubmitButton>
             </div>

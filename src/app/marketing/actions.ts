@@ -142,12 +142,6 @@ export async function createLead(formData: FormData) {
   }
   const input = parsed.data;
 
-  // Admin/COO can hand a lead straight to a specific marketing rep instead of
-  // owning it themselves — that rep is then the one credited/notified for it
-  // everywhere else in the app. A marketing caller's own value (if any) is
-  // never trusted; they always own what they create, same as before.
-  const assignedToRaw = profile.role !== "marketing" ? String(formData.get("assigned_to") ?? "").trim() : "";
-
   const confirmedDuplicate = formData.get("confirm_duplicate") === "on";
   if (!confirmedDuplicate) {
     const dupes = await findDuplicateLeads({
@@ -156,24 +150,9 @@ export async function createLead(formData: FormData) {
       studentName: input.student_name ?? "",
     });
     if (dupes.length > 0) {
-      const payload = encodeURIComponent(JSON.stringify({ input, matches: dupes, assignedTo: assignedToRaw }));
+      const payload = encodeURIComponent(JSON.stringify({ input, matches: dupes }));
       redirect("/marketing?duplicate=" + payload);
     }
-  }
-
-  let createdBy = profile.id;
-  if (assignedToRaw) {
-    const admin = createSupabaseAdminClient();
-    const { data: assignee } = await admin
-      .from("users")
-      .select("id")
-      .eq("id", assignedToRaw)
-      .eq("role", "marketing")
-      .maybeSingle();
-    if (!assignee) {
-      redirect("/marketing?error=" + encodeURIComponent("Selected team member is invalid."));
-    }
-    createdBy = assignee.id;
   }
 
   const admin = createSupabaseAdminClient();
@@ -200,7 +179,7 @@ export async function createLead(formData: FormData) {
       lead_student_name: input.student_name || null,
       lead_source: input.lead_source,
       lead_source_other: input.lead_source === "other" ? input.lead_source_other : null,
-      created_by: createdBy,
+      created_by: profile.id,
     })
     .select("*")
     .single();
@@ -216,7 +195,7 @@ export async function createLead(formData: FormData) {
     action: "lead.created",
     entity: "application",
     entityId: app.id,
-    details: { parent_id: parent.id, assigned_to: createdBy !== profile.id ? createdBy : undefined },
+    details: { parent_id: parent.id },
   });
 
   revalidatePath("/marketing");
