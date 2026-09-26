@@ -6,13 +6,14 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { profile } = await requireRole(["admin"]);
+  const { profile } = await requireRole(["admin", "coo"]);
   return (
     <DashboardShell
-      roleLabel="Admin"
+      roleLabel={profile.role === "coo" ? "COO" : "Admin"}
       userName={profile.full_name ?? profile.email ?? "Admin"}
       nav={[
         { href: "/admin", label: "Overview" },
+        { href: "/admin/coo-dashboard", label: "Team dashboard" },
         { href: "/admin/payments", label: "Payments" },
         { href: "/admin/marketing-performance", label: "Marketing performance" },
         { href: "/admin/assessments", label: "Assessments" },

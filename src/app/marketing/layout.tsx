@@ -6,10 +6,10 @@ export default async function MarketingLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { profile } = await requireRole(["marketing", "admin"]);
+  const { profile } = await requireRole(["marketing", "admin", "coo"]);
   return (
     <DashboardShell
-      roleLabel="Marketing"
+      roleLabel={profile.role === "marketing" ? "Marketing" : profile.role === "coo" ? "COO" : "Admin"}
       userName={profile.full_name ?? profile.email ?? "Marketing"}
       nav={[
         { href: "/marketing", label: "Leads" },

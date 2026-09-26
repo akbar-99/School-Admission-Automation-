@@ -44,6 +44,7 @@ const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
   { value: "teacher", label: "Assessment teacher" },
   { value: "class_teacher", label: "Class teacher" },
   { value: "admin", label: "Admin" },
+  { value: "coo", label: "COO" },
 ];
 
 export default async function StaffPage({

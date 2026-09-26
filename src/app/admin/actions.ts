@@ -96,7 +96,7 @@ const AssessmentSlotSchema = z.object({
 });
 
 export async function createAssessmentSlot(formData: FormData) {
-  const { profile } = await requireRole(["admin"]);
+  const { profile } = await requireRole(["admin", "coo"]);
   const parsed = AssessmentSlotSchema.safeParse({
     weekday: formData.get("weekday"),
     time: formData.get("time"),
@@ -193,7 +193,7 @@ const AssignSchema = z.object({
 });
 
 export async function assignAssessment(formData: FormData) {
-  const { profile } = await requireRole(["admin"]);
+  const { profile } = await requireRole(["admin", "coo"]);
   const parsed = AssignSchema.safeParse({
     application_id: formData.get("application_id"),
     teacher_id: formData.get("teacher_id"),
@@ -270,7 +270,7 @@ const ReassignSchema = z.object({
 });
 
 export async function reassignSlotTeacher(formData: FormData) {
-  const { profile } = await requireRole(["admin"]);
+  const { profile } = await requireRole(["admin", "coo"]);
   const parsed = ReassignSchema.safeParse({
     slot_id: formData.get("slot_id"),
     teacher_id: formData.get("teacher_id"),
@@ -340,7 +340,7 @@ export async function reassignSlotTeacher(formData: FormData) {
 const ZoomBackfillSchema = z.object({ application_id: z.string().uuid() });
 
 export async function generateZoomLink(formData: FormData) {
-  await requireRole(["admin"]);
+  await requireRole(["admin", "coo"]);
   const parsed = ZoomBackfillSchema.safeParse({ application_id: formData.get("application_id") });
   if (!parsed.success) {
     redirect("/admin/assessments?error=" + encodeURIComponent("Invalid application."));
@@ -366,7 +366,7 @@ export async function generateZoomLink(formData: FormData) {
 const RotateTokenSchema = z.object({ application_id: z.string().uuid() });
 
 export async function rotateAccessToken(formData: FormData) {
-  const { profile } = await requireRole(["admin"]);
+  const { profile } = await requireRole(["admin", "coo"]);
   const parsed = RotateTokenSchema.safeParse({
     application_id: formData.get("application_id"),
   });
@@ -406,7 +406,7 @@ export async function rotateAccessToken(formData: FormData) {
 // Permanently delete one applicant and all their records. Frees their seat if
 // they were enrolled. Guarded by typing DELETE.
 export async function deleteApplication(formData: FormData) {
-  const { profile } = await requireRole(["admin"]);
+  const { profile } = await requireRole(["admin", "coo"]);
   const appId = String(formData.get("application_id") ?? "");
   const confirm = String(formData.get("confirm") ?? "").trim();
   if (confirm !== "DELETE") {
@@ -483,7 +483,7 @@ export async function deleteApplication(formData: FormData) {
 // Factory reset: wipe ALL applicant data (keeps staff, sections, config).
 // Guarded by typing RESET.
 export async function factoryReset(formData: FormData) {
-  const { profile } = await requireRole(["admin"]);
+  const { profile } = await requireRole(["admin", "coo"]);
   const confirm = String(formData.get("confirm") ?? "").trim();
   if (confirm !== "RESET") {
     redirect("/admin/settings?error=" + encodeURIComponent('Type "RESET" to confirm.'));
@@ -506,7 +506,7 @@ export async function factoryReset(formData: FormData) {
 
 // Admin-editable settings → app_config (applied at runtime, no redeploy).
 export async function updateSettings(formData: FormData) {
-  const { profile } = await requireRole(["admin"]);
+  const { profile } = await requireRole(["admin", "coo"]);
   const feeRupees = Number(formData.get("fee_rupees"));
   if (!Number.isFinite(feeRupees) || feeRupees < 0) {
     redirect("/admin/settings?error=" + encodeURIComponent("Enter a valid admission fee."));
@@ -553,7 +553,7 @@ export async function updateSettings(formData: FormData) {
 // Study material fee varies by grade (unlike the flat admission fee), so it's
 // one form field per grade rather than a single app_config value.
 export async function updateStudyMaterialFees(formData: FormData) {
-  const { profile } = await requireRole(["admin"]);
+  const { profile } = await requireRole(["admin", "coo"]);
   const admin = createSupabaseAdminClient();
 
   const rows: { grade: string; fee_paise: number }[] = [];
@@ -590,7 +590,7 @@ export async function updateStudyMaterialFees(formData: FormData) {
 // records. Refuses to set it at or below any admission number this system
 // has already issued, so it can never hand out a duplicate.
 export async function updateAdmissionSequence(formData: FormData) {
-  const { profile } = await requireRole(["admin"]);
+  const { profile } = await requireRole(["admin", "coo"]);
   const next = Number(formData.get("next_admission_number"));
   if (!Number.isInteger(next) || next < 1) {
     redirect("/admin/settings?error=" + encodeURIComponent("Enter a valid whole number."));
@@ -640,7 +640,7 @@ function sectionsBack(msg?: string, type: "error" | "ok" | "duplicate" = "ok"): 
 // Manually resolve a NEEDS_ADMIN application by re-running enrollment (after
 // capacity has been freed / added). SRS FR-22.
 export async function resolveSeat(formData: FormData) {
-  const { profile } = await requireRole(["admin"]);
+  const { profile } = await requireRole(["admin", "coo"]);
   const appId = String(formData.get("application_id") ?? "");
   if (!appId) back("Missing application", "error");
 
@@ -664,7 +664,7 @@ const CapacitySchema = z.object({
 });
 
 export async function adjustCapacity(formData: FormData) {
-  const { profile } = await requireRole(["admin"]);
+  const { profile } = await requireRole(["admin", "coo"]);
   const parsed = CapacitySchema.safeParse({
     section_id: formData.get("section_id"),
     delta: formData.get("delta"),
@@ -708,7 +708,7 @@ const UpdateSectionSchema = z.object({
 });
 
 export async function updateSection(formData: FormData) {
-  const { profile } = await requireRole(["admin"]);
+  const { profile } = await requireRole(["admin", "coo"]);
   const parsed = UpdateSectionSchema.safeParse({
     section_id: formData.get("section_id"),
     grade: formData.get("grade"),
@@ -774,7 +774,7 @@ export async function updateSection(formData: FormData) {
 
 // Delete a section. Blocked while any student is enrolled in it.
 export async function deleteSection(formData: FormData) {
-  const { profile } = await requireRole(["admin"]);
+  const { profile } = await requireRole(["admin", "coo"]);
   const section_id = String(formData.get("section_id") ?? "");
   if (!section_id) sectionsBack("Missing section.", "error");
 
@@ -830,7 +830,7 @@ const TransferSectionSchema = z.object({
 });
 
 export async function transferStudentSection(formData: FormData) {
-  const { profile } = await requireRole(["admin"]);
+  const { profile } = await requireRole(["admin", "coo"]);
   const parsed = TransferSectionSchema.safeParse({
     application_id: formData.get("application_id"),
     new_section_id: formData.get("new_section_id"),
@@ -901,7 +901,7 @@ const SectionSchema = z.object({
 });
 
 export async function createSection(formData: FormData) {
-  const { profile } = await requireRole(["admin"]);
+  const { profile } = await requireRole(["admin", "coo"]);
   const parsed = SectionSchema.safeParse({
     grade: formData.get("grade"),
     name: formData.get("name"),

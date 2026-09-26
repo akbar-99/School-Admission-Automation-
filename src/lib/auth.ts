@@ -56,6 +56,7 @@ export const ROLE_HOME: Record<UserRole, string> = {
   teacher: "/teacher",
   class_teacher: "/admin",
   parent: "/",
+  coo: "/admin/coo-dashboard",
 };
 
 // Require an authenticated staff user with one of the given roles. Redirects to

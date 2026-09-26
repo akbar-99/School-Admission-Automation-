@@ -116,7 +116,7 @@ function PerformanceBodySkeleton() {
 }
 
 async function PerformanceBody({ from, to }: { from?: string; to?: string }) {
-  const { profile } = await requireRole(["marketing", "admin"]);
+  const { profile } = await requireRole(["marketing", "admin", "coo"]);
   const admin = createSupabaseAdminClient();
 
   // Own leads only — date range is cohort-based (when the lead was created),

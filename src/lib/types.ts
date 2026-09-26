@@ -6,7 +6,8 @@ export type UserRole =
   | "parent"
   | "teacher"
   | "admin"
-  | "class_teacher";
+  | "class_teacher"
+  | "coo";
 
 export type AppStatus =
   | "LEAD_CREATED"

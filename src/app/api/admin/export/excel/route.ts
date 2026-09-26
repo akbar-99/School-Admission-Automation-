@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 // Admin-only: Excel export of the (filtered) admissions list — same filters
 // as the Applications table on /admin, passed through as query params.
 export async function GET(request: Request) {
-  await requireRole(["admin"]);
+  await requireRole(["admin", "coo"]);
 
   const url = new URL(request.url);
   const filters = parseAdmissionsFilters({

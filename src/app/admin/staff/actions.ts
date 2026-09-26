@@ -51,7 +51,7 @@ function back(msg: string, type: "ok" | "error" = "ok"): never {
 // their own password. The invite link is generated server-side and delivered
 // through the app's own SMTP (not Supabase's email), so it isn't rate-limited.
 export async function inviteStaff(formData: FormData) {
-  const { profile } = await requireRole(["admin"]);
+  const { profile } = await requireRole(["admin", "coo"]);
 
   const parsed = InviteSchema.safeParse({
     full_name: formData.get("full_name"),
@@ -164,7 +164,7 @@ export async function inviteStaff(formData: FormData) {
 // account under which their assessment meetings are created. Leave blank to
 // fall back to the teacher's login email.
 export async function setZoomEmail(formData: FormData) {
-  const { profile } = await requireRole(["admin"]);
+  const { profile } = await requireRole(["admin", "coo"]);
 
   const parsed = ZoomEmailSchema.safeParse({
     user_id: formData.get("user_id"),
@@ -195,7 +195,7 @@ export async function setZoomEmail(formData: FormData) {
 
 // Admin-only: set or clear a staff member's WhatsApp-capable phone number.
 export async function setStaffPhone(formData: FormData) {
-  const { profile } = await requireRole(["admin"]);
+  const { profile } = await requireRole(["admin", "coo"]);
 
   const parsed = PhoneSchema.safeParse({
     user_id: formData.get("user_id"),
@@ -231,7 +231,7 @@ export async function setStaffPhone(formData: FormData) {
 // phone that's there for marketing-specific messages. Doesn't affect
 // messages sent to them individually (like a lead-creator notification).
 export async function setNotifyBroadcasts(formData: FormData) {
-  const { profile } = await requireRole(["admin"]);
+  const { profile } = await requireRole(["admin", "coo"]);
 
   const parsed = NotifyBroadcastsSchema.safeParse({
     user_id: formData.get("user_id"),
@@ -269,7 +269,7 @@ export async function setNotifyBroadcasts(formData: FormData) {
 const PasswordResetSchema = z.object({ user_id: z.string().uuid() });
 
 export async function sendPasswordReset(formData: FormData) {
-  const { profile } = await requireRole(["admin"]);
+  const { profile } = await requireRole(["admin", "coo"]);
   const parsed = PasswordResetSchema.safeParse({ user_id: formData.get("user_id") });
   if (!parsed.success) back("Invalid staff member.", "error");
   const { user_id } = parsed.data!;
@@ -331,7 +331,7 @@ const StaffIdSchema = z.object({ user_id: z.string().uuid() });
 // assessment history (booked/completed slots, recorded results). Any of
 // their still-open, unclaimed slots go back to the pool.
 export async function removeStaff(formData: FormData) {
-  const { profile } = await requireRole(["admin"]);
+  const { profile } = await requireRole(["admin", "coo"]);
   const parsed = StaffIdSchema.safeParse({ user_id: formData.get("user_id") });
   if (!parsed.success) back("Invalid staff member.", "error");
   const { user_id } = parsed.data!;
@@ -387,7 +387,7 @@ export async function removeStaff(formData: FormData) {
 
 // Admin-only: restore a previously removed staff member's access.
 export async function reactivateStaff(formData: FormData) {
-  const { profile } = await requireRole(["admin"]);
+  const { profile } = await requireRole(["admin", "coo"]);
   const parsed = StaffIdSchema.safeParse({ user_id: formData.get("user_id") });
   if (!parsed.success) back("Invalid staff member.", "error");
   const { user_id } = parsed.data!;
@@ -420,7 +420,7 @@ export async function reactivateStaff(formData: FormData) {
 // (unlike assessment_results, which just nulls the attribution), so deleting
 // a teacher with real slot history would silently erase it.
 export async function deleteStaffPermanently(formData: FormData) {
-  const { profile } = await requireRole(["admin"]);
+  const { profile } = await requireRole(["admin", "coo"]);
   const parsed = StaffIdSchema.safeParse({ user_id: formData.get("user_id") });
   if (!parsed.success) back("Invalid staff member.", "error");
   const { user_id } = parsed.data!;

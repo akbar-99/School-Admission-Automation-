@@ -20,7 +20,7 @@ function back(msg?: string, type: "error" | "ok" = "ok"): never {
 // admins can see real ERP capacity alongside this app's own numbers when
 // setting up Admin → Sections' ERP class name field.
 export async function syncErpNow() {
-  const { profile } = await requireRole(["admin"]);
+  const { profile } = await requireRole(["admin", "coo"]);
   const count = await syncErpCapacity();
   if (count === null) back("ERP capacity sync failed — check ERP_ADMISSIONS_SECRET and the ERP endpoint.", "error");
 
@@ -51,7 +51,7 @@ const RetrySchema = z.object({
 // class name (set it under Admin → Sections first); send_failed only
 // re-sends the already-resolved class.
 export async function retryErpAdmission(formData: FormData) {
-  const { profile } = await requireRole(["admin"]);
+  const { profile } = await requireRole(["admin", "coo"]);
   const parsed = RetrySchema.safeParse({
     application_id: formData.get("application_id"),
     erp_status: formData.get("erp_status"),
@@ -97,7 +97,7 @@ const TransferSchema = z.object({
 // not just ones this app created itself — now that the ERP exposes each
 // student's real internal id there, not only the human-readable number.
 export async function bulkTransferErpStudents(formData: FormData) {
-  const { profile } = await requireRole(["admin"]);
+  const { profile } = await requireRole(["admin", "coo"]);
   const fromClassName = String(formData.get("from_class_name") ?? "");
   const classPage = fromClassName
     ? `/admin/erp/classes/${encodeURIComponent(fromClassName)}`
