@@ -125,6 +125,12 @@ export const config = {
     // Meta App secret (not the system-user token) — used to verify the
     // x-hub-signature-256 header on the delivery-status webhook.
     whatsappAppSecret: process.env.WHATSAPP_APP_SECRET ?? "",
+    // The Instagram product has its own distinct sub-app identity (its own
+    // App ID and App Secret, separate from the top-level WhatsApp one, even
+    // though both live under the same "Broadway Admissions" developer app)
+    // — confirmed different, so its webhook signature must be verified
+    // against this secret, not whatsappAppSecret.
+    instagramAppSecret: process.env.INSTAGRAM_APP_SECRET ?? "",
     // Arbitrary string chosen by us, entered into the Meta App Dashboard's
     // webhook subscription form to prove the GET handshake request is real.
     // Shared across both the WhatsApp and Instagram webhooks (same Meta App).

@@ -7,8 +7,10 @@ import { handleInboundInstagramMessage } from "@/lib/workflow";
 // member to pick up (see handleInboundInstagramMessage in workflow.ts). This
 // is a separate webhook object ("instagram") from the WhatsApp one
 // (whatsapp_business_account) and uses the older Messenger-platform payload
-// shape, but shares the same Meta App, so the same app secret and verify
-// token apply here too.
+// shape. It lives under the same "Broadway Admissions" developer app as
+// WhatsApp, so the verify token is shared — but Instagram has its own
+// sub-app identity with its own App Secret, so signatures are verified
+// against INSTAGRAM_APP_SECRET, not the WhatsApp one.
 
 // One-time handshake Meta performs when the webhook URL is registered/saved.
 export async function GET(request: Request) {
@@ -100,10 +102,10 @@ function hasRealText(text: string | undefined): boolean {
 }
 
 function verifySignature(rawBody: string, signature: string | null): boolean {
-  if (!config.notifications.whatsappAppSecret || !signature) return false;
+  if (!config.notifications.instagramAppSecret || !signature) return false;
   const expected =
     "sha256=" +
-    crypto.createHmac("sha256", config.notifications.whatsappAppSecret).update(rawBody).digest("hex");
+    crypto.createHmac("sha256", config.notifications.instagramAppSecret).update(rawBody).digest("hex");
   return timingSafeEqual(expected, signature);
 }
 
