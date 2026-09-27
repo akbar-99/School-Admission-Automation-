@@ -11,7 +11,15 @@ import {
   EMPTY_COO_STATS,
   type CooStatsRow,
 } from "@/lib/marketing-stats";
+import {
+  computeTeacherStatsByTeacher,
+  EMPTY_TEACHER_STATS,
+  type TeacherResultRow,
+  type TeacherSlotRow,
+} from "@/lib/teacher-stats";
 import { CooDashboard } from "@/components/admin/coo-dashboard";
+import { TeacherDashboard } from "@/components/admin/teacher-dashboard";
+import { DashboardTabs } from "@/components/admin/dashboard-tabs";
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -84,9 +92,26 @@ export default async function CooDashboardPage({
         </CardContent>
       </Card>
 
-      <Suspense fallback={<DashboardSkeleton />}>
-        <CooDashboardData from={from} to={to} />
-      </Suspense>
+      <DashboardTabs
+        panels={[
+          {
+            label: "Marketing",
+            content: (
+              <Suspense fallback={<DashboardSkeleton />}>
+                <CooDashboardData from={from} to={to} />
+              </Suspense>
+            ),
+          },
+          {
+            label: "Assessment teachers",
+            content: (
+              <Suspense fallback={<DashboardSkeleton />}>
+                <TeacherDashboardData from={from} to={to} />
+              </Suspense>
+            ),
+          },
+        ]}
+      />
     </div>
   );
 }
@@ -163,6 +188,80 @@ async function CooDashboardData({ from, to }: { from?: string; to?: string }) {
       }))}
       totals={totals}
       sourceBreakdown={sourceBreakdown}
+      from={from}
+      to={to}
+    />
+  );
+}
+
+async function TeacherDashboardData({ from, to }: { from?: string; to?: string }) {
+  const admin = createSupabaseAdminClient();
+
+  // "When did this assessment happen" — starts_at, not created_at, is the
+  // natural date range for this tab, distinct from the marketing table's
+  // cohort-based created_at filter.
+  let slotQuery = admin
+    .from("assessment_slots")
+    .select(
+      "id, teacher_id, starts_at, application_id, claimed_by_teacher, unavailable_reported, applications(lead_student_name, students(full_name))",
+    )
+    .not("teacher_id", "is", null);
+  if (from) slotQuery = slotQuery.gte("starts_at", `${from}T00:00:00`);
+  if (to) slotQuery = slotQuery.lte("starts_at", `${to}T23:59:59`);
+
+  const [{ data: teacherData }, { data: slotData }] = await Promise.all([
+    admin.from("users").select("id, full_name, email").eq("role", "teacher").order("full_name", { ascending: true }),
+    slotQuery,
+  ]);
+
+  const teachers = teacherData ?? [];
+  const slots = (slotData ?? []) as unknown as TeacherSlotRow[];
+
+  // Results have no date column of their own — scope them to exactly the
+  // applications already pulled from the ranged slots query above.
+  const applicationIds = slots.map((s) => s.application_id).filter((id): id is string => Boolean(id));
+  const { data: resultData } =
+    applicationIds.length > 0
+      ? await admin.from("assessment_results").select("application_id, teacher_id, outcome").in("application_id", applicationIds)
+      : { data: [] };
+  const results = (resultData ?? []) as unknown as TeacherResultRow[];
+
+  const statsByTeacher = computeTeacherStatsByTeacher(slots, results);
+
+  const totals = teachers.reduce(
+    (acc, t) => {
+      const s = statsByTeacher.get(t.id)?.stats ?? EMPTY_TEACHER_STATS;
+      acc.totalSlots += s.totalSlots;
+      acc.claimed += s.claimed;
+      acc.assignedByAdmin += s.assignedByAdmin;
+      acc.booked += s.booked;
+      acc.completed += s.completed;
+      acc.eligible += s.eligible;
+      acc.notEligible += s.notEligible;
+      acc.unavailableReported += s.unavailableReported;
+      return acc;
+    },
+    { ...EMPTY_TEACHER_STATS },
+  );
+
+  return (
+    <TeacherDashboard
+      teachers={teachers.map((t) => ({
+        id: t.id,
+        name: t.full_name ?? t.email ?? "—",
+        stats: statsByTeacher.get(t.id)?.stats ?? EMPTY_TEACHER_STATS,
+        slots: statsByTeacher.get(t.id)?.slots ?? {
+          totalSlots: [],
+          claimed: [],
+          assignedByAdmin: [],
+          booked: [],
+          completed: [],
+          eligible: [],
+          notEligible: [],
+          unavailableReported: [],
+        },
+      }))}
+      totals={totals}
       from={from}
       to={to}
     />
