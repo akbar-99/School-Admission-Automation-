@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowUpDown, ArrowUp, ArrowDown, X } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, Crown, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatDateTime, formatINR } from "@/lib/utils";
@@ -89,6 +89,8 @@ export function CooDashboard({
   const activeStaff = modal ? staff.find((s) => s.name === modal.name) : null;
   const modalRows = activeStaff && modal ? activeStaff.rows[modal.bucket] : [];
 
+  const topValue = Math.max(0, ...staff.map((s) => conversionValue(s.stats)));
+  const isTop = (st: CooFunnelStats) => topValue > 0 && conversionValue(st) === topValue;
   const maxConversion = Math.max(1, ...staff.map((s) => Math.max(0, conversionValue(s.stats))));
 
   return (
@@ -160,15 +162,21 @@ export function CooDashboard({
                 const pct = Math.round((value / maxConversion) * 100);
                 return (
                   <div key={s.id} className="flex items-center gap-3">
-                    <div className="w-32 shrink-0 truncate text-sm font-medium">{s.name}</div>
+                    <div className="flex w-36 shrink-0 items-center gap-1.5 truncate text-sm font-medium">
+                      {isTop(s.stats) && <Crown className="size-4 shrink-0 fill-amber-400 text-amber-500" aria-label="Top performer" />}
+                      <span className={isTop(s.stats) ? "truncate font-semibold text-amber-600" : "truncate"}>{s.name}</span>
+                    </div>
                     <div className="h-6 flex-1 overflow-hidden rounded-full bg-muted">
                       <div
                         className="h-full rounded-full transition-all"
-                        style={{ width: `${pct}%`, backgroundColor: PALETTE[i % PALETTE.length] }}
+                        style={{ width: `${pct}%`, backgroundColor: isTop(s.stats) ? "#f59e0b" : PALETTE[i % PALETTE.length] }}
                       />
                     </div>
-                    <div className="w-16 shrink-0 text-right text-sm font-medium tabular-nums">
-                      {conversionLabel(s.stats)}
+                    <div className="w-40 shrink-0 text-right text-sm tabular-nums">
+                      <span className="font-medium">{conversionLabel(s.stats)}</span>
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        {s.stats.admissionCompleted} of {s.stats.enquiries} admitted
+                      </span>
                     </div>
                   </div>
                 );
