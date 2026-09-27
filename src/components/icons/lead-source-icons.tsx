@@ -2,6 +2,7 @@
 // (the only icon package in this project) dropped brand/logo icons, so these
 // are minimal hand-drawn stand-ins rather than a new dependency for four
 // icons.
+import { MoreHorizontal, Users } from "lucide-react";
 
 export function InstagramIcon({ className }: { className?: string }) {
   return (
@@ -63,4 +64,24 @@ export function GoogleIcon({ className }: { className?: string }) {
       />
     </svg>
   );
+}
+
+// Shared by every place that lists lead sources with their real logo
+// (the picker, the Team dashboard's source breakdown, the per-person detail
+// page) so they never drift out of sync with each other.
+export function SourceIcon({ source, className }: { source: string; className?: string }) {
+  switch (source) {
+    case "instagram":
+      return <InstagramIcon className={className} />;
+    case "facebook":
+      return <FacebookIcon className={className} />;
+    case "whatsapp":
+      return <WhatsappIcon className={className} />;
+    case "google":
+      return <GoogleIcon className={className} />;
+    case "referral":
+      return <Users className={className} />;
+    default:
+      return <MoreHorizontal className={className} />;
+  }
 }

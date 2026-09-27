@@ -5,6 +5,7 @@ import { requireRole } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { formatDateTime, formatINR } from "@/lib/utils";
 import { StatusBadge } from "@/components/status-badge";
+import { SourceIcon } from "@/components/icons/lead-source-icons";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import {
@@ -112,7 +113,10 @@ export default async function TeamMemberDetailPage({
               const pct = Math.round((s.count / maxSource) * 100);
               return (
                 <div key={s.source} className="flex items-center gap-3">
-                  <div className="w-24 shrink-0 truncate text-sm font-medium">{s.label}</div>
+                  <div className="flex w-28 shrink-0 items-center gap-1.5 truncate text-sm font-medium">
+                    <SourceIcon source={s.source} className="size-4 shrink-0" />
+                    {s.label}
+                  </div>
                   <div className="h-6 flex-1 overflow-hidden rounded-full bg-muted">
                     <div
                       className="h-full rounded-full transition-all"

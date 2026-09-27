@@ -1,5 +1,5 @@
 import "server-only";
-import { LEAD_SOURCE_LABEL, type AppStatus } from "@/lib/types";
+import { LEAD_SOURCE_LABEL, LEAD_SOURCES, type AppStatus } from "@/lib/types";
 import { needsAssessment } from "@/lib/assessment";
 
 // Statuses that mean a lead reached at least this funnel stage. Derived from
@@ -233,7 +233,10 @@ export function computeCooStatsByCreator(rows: CooStatsRow[]): Map<string, CooCr
 export function computeSourceBreakdown(
   rows: { lead_source: string | null }[],
 ): { source: string; label: string; count: number }[] {
-  const counts = new Map<string, number>();
+  // Seed every known source at 0 first so a channel with no leads yet still
+  // shows up (e.g. "we're not getting anything from Google") instead of
+  // silently disappearing from the list.
+  const counts = new Map<string, number>(LEAD_SOURCES.map((s) => [s, 0]));
   for (const row of rows) {
     const key = row.lead_source ?? "unknown";
     counts.set(key, (counts.get(key) ?? 0) + 1);
