@@ -1,6 +1,7 @@
 import "server-only";
 import { LEAD_SOURCE_LABEL, LEAD_SOURCES, type AppStatus } from "@/lib/types";
 import { needsAssessment } from "@/lib/assessment";
+import { CURRICULUM_OPTIONS } from "@/lib/config";
 
 // Statuses that mean a lead reached at least this funnel stage. Derived from
 // the status machine (0002_functions.sql): once a lead leaves LEAD_CREATED /
@@ -140,7 +141,8 @@ export interface CooStatsRow {
   // entered directly through the New lead form. Lets "claimed" be counted
   // separately from "created" even though both set created_by the same way.
   external_contact_id?: string | null;
-  students: { full_name: string } | null;
+  preferred_curriculum?: string | null;
+  students: { full_name: string; curriculum?: string | null } | null;
   parents: { full_name: string } | null;
   payments?: { amount: number; status: string }[] | null;
 }
@@ -248,6 +250,30 @@ export function computeSourceBreakdown(
       count,
     }))
     .sort((a, b) => b.count - a.count);
+}
+
+// Curriculum split of actually-enrolled students (erp_status "synced" — the
+// same milestone as the "Added to course" stat), not every enquiry's stated
+// preference — someone can prefer Cambridge at enquiry time and still not
+// enroll. Falls back to the application's preferred_curriculum only if the
+// student record itself has no curriculum set yet.
+export function computeCurriculumBreakdown(
+  rows: Pick<CooStatsRow, "erp_status" | "students" | "preferred_curriculum">[],
+): { curriculum: string; count: number }[] {
+  const counts = new Map<string, number>(CURRICULUM_OPTIONS.map((c) => [c, 0]));
+  let other = 0;
+  for (const row of rows) {
+    if (row.erp_status !== "synced") continue;
+    const value = row.students?.curriculum ?? row.preferred_curriculum ?? null;
+    if (value && counts.has(value)) {
+      counts.set(value, (counts.get(value) ?? 0) + 1);
+    } else {
+      other += 1;
+    }
+  }
+  const result = [...counts.entries()].map(([curriculum, count]) => ({ curriculum, count }));
+  if (other > 0) result.push({ curriculum: "Other", count: other });
+  return result;
 }
 
 export function cooConversionLabel(stats: CooFunnelStats): string {

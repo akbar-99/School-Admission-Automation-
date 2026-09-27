@@ -45,12 +45,14 @@ export function CooDashboard({
   staff,
   totals,
   sourceBreakdown,
+  curriculumBreakdown,
   from,
   to,
 }: {
   staff: StaffEntry[];
   totals: CooFunnelStats;
   sourceBreakdown: { source: string; label: string; count: number }[];
+  curriculumBreakdown: { curriculum: string; count: number }[];
   from?: string;
   to?: string;
 }) {
@@ -110,6 +112,16 @@ export function CooDashboard({
             <div className="font-display text-2xl font-semibold">{formatINR(totals.revenuePaise)}</div>
           </CardContent>
         </Card>
+        {curriculumBreakdown.map((c) => (
+          <Card key={c.curriculum} className="shadow-luxe">
+            <CardContent className="py-5">
+              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {c.curriculum} enrolled
+              </div>
+              <div className="font-display text-2xl font-semibold">{c.count}</div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       <Card>

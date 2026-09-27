@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import {
   computeCooStatsByCreator,
+  computeCurriculumBreakdown,
   computeSourceBreakdown,
   cooConversionLabel,
   EMPTY_COO_STATS,
@@ -48,7 +49,7 @@ export default async function TeamMemberDetailPage({
   let query = admin
     .from("applications")
     .select(
-      "id, status, grade_applying, created_by, erp_status, created_at, lead_student_name, lead_source, lead_source_other, external_contact_id, lead_message, category, students(full_name), parents(full_name), payments(amount, status)",
+      "id, status, grade_applying, created_by, erp_status, created_at, lead_student_name, lead_source, lead_source_other, external_contact_id, lead_message, preferred_curriculum, category, students(full_name, curriculum), parents(full_name), payments(amount, status)",
     )
     .eq("created_by", id)
     .order("created_at", { ascending: false })
@@ -60,6 +61,7 @@ export default async function TeamMemberDetailPage({
 
   const stats = computeCooStatsByCreator(rows).get(id)?.stats ?? EMPTY_COO_STATS;
   const sourceBreakdown = computeSourceBreakdown(rows);
+  const curriculumBreakdown = computeCurriculumBreakdown(rows);
   const maxSource = Math.max(1, ...sourceBreakdown.map((s) => s.count));
   const rangeQuery = new URLSearchParams({ ...(from ? { from } : {}), ...(to ? { to } : {}) }).toString();
 
@@ -99,6 +101,16 @@ export default async function TeamMemberDetailPage({
             <div className="font-display text-2xl font-semibold">{formatINR(stats.revenuePaise)}</div>
           </CardContent>
         </Card>
+        {curriculumBreakdown.map((c) => (
+          <Card key={c.curriculum} className="shadow-luxe">
+            <CardContent className="py-5">
+              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {c.curriculum} enrolled
+              </div>
+              <div className="font-display text-2xl font-semibold">{c.count}</div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       <Card>
@@ -148,6 +160,7 @@ export default async function TeamMemberDetailPage({
                   <TH>Category</TH>
                   <TH>Source</TH>
                   <TH>Grade</TH>
+                  <TH>Curriculum</TH>
                   <TH>Status</TH>
                   <TH>Created</TH>
                 </TR>
@@ -183,6 +196,7 @@ export default async function TeamMemberDetailPage({
                       <TD>{r.category ?? pending}</TD>
                       <TD>{leadSourceLabel(r.lead_source, r.lead_source_other)}</TD>
                       <TD>{r.grade_applying ?? pending}</TD>
+                      <TD>{r.students?.curriculum ?? r.preferred_curriculum ?? pending}</TD>
                       <TD>
                         <StatusBadge status={r.status as AppStatus} />
                       </TD>
