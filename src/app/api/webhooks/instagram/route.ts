@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { config } from "@/lib/config";
 import { handleInboundInstagramMessage } from "@/lib/workflow";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 // Instagram DM enquiries, captured as unclaimed leads for any marketing team
 // member to pick up (see handleInboundInstagramMessage in workflow.ts). This
@@ -34,7 +33,15 @@ export async function GET(request: Request) {
 interface InstagramMessagingEvent {
   sender: { id: string }; // IGSID
   timestamp?: number;
-  message?: { mid: string; text?: string; is_echo?: boolean };
+  message?: {
+    mid: string;
+    text?: string;
+    is_echo?: boolean;
+    // Present (with no usable text) for structured interactions like the
+    // native "Enquire" appointment-request button — Meta doesn't expose the
+    // actual request details (preferred time, message) through this field.
+    attachments?: { type?: string }[];
+  };
 }
 interface InstagramWebhookPayload {
   object?: string;
@@ -48,19 +55,6 @@ export async function POST(request: Request) {
   if (!verifySignature(raw, signature)) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
-
-  // TEMP DIAGNOSTIC — logging the raw payload to see the exact shape of the
-  // Instagram "Enquire" (appointment request) event, which the normal
-  // message-shaped handling below doesn't currently recognize. Remove once
-  // that shape is confirmed and handled properly.
-  await createSupabaseAdminClient().from("notifications").insert({
-    event: "IG_WEBHOOK_DEBUG_RAW",
-    channel: "email",
-    recipient: "debug",
-    subject: "instagram raw payload",
-    body: raw.slice(0, 4000),
-    status: "sent",
-  });
 
   let body: InstagramWebhookPayload;
   try {
@@ -77,15 +71,18 @@ export async function POST(request: Request) {
     // "like"/heart-react on a message has no `message` field at all (it's a
     // separate reaction event), so it's already excluded here too.
     if (!event.message || event.message.is_echo) continue;
-    // An emoji-only/no-real-words message (a stray 👍 or similar) isn't a
-    // genuine enquiry signal — skip it. A real (even short) message like
-    // "Hi" or "fees?" still passes, in any script.
-    if (!hasRealText(event.message.text)) continue;
+    const hasAttachment = Boolean(event.message.attachments?.length);
+    // An emoji-only/no-real-words plain message (a stray 👍 or similar) isn't
+    // a genuine enquiry signal — skip it. A structured interaction (e.g. the
+    // native "Enquire" appointment-request button) has no usable text at
+    // all but IS a genuine signal, so it still counts.
+    if (!hasAttachment && !hasRealText(event.message.text)) continue;
     const igsid = event.sender?.id;
     if (!igsid) continue;
 
     const profile = await fetchInstagramProfile(igsid);
-    await handleInboundInstagramMessage(igsid, profile, event.message.text);
+    const messageText = event.message.text?.trim() || (hasAttachment ? "Requested an appointment via Instagram" : null);
+    await handleInboundInstagramMessage(igsid, profile, messageText);
   }
 
   // Meta requires 200 within a few seconds regardless of outcome, or it
