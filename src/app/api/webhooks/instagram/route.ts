@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { config } from "@/lib/config";
 import { handleInboundInstagramMessage } from "@/lib/workflow";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 // Instagram DM enquiries, captured as unclaimed leads for any marketing team
 // member to pick up (see handleInboundInstagramMessage in workflow.ts). This
@@ -47,6 +48,19 @@ export async function POST(request: Request) {
   if (!verifySignature(raw, signature)) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
+
+  // TEMP DIAGNOSTIC — logging the raw payload to see the exact shape of the
+  // Instagram "Enquire" (appointment request) event, which the normal
+  // message-shaped handling below doesn't currently recognize. Remove once
+  // that shape is confirmed and handled properly.
+  await createSupabaseAdminClient().from("notifications").insert({
+    event: "IG_WEBHOOK_DEBUG_RAW",
+    channel: "email",
+    recipient: "debug",
+    subject: "instagram raw payload",
+    body: raw.slice(0, 4000),
+    status: "sent",
+  });
 
   let body: InstagramWebhookPayload;
   try {
