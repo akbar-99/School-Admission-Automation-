@@ -29,6 +29,7 @@ interface Row {
   lead_student_name: string | null;
   lead_source: string | null;
   lead_source_other: string | null;
+  external_contact_id: string | null;
   access_token: string;
   created_at: string;
   parents: { full_name: string; phone: string | null; email: string | null } | null;
@@ -289,7 +290,7 @@ async function LeadsTableSection({
   let query = admin
     .from("applications")
     .select(
-      "id, status, category, grade_applying, lead_student_name, lead_source, lead_source_other, access_token, created_at, parents(full_name, phone, email), students(full_name)",
+      "id, status, category, grade_applying, lead_student_name, lead_source, lead_source_other, external_contact_id, access_token, created_at, parents(full_name, phone, email), students(full_name)",
     )
     .order("created_at", { ascending: false })
     .limit(100);
@@ -411,6 +412,7 @@ async function LeadsTableSection({
                 <TH>Status</TH>
                 <TH>Created</TH>
                 <TH>Link</TH>
+                <TH></TH>
               </TR>
             </THead>
             <TBody>
@@ -443,6 +445,13 @@ async function LeadsTableSection({
                   </TD>
                   <TD>
                     <CopyButton value={applyUrl(r.access_token)} variant="ghost" />
+                  </TD>
+                  <TD>
+                    {r.external_contact_id && (
+                      <Link href={`/marketing/leads/${r.id}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+                        Chat
+                      </Link>
+                    )}
                   </TD>
                 </TR>
               ))}

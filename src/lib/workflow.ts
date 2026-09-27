@@ -177,15 +177,41 @@ export async function handleInboundInstagramMessage(
   messageText?: string | null,
 ): Promise<void> {
   const admin = createSupabaseAdminClient();
+  const text = messageText?.trim() || null;
 
-  // Already-known sender (any status) — an ordinary reply, not a new lead.
-  // Also makes a duplicate webhook delivery of the same message a no-op.
+  // Already-known sender (any status) — an ordinary reply in an existing
+  // conversation, not a new lead. Also makes a duplicate webhook delivery of
+  // the same message a no-op (no second row gets inserted below either,
+  // since there's nothing keying a dedup off provider_message_id here —
+  // acceptable: a genuine duplicate delivery re-showing one message in the
+  // thread is a cosmetic, rare edge case, not a functional problem).
   const { data: existing } = await admin
     .from("applications")
-    .select("id")
+    .select("id, created_by, parent_id")
     .eq("external_contact_id", igsid)
     .maybeSingle();
-  if (existing) return;
+  if (existing) {
+    await admin.from("instagram_messages").insert({
+      application_id: existing.id,
+      direction: "inbound",
+      message_text: text ?? "(no message text)",
+    });
+    // Only ping the owning rep once someone's actually claimed it — before
+    // that, notifyNewUnclaimedLead already fired on the first message, and
+    // repeat pings to every marketing member on each follow-up would just
+    // be noise. The message is still saved either way.
+    if (existing.created_by) {
+      const { data: parentRow } = await admin
+        .from("parents")
+        .select("*")
+        .eq("id", existing.parent_id)
+        .maybeSingle();
+      if (parentRow) {
+        await notifyNewInstagramMessage(existing.created_by, existing.id, parentRow as Parent, text);
+      }
+    }
+    return;
+  }
 
   const displayName = profile.name?.trim() || profile.username?.trim() || "Instagram enquiry";
   const { data: parent, error: pErr } = await admin
@@ -205,7 +231,7 @@ export async function handleInboundInstagramMessage(
       status: "LEAD_CREATED",
       lead_source: "instagram",
       lead_source_other: profile.username ? `@${profile.username}` : null,
-      lead_message: messageText?.trim() || null,
+      lead_message: text,
       external_contact_id: igsid,
       created_by: null,
     })
@@ -216,7 +242,39 @@ export async function handleInboundInstagramMessage(
     return;
   }
 
+  await admin.from("instagram_messages").insert({
+    application_id: app.id,
+    direction: "inbound",
+    message_text: text ?? "(no message text)",
+  });
+
   await notifyNewUnclaimedLead(app as Application, parent as Parent);
+}
+
+// A new message arrived on an already-claimed Instagram thread — let the
+// owning rep know, mirroring notifyLeadCreator's single-recipient shape
+// (src/lib/workflow.ts:119): resolve the one owner, send directly to them.
+async function notifyNewInstagramMessage(
+  ownerId: string,
+  applicationId: string,
+  parent: Parent,
+  messageText: string | null,
+): Promise<void> {
+  const admin = createSupabaseAdminClient();
+  const { data: owner } = await admin.from("users").select("email, phone").eq("id", ownerId).maybeSingle();
+  if (!owner || (!owner.email && !owner.phone)) return;
+  const quoted = messageText ? `: "${messageText}"` : "";
+  await dispatch(
+    toStaffMember(
+      { email: owner.email, phone: owner.phone },
+      {
+        applicationId,
+        event: "IG_NEW_MESSAGE",
+        subject: "New message from your Instagram lead",
+        body: `${parent.full_name} sent a new message on Instagram${quoted}`,
+      },
+    ),
+  );
 }
 
 // A new unclaimed inbound lead is ready to be picked up — mirrors

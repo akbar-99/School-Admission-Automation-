@@ -6,6 +6,7 @@ import { z } from "zod";
 import { requireRole } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { notifyLeadCreated, notifyLeadClaimed } from "@/lib/workflow";
+import { sendInstagramMessage } from "@/lib/instagram";
 import { logAudit } from "@/lib/audit";
 import { LEAD_SOURCES, type Application, type Parent } from "@/lib/types";
 
@@ -297,4 +298,61 @@ export async function addContactInfo(formData: FormData) {
 
   revalidatePath("/marketing");
   redirect("/marketing?created=" + app!.access_token);
+}
+
+const SendInstagramReplySchema = z.object({
+  application_id: z.string().uuid(),
+  message: z.string().trim().min(1, "Message can't be empty"),
+});
+
+// Sends a real Instagram DM reply from inside the app. Instagram enforces a
+// ~24h messaging window from the person's last message — a send outside
+// that window fails with a clear error from sendInstagramMessage, surfaced
+// back to the rep as-is rather than silently swallowed.
+export async function sendInstagramReply(formData: FormData) {
+  const { profile } = await requireRole(["marketing", "admin", "coo"]);
+  const parsed = SendInstagramReplySchema.safeParse({
+    application_id: formData.get("application_id"),
+    message: formData.get("message"),
+  });
+  if (!parsed.success) {
+    redirect("/marketing?error=" + encodeURIComponent(parsed.error.issues[0].message));
+  }
+  const input = parsed.data!;
+
+  const admin = createSupabaseAdminClient();
+  const { data: app } = await admin
+    .from("applications")
+    .select("id, created_by, external_contact_id")
+    .eq("id", input.application_id)
+    .maybeSingle();
+  if (!app || (profile.role === "marketing" && app.created_by !== profile.id)) {
+    redirect("/marketing?error=" + encodeURIComponent("Enquiry not found."));
+  }
+  if (!app!.external_contact_id) {
+    redirect(`/marketing/leads/${input.application_id}?error=` + encodeURIComponent("Not an Instagram enquiry."));
+  }
+
+  const result = await sendInstagramMessage(app!.external_contact_id, input.message);
+  if (!result.ok) {
+    redirect(`/marketing/leads/${input.application_id}?error=` + encodeURIComponent(result.error));
+  }
+
+  await admin.from("instagram_messages").insert({
+    application_id: input.application_id,
+    direction: "outbound",
+    message_text: input.message,
+    provider_message_id: result.messageId || null,
+    sent_by: profile.id,
+  });
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "instagram.reply_sent",
+    entity: "application",
+    entityId: input.application_id,
+  });
+
+  revalidatePath(`/marketing/leads/${input.application_id}`);
+  redirect(`/marketing/leads/${input.application_id}`);
 }
