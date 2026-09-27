@@ -6,6 +6,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { formatDateTime, formatINR } from "@/lib/utils";
 import { StatusBadge } from "@/components/status-badge";
 import { SourceIcon } from "@/components/icons/lead-source-icons";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import {
@@ -47,7 +48,7 @@ export default async function TeamMemberDetailPage({
   let query = admin
     .from("applications")
     .select(
-      "id, status, grade_applying, created_by, erp_status, created_at, lead_student_name, lead_source, lead_source_other, external_contact_id, category, students(full_name), parents(full_name), payments(amount, status)",
+      "id, status, grade_applying, created_by, erp_status, created_at, lead_student_name, lead_source, lead_source_other, external_contact_id, lead_message, category, students(full_name), parents(full_name), payments(amount, status)",
     )
     .eq("created_by", id)
     .order("created_at", { ascending: false })
@@ -55,7 +56,7 @@ export default async function TeamMemberDetailPage({
   if (from) query = query.gte("created_at", `${from}T00:00:00`);
   if (to) query = query.lte("created_at", `${to}T23:59:59`);
   const { data } = await query;
-  const rows = (data ?? []) as unknown as (CooStatsRow & { category: string | null })[];
+  const rows = (data ?? []) as unknown as (CooStatsRow & { category: string | null; lead_message: string | null })[];
 
   const stats = computeCooStatsByCreator(rows).get(id)?.stats ?? EMPTY_COO_STATS;
   const sourceBreakdown = computeSourceBreakdown(rows);
@@ -152,19 +153,43 @@ export default async function TeamMemberDetailPage({
                 </TR>
               </THead>
               <TBody>
-                {rows.map((r) => (
-                  <TR key={r.id}>
-                    <TD className="font-medium">{r.parents?.full_name ?? "—"}</TD>
-                    <TD>{r.students?.full_name ?? r.lead_student_name ?? "—"}</TD>
-                    <TD>{r.category ?? "—"}</TD>
-                    <TD>{leadSourceLabel(r.lead_source, r.lead_source_other)}</TD>
-                    <TD>{r.grade_applying ?? "—"}</TD>
-                    <TD>
-                      <StatusBadge status={r.status as AppStatus} />
-                    </TD>
-                    <TD className="whitespace-nowrap text-muted-foreground">{formatDateTime(r.created_at)}</TD>
-                  </TR>
-                ))}
+                {rows.map((r) => {
+                  const isDm = Boolean(r.external_contact_id);
+                  const pending = <span className="text-xs italic text-muted-foreground">{isDm ? "Not collected yet" : "—"}</span>;
+                  return (
+                    <TR key={r.id}>
+                      <TD className="max-w-[260px]">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-medium">{r.parents?.full_name ?? "—"}</span>
+                          {isDm && (
+                            <Badge tone="info">
+                              <SourceIcon source={r.lead_source ?? "instagram"} className="mr-1 size-3" />
+                              DM
+                            </Badge>
+                          )}
+                          {isDm && (
+                            <Link href={`/marketing/leads/${r.id}`} className="text-xs text-primary underline-offset-2 hover:underline">
+                              Chat
+                            </Link>
+                          )}
+                        </div>
+                        {isDm && r.lead_message && (
+                          <div className="mt-0.5 truncate text-xs text-muted-foreground" title={r.lead_message}>
+                            “{r.lead_message}”
+                          </div>
+                        )}
+                      </TD>
+                      <TD>{r.students?.full_name ?? r.lead_student_name ?? pending}</TD>
+                      <TD>{r.category ?? pending}</TD>
+                      <TD>{leadSourceLabel(r.lead_source, r.lead_source_other)}</TD>
+                      <TD>{r.grade_applying ?? pending}</TD>
+                      <TD>
+                        <StatusBadge status={r.status as AppStatus} />
+                      </TD>
+                      <TD className="whitespace-nowrap text-muted-foreground">{formatDateTime(r.created_at)}</TD>
+                    </TR>
+                  );
+                })}
               </TBody>
             </Table>
           )}
