@@ -77,6 +77,20 @@ export default async function PrivacyPage() {
             </p>
           </section>
 
+          <section id="data-deletion">
+            <h2 className="font-display text-xl font-semibold text-foreground">Data deletion</h2>
+            <p className="mt-2">
+              To request deletion of your personal data — including any information collected
+              through Instagram or WhatsApp messaging with us — email{" "}
+              <a className="text-primary underline underline-offset-2" href={`mailto:${settings.schoolEmail}`}>
+                {settings.schoolEmail}
+              </a>{" "}
+              with your name and the phone number or Instagram/WhatsApp account used to contact us.
+              We will delete your data within 30 days, except records we are legally required to
+              retain (e.g. completed admission or payment records for regulatory purposes).
+            </p>
+          </section>
+
           <section>
             <h2 className="font-display text-xl font-semibold text-foreground">Contact</h2>
             <p className="mt-2">
