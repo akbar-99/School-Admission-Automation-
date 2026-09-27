@@ -13,7 +13,7 @@ export default async function AdminLayout({
       userName={profile.full_name ?? profile.email ?? "Admin"}
       nav={[
         { href: "/admin", label: "Overview" },
-        { href: "/admin/coo-dashboard", label: "Team dashboard" },
+        ...(profile.role === "coo" ? [{ href: "/admin/coo-dashboard", label: "Team dashboard" }] : []),
         { href: "/marketing", label: "Leads" },
         { href: "/admin/payments", label: "Payments" },
         { href: "/admin/assessments", label: "Assessments" },
