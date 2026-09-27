@@ -83,7 +83,7 @@ async function fetchInstagramProfile(igsid: string): Promise<{ name: string | nu
   if (!config.notifications.instagramToken) return { name: null, username: null };
   try {
     const res = await fetch(
-      `https://graph.facebook.com/v20.0/${igsid}?fields=name,username&access_token=${config.notifications.instagramToken}`,
+      `https://graph.facebook.com/v20.0/${igsid}?fields=name,username&access_token=${encodeURIComponent(config.notifications.instagramToken)}`,
     );
     if (!res.ok) return { name: null, username: null };
     const json = (await res.json()) as { name?: string; username?: string };
