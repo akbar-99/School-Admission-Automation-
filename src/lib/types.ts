@@ -40,7 +40,8 @@ export type PaymentState =
   | "pending"
   | "completed"
   | "failed"
-  | "abandoned";
+  | "abandoned"
+  | "refunded";
 export type NotificationChannel = "email" | "sms" | "whatsapp";
 export type NotificationStatus = "queued" | "sent" | "delivered" | "read" | "failed";
 
@@ -136,9 +137,25 @@ export interface Application {
   access_token: string;
   token_expires_at: string;
   created_by: string | null;
+  withdrawn_at: string | null;
+  withdrawal_type: WithdrawalType | null;
+  withdrawal_reason: string | null;
+  withdrawn_by: string | null;
   created_at: string;
   updated_at: string;
 }
+
+// A withdrawal is layered on top of whatever funnel status the application
+// already reached — it never overwrites `status`, since the family DID reach
+// that milestone (payment, admission, added to course) before backing out.
+// Pre- vs post-admission is derived from erp_status at the moment of
+// withdrawal (added to the class roster yet, or not), not chosen by the rep,
+// so there's no room to misclassify it.
+export type WithdrawalType = "pre_admission" | "post_admission";
+export const WITHDRAWAL_TYPE_LABEL: Record<WithdrawalType, string> = {
+  pre_admission: "Pre-admission withdrawal",
+  post_admission: "Post-admission withdrawal",
+};
 
 export interface Section {
   id: string;
@@ -201,6 +218,9 @@ export interface Payment {
   includes_study_material: boolean;
   admission_amount: number;
   study_material_amount: number;
+  refunded_at: string | null;
+  refund_reason: string | null;
+  refunded_by: string | null;
   created_at: string;
   updated_at: string;
 }

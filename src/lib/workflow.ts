@@ -17,6 +17,7 @@ import {
   leadSourceLabel,
   type Application,
   type Parent,
+  type Payment,
   type Student,
   type SubjectResult,
 } from "@/lib/types";
@@ -304,6 +305,21 @@ export async function notifyLeadClaimed(userId: string, app: Application, parent
       event: "LEAD_CLAIMED",
       subject: "Enquiry claimed",
       body: `${u?.full_name ?? u?.email ?? "A team member"} claimed the ${source} enquiry from ${parent.full_name}.`,
+    }),
+  );
+}
+
+// A refund has no verified-webhook signal of its own (Razorpay refunds are
+// staff-triggered from /admin/payments, not something the parent's gateway
+// flow reports back) — so the rep who owns this lead only finds out if we
+// tell them directly here.
+export async function notifyPaymentRefunded(app: Application, parent: Parent, payment: Payment): Promise<void> {
+  await dispatch(
+    await notifyLeadCreator(app, {
+      applicationId: app.id,
+      event: "PAYMENT_REFUNDED",
+      subject: "Payment refunded",
+      body: `A refund of ${formatINR(payment.amount)} was processed for ${parent.full_name}'s payment.${payment.refund_reason ? ` Reason: ${payment.refund_reason}.` : ""}`,
     }),
   );
 }

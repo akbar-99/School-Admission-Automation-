@@ -6,9 +6,10 @@ import { ArrowUpDown, ArrowUp, ArrowDown, Crown, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatDateTime, formatINR } from "@/lib/utils";
-import { STATUS_LABEL, type AppStatus } from "@/lib/types";
+import { STATUS_LABEL, type AppStatus, type WithdrawalType } from "@/lib/types";
 import { SourceIcon } from "@/components/icons/lead-source-icons";
-import type { CooBucket, CooFunnelStats, CooStatsRow } from "@/lib/marketing-stats";
+import { WithdrawalBadge } from "@/components/withdrawal-badge";
+import type { CooBucket, CooFunnelStats, CooStatsRow, WithdrawalStats } from "@/lib/marketing-stats";
 
 // Mirrors cooConversionValue/cooConversionLabel in lib/marketing-stats.ts —
 // duplicated (not imported) because that module is server-only and this is a
@@ -41,11 +42,23 @@ type SortKey = CooBucket | "name" | "conversion";
 
 const PALETTE = ["#1b7e9a", "#2f8f6b", "#c08a2d", "#94ac9f", "#c0392b", "#475569", "#7c5cbf", "#0f766e"];
 
+interface WithdrawalEntry {
+  id: string;
+  memberName: string;
+  studentName: string;
+  parentName: string;
+  type: WithdrawalType;
+  reason: string | null;
+  withdrawnAt: string | null;
+}
+
 export function CooDashboard({
   staff,
   totals,
   sourceBreakdown,
   curriculumBreakdown,
+  withdrawalStats,
+  withdrawals,
   from,
   to,
 }: {
@@ -53,6 +66,8 @@ export function CooDashboard({
   totals: CooFunnelStats;
   sourceBreakdown: { source: string; label: string; count: number }[];
   curriculumBreakdown: { curriculum: string; count: number }[];
+  withdrawalStats: WithdrawalStats;
+  withdrawals: WithdrawalEntry[];
   from?: string;
   to?: string;
 }) {
@@ -122,7 +137,52 @@ export function CooDashboard({
             </CardContent>
           </Card>
         ))}
+        <Card className="shadow-luxe">
+          <CardContent className="py-5">
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Pre-admission withdrawals
+            </div>
+            <div className="font-display text-2xl font-semibold">{withdrawalStats.preAdmission}</div>
+          </CardContent>
+        </Card>
+        <Card className="shadow-luxe">
+          <CardContent className="py-5">
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Post-admission withdrawals
+            </div>
+            <div className="font-display text-2xl font-semibold">{withdrawalStats.postAdmission}</div>
+          </CardContent>
+        </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Withdrawals</CardTitle>
+          <CardDescription>Enquiries that backed out after payment, with the reason, for the selected range.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {withdrawals.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No withdrawals for this range.</p>
+          ) : (
+            <ul className="space-y-3">
+              {withdrawals.map((w) => (
+                <li key={w.id} className="rounded-lg border border-border bg-muted/30 px-3.5 py-2.5 text-sm">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium">{w.studentName}</span>
+                    <span className="text-xs text-muted-foreground">(parent: {w.parentName})</span>
+                    <WithdrawalBadge type={w.type} reason={null} />
+                  </div>
+                  {w.reason && <p className="mt-1 text-sm text-foreground">{w.reason}</p>}
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {w.memberName}
+                    {w.withdrawnAt && ` · ${formatDateTime(w.withdrawnAt)}`}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

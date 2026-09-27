@@ -1,5 +1,5 @@
 import "server-only";
-import { LEAD_SOURCE_LABEL, LEAD_SOURCES, type AppStatus } from "@/lib/types";
+import { LEAD_SOURCE_LABEL, LEAD_SOURCES, type AppStatus, type WithdrawalType } from "@/lib/types";
 import { needsAssessment } from "@/lib/assessment";
 import { CURRICULUM_OPTIONS } from "@/lib/config";
 
@@ -142,6 +142,9 @@ export interface CooStatsRow {
   // separately from "created" even though both set created_by the same way.
   external_contact_id?: string | null;
   preferred_curriculum?: string | null;
+  withdrawn_at?: string | null;
+  withdrawal_type?: WithdrawalType | null;
+  withdrawal_reason?: string | null;
   students: { full_name: string; curriculum?: string | null } | null;
   parents: { full_name: string } | null;
   payments?: { amount: number; status: string }[] | null;
@@ -274,6 +277,24 @@ export function computeCurriculumBreakdown(
   const result = [...counts.entries()].map(([curriculum, count]) => ({ curriculum, count }));
   if (other > 0) result.push({ curriculum: "Other", count: other });
   return result;
+}
+
+export interface WithdrawalStats {
+  preAdmission: number;
+  postAdmission: number;
+}
+export const EMPTY_WITHDRAWAL_STATS: WithdrawalStats = { preAdmission: 0, postAdmission: 0 };
+
+// Counts withdrawals among whatever rows are passed in — team-wide totals if
+// given every row, or one person's own count if the rows are already scoped
+// to them.
+export function computeWithdrawalStats(rows: Pick<CooStatsRow, "withdrawal_type">[]): WithdrawalStats {
+  const stats: WithdrawalStats = { ...EMPTY_WITHDRAWAL_STATS };
+  for (const row of rows) {
+    if (row.withdrawal_type === "pre_admission") stats.preAdmission += 1;
+    else if (row.withdrawal_type === "post_admission") stats.postAdmission += 1;
+  }
+  return stats;
 }
 
 export function cooConversionLabel(stats: CooFunnelStats): string {

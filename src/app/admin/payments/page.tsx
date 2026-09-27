@@ -7,8 +7,12 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { Alert } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { SubmitButton } from "@/components/submit-button";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
+import { markPaymentRefunded } from "./actions";
 import type { PaymentState } from "@/lib/types";
 
 interface PaymentRow {
@@ -23,6 +27,8 @@ interface PaymentRow {
   includes_study_material: boolean;
   admission_amount: number;
   study_material_amount: number;
+  refunded_at: string | null;
+  refund_reason: string | null;
   created_at: string;
   updated_at: string;
   applications: {
@@ -40,6 +46,7 @@ const STATUS_TONE: Record<PaymentState, "neutral" | "success" | "warning" | "dan
   completed: "success",
   failed: "danger",
   abandoned: "warning",
+  refunded: "warning",
 };
 
 function describe(p: Pick<PaymentRow, "includes_admission" | "includes_study_material">): string {
@@ -51,9 +58,9 @@ function describe(p: Pick<PaymentRow, "includes_admission" | "includes_study_mat
 export default async function AdminPaymentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; from?: string; to?: string }>;
+  searchParams: Promise<{ status?: string; from?: string; to?: string; error?: string; refunded?: string }>;
 }) {
-  const { status, from, to } = await searchParams;
+  const { status, from, to, error, refunded } = await searchParams;
   const hasFilters = Boolean(status || from || to);
 
   return (
@@ -64,6 +71,9 @@ export default async function AdminPaymentsPage({
           Every payment attempt across the school — transaction IDs, references, and status.
         </p>
       </div>
+
+      {error && <Alert variant="error">{error}</Alert>}
+      {refunded && <Alert variant="success">Marked as refunded — the marketing rep who owns this lead has been notified.</Alert>}
 
       <Suspense fallback={<PaymentsTableSkeleton />}>
         <PaymentsTable status={status} from={from} to={to} hasFilters={hasFilters} />
@@ -100,7 +110,7 @@ async function PaymentsTable({
   let query = admin
     .from("payments")
     .select(
-      "id, amount, currency, status, receipt, razorpay_order_id, razorpay_payment_id, includes_admission, includes_study_material, admission_amount, study_material_amount, created_at, updated_at, applications(id, admission_number, grade_applying, students(full_name), parents(full_name, phone))",
+      "id, amount, currency, status, receipt, razorpay_order_id, razorpay_payment_id, includes_admission, includes_study_material, admission_amount, study_material_amount, refunded_at, refund_reason, created_at, updated_at, applications(id, admission_number, grade_applying, students(full_name), parents(full_name, phone))",
     )
     .order("created_at", { ascending: false })
     .limit(300);
@@ -114,19 +124,26 @@ async function PaymentsTable({
   const totals = rows.reduce(
     (acc, r) => {
       if (r.status === "completed") acc.completed += r.amount;
+      if (r.status === "refunded") acc.refunded += r.amount;
       acc.count += 1;
       return acc;
     },
-    { completed: 0, count: 0 },
+    { completed: 0, refunded: 0, count: 0 },
   );
 
   return (
     <>
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-3">
         <Card>
           <CardContent className="py-5">
             <div className="text-sm text-muted-foreground">Total collected (this filter)</div>
             <div className="font-display text-2xl font-semibold">{formatINR(totals.completed)}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="py-5">
+            <div className="text-sm text-muted-foreground">Total refunded (this filter)</div>
+            <div className="font-display text-2xl font-semibold">{formatINR(totals.refunded)}</div>
           </CardContent>
         </Card>
         <Card>
@@ -153,6 +170,7 @@ async function PaymentsTable({
                 <option value="completed">Completed</option>
                 <option value="failed">Failed</option>
                 <option value="abandoned">Abandoned</option>
+                <option value="refunded">Refunded</option>
               </Select>
             </div>
             <div className="space-y-1.5">
@@ -186,6 +204,7 @@ async function PaymentsTable({
                   <TH>Description</TH>
                   <TH>Amount</TH>
                   <TH>Status</TH>
+                  <TH>Refund</TH>
                   <TH>Transaction ID</TH>
                   <TH>Order ID</TH>
                   <TH>Reference</TH>
@@ -219,6 +238,34 @@ async function PaymentsTable({
                     </TD>
                     <TD>
                       <Badge tone={STATUS_TONE[p.status]}>{p.status}</Badge>
+                    </TD>
+                    <TD className="min-w-[180px]">
+                      {p.status === "refunded" ? (
+                        <div>
+                          <div className="text-xs text-muted-foreground">{formatDateTime(p.refunded_at!)}</div>
+                          {p.refund_reason && <div className="text-xs">{p.refund_reason}</div>}
+                        </div>
+                      ) : p.status === "completed" ? (
+                        <details className="group">
+                          <summary className="cursor-pointer text-xs font-medium text-primary underline-offset-2 hover:underline">
+                            Mark as refunded
+                          </summary>
+                          <form action={markPaymentRefunded} className="mt-1.5 space-y-1.5">
+                            <input type="hidden" name="payment_id" value={p.id} />
+                            <Textarea
+                              name="reason"
+                              required
+                              placeholder="Why is this being refunded?"
+                              className="h-16 w-56 text-xs"
+                            />
+                            <SubmitButton size="sm" variant="outline" pendingText="…">
+                              Confirm refund
+                            </SubmitButton>
+                          </form>
+                        </details>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
                     </TD>
                     <TD className="max-w-40 truncate font-mono text-xs">{p.razorpay_payment_id ?? "—"}</TD>
                     <TD className="max-w-40 truncate font-mono text-xs">{p.razorpay_order_id ?? "—"}</TD>

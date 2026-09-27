@@ -5,19 +5,22 @@ import { requireRole } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { formatDateTime, formatINR } from "@/lib/utils";
 import { StatusBadge } from "@/components/status-badge";
+import { WithdrawalBadge } from "@/components/withdrawal-badge";
 import { SourceIcon } from "@/components/icons/lead-source-icons";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
+import { restoreWithdrawn } from "@/app/marketing/actions";
 import {
   computeCooStatsByCreator,
   computeCurriculumBreakdown,
   computeSourceBreakdown,
+  computeWithdrawalStats,
   cooConversionLabel,
   EMPTY_COO_STATS,
   type CooStatsRow,
 } from "@/lib/marketing-stats";
-import { leadSourceLabel, type AppStatus } from "@/lib/types";
+import { leadSourceLabel, type AppStatus, type WithdrawalType } from "@/lib/types";
 
 const STAT_CARDS: { key: keyof typeof EMPTY_COO_STATS; label: string }[] = [
   { key: "enquiries", label: "Total enquiries" },
@@ -49,7 +52,7 @@ export default async function TeamMemberDetailPage({
   let query = admin
     .from("applications")
     .select(
-      "id, status, grade_applying, created_by, erp_status, created_at, lead_student_name, lead_source, lead_source_other, external_contact_id, lead_message, preferred_curriculum, category, students(full_name, curriculum), parents(full_name), payments(amount, status)",
+      "id, status, grade_applying, created_by, erp_status, created_at, lead_student_name, lead_source, lead_source_other, external_contact_id, lead_message, preferred_curriculum, category, withdrawn_at, withdrawal_type, withdrawal_reason, students(full_name, curriculum), parents(full_name), payments(amount, status)",
     )
     .eq("created_by", id)
     .order("created_at", { ascending: false })
@@ -57,11 +60,18 @@ export default async function TeamMemberDetailPage({
   if (from) query = query.gte("created_at", `${from}T00:00:00`);
   if (to) query = query.lte("created_at", `${to}T23:59:59`);
   const { data } = await query;
-  const rows = (data ?? []) as unknown as (CooStatsRow & { category: string | null; lead_message: string | null })[];
+  const rows = (data ?? []) as unknown as (CooStatsRow & {
+    category: string | null;
+    lead_message: string | null;
+    withdrawn_at: string | null;
+    withdrawal_type: WithdrawalType | null;
+    withdrawal_reason: string | null;
+  })[];
 
   const stats = computeCooStatsByCreator(rows).get(id)?.stats ?? EMPTY_COO_STATS;
   const sourceBreakdown = computeSourceBreakdown(rows);
   const curriculumBreakdown = computeCurriculumBreakdown(rows);
+  const withdrawalStats = computeWithdrawalStats(rows);
   const maxSource = Math.max(1, ...sourceBreakdown.map((s) => s.count));
   const rangeQuery = new URLSearchParams({ ...(from ? { from } : {}), ...(to ? { to } : {}) }).toString();
 
@@ -111,6 +121,22 @@ export default async function TeamMemberDetailPage({
             </CardContent>
           </Card>
         ))}
+        <Card className="shadow-luxe">
+          <CardContent className="py-5">
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Pre-admission withdrawals
+            </div>
+            <div className="font-display text-2xl font-semibold">{withdrawalStats.preAdmission}</div>
+          </CardContent>
+        </Card>
+        <Card className="shadow-luxe">
+          <CardContent className="py-5">
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Post-admission withdrawals
+            </div>
+            <div className="font-display text-2xl font-semibold">{withdrawalStats.postAdmission}</div>
+          </CardContent>
+        </Card>
       </div>
 
       <Card>
@@ -162,6 +188,7 @@ export default async function TeamMemberDetailPage({
                   <TH>Grade</TH>
                   <TH>Curriculum</TH>
                   <TH>Status</TH>
+                  <TH>Withdrawal</TH>
                   <TH>Created</TH>
                 </TR>
               </THead>
@@ -199,6 +226,21 @@ export default async function TeamMemberDetailPage({
                       <TD>{r.students?.curriculum ?? r.preferred_curriculum ?? pending}</TD>
                       <TD>
                         <StatusBadge status={r.status as AppStatus} />
+                      </TD>
+                      <TD>
+                        {r.withdrawn_at && r.withdrawal_type ? (
+                          <div className="space-y-1">
+                            <WithdrawalBadge type={r.withdrawal_type} reason={r.withdrawal_reason} />
+                            <form action={restoreWithdrawn}>
+                              <input type="hidden" name="application_id" value={r.id} />
+                              <button type="submit" className="block text-xs text-muted-foreground underline-offset-2 hover:underline">
+                                Restore
+                              </button>
+                            </form>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
                       </TD>
                       <TD className="whitespace-nowrap text-muted-foreground">{formatDateTime(r.created_at)}</TD>
                     </TR>

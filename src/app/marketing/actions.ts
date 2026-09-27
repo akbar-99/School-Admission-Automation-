@@ -356,3 +356,95 @@ export async function sendInstagramReply(formData: FormData) {
   revalidatePath(`/marketing/leads/${input.application_id}`);
   redirect(`/marketing/leads/${input.application_id}`);
 }
+
+const MarkWithdrawnSchema = z.object({
+  application_id: z.string().uuid(),
+  reason: z.string().trim().min(3, "Give a short reason"),
+});
+
+// A family that paid and enrolled can still back out later — this records
+// that without touching `status`, so the funnel keeps reflecting the real
+// history (they DID complete payment/admission) instead of retroactively
+// erasing it. pre_admission vs post_admission is derived from erp_status
+// right now, not asked of the rep, so it can't be misclassified.
+export async function markWithdrawn(formData: FormData) {
+  const { profile } = await requireRole(["marketing", "admin", "coo"]);
+  const parsed = MarkWithdrawnSchema.safeParse({
+    application_id: formData.get("application_id"),
+    reason: formData.get("reason"),
+  });
+  if (!parsed.success) {
+    redirect("/marketing?error=" + encodeURIComponent(parsed.error.issues[0].message));
+  }
+  const input = parsed.data!;
+
+  const admin = createSupabaseAdminClient();
+  const { data: app } = await admin
+    .from("applications")
+    .select("id, created_by, erp_status")
+    .eq("id", input.application_id)
+    .maybeSingle();
+  if (!app || (profile.role === "marketing" && app.created_by !== profile.id)) {
+    redirect("/marketing?error=" + encodeURIComponent("Enquiry not found."));
+  }
+
+  const withdrawalType = app!.erp_status === "synced" ? "post_admission" : "pre_admission";
+  const { error } = await admin
+    .from("applications")
+    .update({
+      withdrawn_at: new Date().toISOString(),
+      withdrawal_type: withdrawalType,
+      withdrawal_reason: input.reason,
+      withdrawn_by: profile.id,
+    })
+    .eq("id", app!.id);
+  if (error) {
+    redirect("/marketing?error=" + encodeURIComponent("Could not mark as withdrawn."));
+  }
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "lead.withdrawn",
+    entity: "application",
+    entityId: app!.id,
+    details: { withdrawal_type: withdrawalType, reason: input.reason },
+  });
+
+  revalidatePath("/marketing");
+  redirect("/marketing?withdrawn=1");
+}
+
+const RestoreWithdrawnSchema = z.object({
+  application_id: z.string().uuid(),
+});
+
+// Undoes a mistaken markWithdrawn — kept to admin/coo since it's a
+// correction, not a normal day-to-day action for the rep who filed it.
+export async function restoreWithdrawn(formData: FormData) {
+  const { profile } = await requireRole(["admin", "coo"]);
+  const parsed = RestoreWithdrawnSchema.safeParse({ application_id: formData.get("application_id") });
+  if (!parsed.success) {
+    redirect("/marketing?error=" + encodeURIComponent("Invalid enquiry."));
+  }
+
+  const admin = createSupabaseAdminClient();
+  const { error } = await admin
+    .from("applications")
+    .update({ withdrawn_at: null, withdrawal_type: null, withdrawal_reason: null, withdrawn_by: null })
+    .eq("id", parsed.data!.application_id);
+  if (error) {
+    redirect("/marketing?error=" + encodeURIComponent("Could not restore this enquiry."));
+  }
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "lead.withdrawal_restored",
+    entity: "application",
+    entityId: parsed.data!.application_id,
+  });
+
+  revalidatePath("/marketing");
+  redirect("/marketing?restored=1");
+}

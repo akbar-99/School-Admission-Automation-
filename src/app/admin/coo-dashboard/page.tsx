@@ -9,6 +9,7 @@ import {
   computeCooStatsByCreator,
   computeCurriculumBreakdown,
   computeSourceBreakdown,
+  computeWithdrawalStats,
   EMPTY_COO_STATS,
   type CooStatsRow,
 } from "@/lib/marketing-stats";
@@ -135,7 +136,7 @@ async function CooDashboardData({ from, to }: { from?: string; to?: string }) {
   let query = admin
     .from("applications")
     .select(
-      "id, status, grade_applying, created_by, erp_status, created_at, lead_student_name, lead_source, lead_source_other, external_contact_id, preferred_curriculum, students(full_name, curriculum), parents(full_name), payments(amount, status)",
+      "id, status, grade_applying, created_by, erp_status, created_at, lead_student_name, lead_source, lead_source_other, external_contact_id, preferred_curriculum, withdrawn_at, withdrawal_type, withdrawal_reason, students(full_name, curriculum), parents(full_name), payments(amount, status)",
     )
     .not("created_by", "is", null);
   if (from) query = query.gte("created_at", `${from}T00:00:00`);
@@ -171,6 +172,23 @@ async function CooDashboardData({ from, to }: { from?: string; to?: string }) {
   );
   const sourceBreakdown = computeSourceBreakdown(rows);
   const curriculumBreakdown = computeCurriculumBreakdown(rows);
+  const withdrawalStats = computeWithdrawalStats(rows);
+
+  const staffNameById = new Map(staff.map((m) => [m.id, m.full_name ?? m.email ?? "—"]));
+  const withdrawals = rows
+    .filter((r): r is typeof r & { withdrawal_type: NonNullable<CooStatsRow["withdrawal_type"]> } =>
+      Boolean(r.withdrawal_type),
+    )
+    .map((r) => ({
+      id: r.id,
+      memberName: staffNameById.get(r.created_by) ?? "—",
+      studentName: r.students?.full_name ?? r.lead_student_name ?? "—",
+      parentName: r.parents?.full_name ?? "—",
+      type: r.withdrawal_type,
+      reason: r.withdrawal_reason ?? null,
+      withdrawnAt: r.withdrawn_at ?? null,
+    }))
+    .sort((a, b) => (b.withdrawnAt ?? "").localeCompare(a.withdrawnAt ?? ""));
 
   return (
     <CooDashboard
@@ -191,6 +209,8 @@ async function CooDashboardData({ from, to }: { from?: string; to?: string }) {
       totals={totals}
       sourceBreakdown={sourceBreakdown}
       curriculumBreakdown={curriculumBreakdown}
+      withdrawalStats={withdrawalStats}
+      withdrawals={withdrawals}
       from={from}
       to={to}
     />

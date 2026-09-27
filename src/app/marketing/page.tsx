@@ -4,10 +4,12 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireRole } from "@/lib/auth";
 import { applyUrl } from "@/lib/parent";
 import { formatDateTime } from "@/lib/utils";
-import { createLead, claimLead, addContactInfo } from "./actions";
+import { createLead, claimLead, addContactInfo, markWithdrawn, restoreWithdrawn } from "./actions";
 import { LeadSourceSelect } from "@/components/marketing/lead-source-select";
 import { describeFilters, parseAdmissionsFilters } from "@/lib/admissions-report";
 import { StatusBadge } from "@/components/status-badge";
+import { WithdrawalBadge } from "@/components/withdrawal-badge";
+import { Badge } from "@/components/ui/badge";
 import { CopyButton } from "@/components/copy-button";
 import { PhoneField } from "@/components/apply/phone-field";
 import { SubmitButton } from "@/components/submit-button";
@@ -15,11 +17,13 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { Alert } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { FileDown, FileSpreadsheet } from "lucide-react";
-import { STATUS_LABEL, leadSourceLabel, type AppStatus } from "@/lib/types";
+import { REACHED_PAYMENT } from "@/lib/marketing-stats";
+import { STATUS_LABEL, leadSourceLabel, type AppStatus, type WithdrawalType } from "@/lib/types";
 
 interface Row {
   id: string;
@@ -32,6 +36,10 @@ interface Row {
   external_contact_id: string | null;
   access_token: string;
   created_at: string;
+  withdrawn_at: string | null;
+  withdrawal_type: WithdrawalType | null;
+  withdrawal_reason: string | null;
+  payments: { status: string; refunded_at: string | null; refund_reason: string | null }[] | null;
   parents: { full_name: string; phone: string | null; email: string | null } | null;
   students: { full_name: string } | null;
 }
@@ -290,7 +298,7 @@ async function LeadsTableSection({
   let query = admin
     .from("applications")
     .select(
-      "id, status, category, grade_applying, lead_student_name, lead_source, lead_source_other, external_contact_id, access_token, created_at, parents(full_name, phone, email), students(full_name)",
+      "id, status, category, grade_applying, lead_student_name, lead_source, lead_source_other, external_contact_id, access_token, created_at, withdrawn_at, withdrawal_type, withdrawal_reason, payments(status, refunded_at, refund_reason), parents(full_name, phone, email), students(full_name)",
     )
     .order("created_at", { ascending: false })
     .limit(100);
@@ -410,6 +418,7 @@ async function LeadsTableSection({
                 <TH>Source</TH>
                 <TH>Grade</TH>
                 <TH>Status</TH>
+                <TH>Withdrawal</TH>
                 <TH>Created</TH>
                 <TH>Link</TH>
                 <TH></TH>
@@ -438,7 +447,52 @@ async function LeadsTableSection({
                   <TD>{leadSourceLabel(r.lead_source, r.lead_source_other)}</TD>
                   <TD>{r.grade_applying ?? "—"}</TD>
                   <TD>
-                    <StatusBadge status={r.status} />
+                    <div className="space-y-1">
+                      <StatusBadge status={r.status} />
+                      {(() => {
+                        const refunded = r.payments?.find((p) => p.status === "refunded");
+                        return refunded ? (
+                          <Badge tone="warning" className="block w-fit" title={refunded.refund_reason ?? undefined}>
+                            Refunded
+                          </Badge>
+                        ) : null;
+                      })()}
+                    </div>
+                  </TD>
+                  <TD className="min-w-[180px]">
+                    {r.withdrawn_at && r.withdrawal_type ? (
+                      <div className="space-y-1">
+                        <WithdrawalBadge type={r.withdrawal_type} reason={r.withdrawal_reason} />
+                        {profile.role !== "marketing" && (
+                          <form action={restoreWithdrawn}>
+                            <input type="hidden" name="application_id" value={r.id} />
+                            <button type="submit" className="block text-xs text-muted-foreground underline-offset-2 hover:underline">
+                              Restore
+                            </button>
+                          </form>
+                        )}
+                      </div>
+                    ) : REACHED_PAYMENT.has(r.status) ? (
+                      <details className="group">
+                        <summary className="cursor-pointer text-xs font-medium text-primary underline-offset-2 hover:underline">
+                          Mark as withdrawn
+                        </summary>
+                        <form action={markWithdrawn} className="mt-1.5 space-y-1.5">
+                          <input type="hidden" name="application_id" value={r.id} />
+                          <Textarea
+                            name="reason"
+                            required
+                            placeholder="Why are they backing out?"
+                            className="h-16 w-56 text-xs"
+                          />
+                          <SubmitButton size="sm" variant="outline" pendingText="…">
+                            Confirm withdrawal
+                          </SubmitButton>
+                        </form>
+                      </details>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
                   </TD>
                   <TD className="whitespace-nowrap text-muted-foreground">
                     {formatDateTime(r.created_at)}
