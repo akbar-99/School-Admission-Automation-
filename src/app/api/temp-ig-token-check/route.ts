@@ -12,9 +12,20 @@ export async function GET() {
     hasWhitespace: /\s/.test(token),
     hasQuotes: token.startsWith('"') || token.endsWith('"') || token.startsWith("'") || token.endsWith("'"),
   };
-  const r = await fetch(
-    `https://graph.facebook.com/v20.0/17841452944797577?fields=name,username,ig_id&access_token=${encodeURIComponent(config.notifications.instagramToken)}`,
+  const encoded = encodeURIComponent(token);
+  const meRes = await fetch(
+    `https://graph.instagram.com/v20.0/me?fields=user_id,username,name,account_type&access_token=${encoded}`,
   );
-  const json = await r.json();
-  return NextResponse.json({ status: r.status, json, diagnostics });
+  const meJson = await meRes.json();
+
+  const otherRes = await fetch(
+    `https://graph.instagram.com/v20.0/17841452944797577?fields=name,username&access_token=${encoded}`,
+  );
+  const otherJson = await otherRes.json();
+
+  return NextResponse.json({
+    diagnostics,
+    me: { status: meRes.status, json: meJson },
+    otherUserLookup: { status: otherRes.status, json: otherJson },
+  });
 }
