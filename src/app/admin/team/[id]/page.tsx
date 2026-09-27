@@ -18,6 +18,7 @@ import { leadSourceLabel, type AppStatus } from "@/lib/types";
 
 const STAT_CARDS: { key: keyof typeof EMPTY_COO_STATS; label: string }[] = [
   { key: "enquiries", label: "Total enquiries" },
+  { key: "claimed", label: "Claimed from pool" },
   { key: "waitingAssessment", label: "Waiting for assessment" },
   { key: "assessmentCompleted", label: "Assessment completed" },
   { key: "waitingPayment", label: "Waiting for payment" },
@@ -45,7 +46,7 @@ export default async function TeamMemberDetailPage({
   let query = admin
     .from("applications")
     .select(
-      "id, status, grade_applying, created_by, erp_status, created_at, lead_student_name, lead_source, lead_source_other, category, students(full_name), parents(full_name), payments(amount, status)",
+      "id, status, grade_applying, created_by, erp_status, created_at, lead_student_name, lead_source, lead_source_other, external_contact_id, category, students(full_name), parents(full_name), payments(amount, status)",
     )
     .eq("created_by", id)
     .order("created_at", { ascending: false })

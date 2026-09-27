@@ -105,6 +105,7 @@ const WAITING_PAYMENT = new Set<AppStatus>(["AGREEMENT_SENT", "PAYMENT_PENDING",
 
 export interface CooFunnelStats {
   enquiries: number;
+  claimed: number;
   waitingAssessment: number;
   assessmentCompleted: number;
   waitingPayment: number;
@@ -115,6 +116,7 @@ export interface CooFunnelStats {
 
 export const EMPTY_COO_STATS: CooFunnelStats = {
   enquiries: 0,
+  claimed: 0,
   waitingAssessment: 0,
   assessmentCompleted: 0,
   waitingPayment: 0,
@@ -133,6 +135,11 @@ export interface CooStatsRow {
   lead_student_name: string | null;
   lead_source: string | null;
   lead_source_other: string | null;
+  // Set only for a lead auto-captured from an inbound channel (e.g.
+  // Instagram) and picked up via claim_lead — null for one this person
+  // entered directly through the New lead form. Lets "claimed" be counted
+  // separately from "created" even though both set created_by the same way.
+  external_contact_id?: string | null;
   students: { full_name: string } | null;
   parents: { full_name: string } | null;
   payments?: { amount: number; status: string }[] | null;
@@ -140,6 +147,7 @@ export interface CooStatsRow {
 
 export type CooBucket =
   | "enquiries"
+  | "claimed"
   | "waitingAssessment"
   | "assessmentCompleted"
   | "waitingPayment"
@@ -154,6 +162,7 @@ export interface CooCreatorStats {
 function emptyBucketRows(): Record<CooBucket, CooStatsRow[]> {
   return {
     enquiries: [],
+    claimed: [],
     waitingAssessment: [],
     assessmentCompleted: [],
     waitingPayment: [],
@@ -182,6 +191,10 @@ export function computeCooStatsByCreator(rows: CooStatsRow[]): Map<string, CooCr
 
     e.stats.enquiries += 1;
     e.rows.enquiries.push(row);
+    if (row.external_contact_id) {
+      e.stats.claimed += 1;
+      e.rows.claimed.push(row);
+    }
 
     if (needsExam && WAITING_ASSESSMENT.has(row.status)) {
       e.stats.waitingAssessment += 1;

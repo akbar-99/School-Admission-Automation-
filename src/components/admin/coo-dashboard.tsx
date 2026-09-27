@@ -28,6 +28,7 @@ interface StaffEntry {
 
 const COLUMNS: { key: CooBucket; label: string }[] = [
   { key: "enquiries", label: "Total enquiries" },
+  { key: "claimed", label: "Claimed from pool" },
   { key: "waitingAssessment", label: "Waiting for assessment" },
   { key: "assessmentCompleted", label: "Assessment completed" },
   { key: "waitingPayment", label: "Waiting for payment" },

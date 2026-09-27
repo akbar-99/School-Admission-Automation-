@@ -109,7 +109,7 @@ async function CooDashboardData({ from, to }: { from?: string; to?: string }) {
   let query = admin
     .from("applications")
     .select(
-      "id, status, grade_applying, created_by, erp_status, created_at, lead_student_name, lead_source, lead_source_other, students(full_name), parents(full_name), payments(amount, status)",
+      "id, status, grade_applying, created_by, erp_status, created_at, lead_student_name, lead_source, lead_source_other, external_contact_id, students(full_name), parents(full_name), payments(amount, status)",
     )
     .not("created_by", "is", null);
   if (from) query = query.gte("created_at", `${from}T00:00:00`);
@@ -132,6 +132,7 @@ async function CooDashboardData({ from, to }: { from?: string; to?: string }) {
     (acc, m) => {
       const s = statsByStaff.get(m.id)?.stats ?? EMPTY_COO_STATS;
       acc.enquiries += s.enquiries;
+      acc.claimed += s.claimed;
       acc.waitingAssessment += s.waitingAssessment;
       acc.assessmentCompleted += s.assessmentCompleted;
       acc.waitingPayment += s.waitingPayment;
@@ -152,6 +153,7 @@ async function CooDashboardData({ from, to }: { from?: string; to?: string }) {
         stats: statsByStaff.get(m.id)?.stats ?? EMPTY_COO_STATS,
         rows: statsByStaff.get(m.id)?.rows ?? {
           enquiries: [],
+          claimed: [],
           waitingAssessment: [],
           assessmentCompleted: [],
           waitingPayment: [],
