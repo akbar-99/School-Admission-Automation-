@@ -6,13 +6,16 @@ import { Label } from "@/components/ui/label";
 import { Button, buttonVariants } from "@/components/ui/button";
 import Link from "next/link";
 import {
+  bucketDailyValues,
   computeCooStatsByCreator,
   computeCurriculumBreakdown,
   computeSourceBreakdown,
   computeWithdrawalStats,
   EMPTY_COO_STATS,
+  type CooBucket,
   type CooStatsRow,
 } from "@/lib/marketing-stats";
+import { CURRICULUM_OPTIONS } from "@/lib/config";
 import {
   computeTeacherStatsByTeacher,
   EMPTY_TEACHER_STATS,
@@ -174,6 +177,56 @@ async function CooDashboardData({ from, to }: { from?: string; to?: string }) {
   const curriculumBreakdown = computeCurriculumBreakdown(rows);
   const withdrawalStats = computeWithdrawalStats(rows);
 
+  // Sparkline trends for the stat-card grid — one series per stage, built
+  // from the same matched rows the numeric totals already came from (so a
+  // card's graph can never disagree with its own number).
+  const stageBuckets: CooBucket[] = [
+    "enquiries",
+    "claimed",
+    "waitingAssessment",
+    "assessmentCompleted",
+    "waitingPayment",
+    "admissionCompleted",
+    "addedToCourse",
+  ];
+  const stageTrends = Object.fromEntries(
+    stageBuckets.map((key) => {
+      const matched = staff.flatMap((m) => statsByStaff.get(m.id)?.rows[key] ?? []);
+      return [key, bucketDailyValues(matched.map((r) => ({ date: r.created_at, value: 1 })), from, to)];
+    }),
+  ) as Record<CooBucket, number[]>;
+
+  const revenueTrend = bucketDailyValues(
+    rows.flatMap((r) =>
+      (r.payments ?? []).filter((p) => p.status === "completed").map((p) => ({ date: r.created_at, value: p.amount })),
+    ),
+    from,
+    to,
+  );
+
+  const curriculumTrends = Object.fromEntries(
+    curriculumBreakdown.map((c) => {
+      const matched = rows.filter((r) => {
+        if (r.erp_status !== "synced") return false;
+        const value = r.students?.curriculum ?? r.preferred_curriculum ?? null;
+        if (c.curriculum === "Other") return !value || !(CURRICULUM_OPTIONS as readonly string[]).includes(value);
+        return value === c.curriculum;
+      });
+      return [c.curriculum, bucketDailyValues(matched.map((r) => ({ date: r.created_at, value: 1 })), from, to)];
+    }),
+  );
+
+  const preAdmissionTrend = bucketDailyValues(
+    rows.filter((r) => r.withdrawal_type === "pre_admission" && r.withdrawn_at).map((r) => ({ date: r.withdrawn_at!, value: 1 })),
+    from,
+    to,
+  );
+  const postAdmissionTrend = bucketDailyValues(
+    rows.filter((r) => r.withdrawal_type === "post_admission" && r.withdrawn_at).map((r) => ({ date: r.withdrawn_at!, value: 1 })),
+    from,
+    to,
+  );
+
   const staffNameById = new Map(staff.map((m) => [m.id, m.full_name ?? m.email ?? "—"]));
   const withdrawals = rows
     .filter((r): r is typeof r & { withdrawal_type: NonNullable<CooStatsRow["withdrawal_type"]> } =>
@@ -211,6 +264,11 @@ async function CooDashboardData({ from, to }: { from?: string; to?: string }) {
       curriculumBreakdown={curriculumBreakdown}
       withdrawalStats={withdrawalStats}
       withdrawals={withdrawals}
+      stageTrends={stageTrends}
+      revenueTrend={revenueTrend}
+      curriculumTrends={curriculumTrends}
+      preAdmissionTrend={preAdmissionTrend}
+      postAdmissionTrend={postAdmissionTrend}
       from={from}
       to={to}
     />

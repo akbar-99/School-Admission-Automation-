@@ -303,3 +303,27 @@ export function cooConversionLabel(stats: CooFunnelStats): string {
 export function cooConversionValue(stats: CooFunnelStats): number {
   return stats.enquiries > 0 ? (stats.admissionCompleted / stats.enquiries) * 100 : -1;
 }
+
+// Buckets dated values into one total per day across [from, to] (inclusive),
+// defaulting to the trailing 14 days when no explicit range is picked — feeds
+// the small sparkline under each stat card. This app has no stage-transition
+// history (only a lead's current status), so this reads as "how many of that
+// day's matching rows" rather than a literal moment-it-changed-status
+// timeline — an honest trend given what's actually stored.
+export function bucketDailyValues(
+  entries: { date: string; value: number }[],
+  from?: string,
+  to?: string,
+): number[] {
+  const end = to ? new Date(`${to}T00:00:00Z`) : new Date(new Date().toISOString().slice(0, 10) + "T00:00:00Z");
+  const start = from ? new Date(`${from}T00:00:00Z`) : new Date(end.getTime() - 13 * 86_400_000);
+  const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1);
+  const counts = new Array(days).fill(0) as number[];
+  for (const e of entries) {
+    const day = new Date(e.date);
+    const dayStart = new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate()));
+    const idx = Math.round((dayStart.getTime() - start.getTime()) / 86_400_000);
+    if (idx >= 0 && idx < days) counts[idx] += e.value;
+  }
+  return counts;
+}

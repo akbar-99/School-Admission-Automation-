@@ -9,15 +9,22 @@ import { WithdrawalBadge } from "@/components/withdrawal-badge";
 import { SourceIcon } from "@/components/icons/lead-source-icons";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { restoreWithdrawn } from "@/app/marketing/actions";
+import { Sparkline } from "@/components/charts/sparkline";
+import { CURRICULUM_OPTIONS } from "@/lib/config";
 import {
+  bucketDailyValues,
   computeCooStatsByCreator,
   computeCurriculumBreakdown,
   computeSourceBreakdown,
   computeWithdrawalStats,
   cooConversionLabel,
   EMPTY_COO_STATS,
+  type CooBucket,
   type CooStatsRow,
 } from "@/lib/marketing-stats";
 import { leadSourceLabel, type AppStatus, type WithdrawalType } from "@/lib/types";
@@ -33,6 +40,13 @@ const STAT_CARDS: { key: keyof typeof EMPTY_COO_STATS; label: string }[] = [
 ];
 
 const PALETTE = ["#1b7e9a", "#2f8f6b", "#c08a2d", "#94ac9f", "#c0392b", "#475569"];
+
+function isoDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+function daysAgo(n: number): Date {
+  return new Date(Date.now() - n * 86_400_000);
+}
 
 export default async function TeamMemberDetailPage({
   params,
@@ -68,12 +82,65 @@ export default async function TeamMemberDetailPage({
     withdrawal_reason: string | null;
   })[];
 
-  const stats = computeCooStatsByCreator(rows).get(id)?.stats ?? EMPTY_COO_STATS;
+  const entry = computeCooStatsByCreator(rows).get(id);
+  const stats = entry?.stats ?? EMPTY_COO_STATS;
   const sourceBreakdown = computeSourceBreakdown(rows);
   const curriculumBreakdown = computeCurriculumBreakdown(rows);
   const withdrawalStats = computeWithdrawalStats(rows);
   const maxSource = Math.max(1, ...sourceBreakdown.map((s) => s.count));
+
+  // Sparkline trends for this member's own stat-card grid — same shape as
+  // the team-wide Team dashboard, just scoped to their own rows.
+  const stageTrends = Object.fromEntries(
+    STAT_CARDS.map((c) => [
+      c.key,
+      bucketDailyValues((entry?.rows[c.key as CooBucket] ?? []).map((r) => ({ date: r.created_at, value: 1 })), from, to),
+    ]),
+  ) as Record<CooBucket, number[]>;
+
+  const revenueTrend = bucketDailyValues(
+    rows.flatMap((r) =>
+      (r.payments ?? []).filter((p) => p.status === "completed").map((p) => ({ date: r.created_at, value: p.amount })),
+    ),
+    from,
+    to,
+  );
+
+  const curriculumTrends = Object.fromEntries(
+    curriculumBreakdown.map((c) => {
+      const matched = rows.filter((r) => {
+        if (r.erp_status !== "synced") return false;
+        const value = r.students?.curriculum ?? r.preferred_curriculum ?? null;
+        if (c.curriculum === "Other") return !value || !(CURRICULUM_OPTIONS as readonly string[]).includes(value);
+        return value === c.curriculum;
+      });
+      return [c.curriculum, bucketDailyValues(matched.map((r) => ({ date: r.created_at, value: 1 })), from, to)];
+    }),
+  );
+
+  const preAdmissionTrend = bucketDailyValues(
+    rows.filter((r) => r.withdrawal_type === "pre_admission" && r.withdrawn_at).map((r) => ({ date: r.withdrawn_at!, value: 1 })),
+    from,
+    to,
+  );
+  const postAdmissionTrend = bucketDailyValues(
+    rows.filter((r) => r.withdrawal_type === "post_admission" && r.withdrawn_at).map((r) => ({ date: r.withdrawn_at!, value: 1 })),
+    from,
+    to,
+  );
   const rangeQuery = new URLSearchParams({ ...(from ? { from } : {}), ...(to ? { to } : {}) }).toString();
+  const hasFilters = Boolean(from || to);
+  const today = isoDate(new Date());
+  const presetHref = (f: string, t: string) => `/admin/team/${id}?from=${f}&to=${t}`;
+  const presets = [
+    { label: "Today", href: presetHref(today, today) },
+    { label: "Last 7 days", href: presetHref(isoDate(daysAgo(6)), today) },
+    { label: "Last 30 days", href: presetHref(isoDate(daysAgo(29)), today) },
+    {
+      label: "This month",
+      href: presetHref(isoDate(new Date(new Date().getFullYear(), new Date().getMonth(), 1)), today),
+    },
+  ];
 
   return (
     <div className="space-y-6">
@@ -90,12 +157,48 @@ export default async function TeamMemberDetailPage({
         <p className="text-muted-foreground">Full enquiry-to-enrollment detail for this team member.</p>
       </div>
 
+      <Card>
+        <CardContent className="pt-6">
+          <form
+            action={`/admin/team/${id}`}
+            method="get"
+            className="flex flex-wrap items-end gap-3 border-b border-border pb-4"
+          >
+            <div className="space-y-1.5">
+              <Label htmlFor="from">Created from</Label>
+              <Input id="from" name="from" type="date" defaultValue={from ?? ""} className="w-40" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="to">Created to</Label>
+              <Input id="to" name="to" type="date" defaultValue={to ?? ""} className="w-40" />
+            </div>
+            <Button type="submit" variant="outline">
+              Filter
+            </Button>
+            {hasFilters && (
+              <Link href={`/admin/team/${id}`} className={buttonVariants({ variant: "ghost" })}>
+                Clear
+              </Link>
+            )}
+            <div className="ml-auto flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-muted-foreground">Quick range:</span>
+              {presets.map((p) => (
+                <Link key={p.label} href={p.href} className={buttonVariants({ variant: "outline", size: "sm" })}>
+                  {p.label}
+                </Link>
+              ))}
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-4">
         {STAT_CARDS.map((c) => (
           <Card key={c.key} className="shadow-luxe">
             <CardContent className="py-5">
               <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{c.label}</div>
               <div className="font-display text-2xl font-semibold">{stats[c.key]}</div>
+              <Sparkline values={stageTrends[c.key as CooBucket]} id={`stage-${c.key}`} className="mt-2 h-7 w-full" />
             </CardContent>
           </Card>
         ))}
@@ -109,6 +212,7 @@ export default async function TeamMemberDetailPage({
           <CardContent className="py-5">
             <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Revenue</div>
             <div className="font-display text-2xl font-semibold">{formatINR(stats.revenuePaise)}</div>
+            <Sparkline values={revenueTrend} id="revenue" className="mt-2 h-7 w-full" />
           </CardContent>
         </Card>
         {curriculumBreakdown.map((c) => (
@@ -118,6 +222,7 @@ export default async function TeamMemberDetailPage({
                 {c.curriculum} enrolled
               </div>
               <div className="font-display text-2xl font-semibold">{c.count}</div>
+              <Sparkline values={curriculumTrends[c.curriculum] ?? []} id={`curriculum-${c.curriculum}`} className="mt-2 h-7 w-full" />
             </CardContent>
           </Card>
         ))}
@@ -127,6 +232,7 @@ export default async function TeamMemberDetailPage({
               Pre-admission withdrawals
             </div>
             <div className="font-display text-2xl font-semibold">{withdrawalStats.preAdmission}</div>
+            <Sparkline values={preAdmissionTrend} id="pre-admission" className="mt-2 h-7 w-full" />
           </CardContent>
         </Card>
         <Card className="shadow-luxe">
@@ -135,6 +241,7 @@ export default async function TeamMemberDetailPage({
               Post-admission withdrawals
             </div>
             <div className="font-display text-2xl font-semibold">{withdrawalStats.postAdmission}</div>
+            <Sparkline values={postAdmissionTrend} id="post-admission" className="mt-2 h-7 w-full" />
           </CardContent>
         </Card>
       </div>

@@ -9,6 +9,7 @@ import { formatDateTime, formatINR } from "@/lib/utils";
 import { STATUS_LABEL, type AppStatus, type WithdrawalType } from "@/lib/types";
 import { SourceIcon } from "@/components/icons/lead-source-icons";
 import { WithdrawalBadge } from "@/components/withdrawal-badge";
+import { Sparkline } from "@/components/charts/sparkline";
 import type { CooBucket, CooFunnelStats, CooStatsRow, WithdrawalStats } from "@/lib/marketing-stats";
 
 // Mirrors cooConversionValue/cooConversionLabel in lib/marketing-stats.ts —
@@ -59,6 +60,11 @@ export function CooDashboard({
   curriculumBreakdown,
   withdrawalStats,
   withdrawals,
+  stageTrends,
+  revenueTrend,
+  curriculumTrends,
+  preAdmissionTrend,
+  postAdmissionTrend,
   from,
   to,
 }: {
@@ -68,6 +74,11 @@ export function CooDashboard({
   curriculumBreakdown: { curriculum: string; count: number }[];
   withdrawalStats: WithdrawalStats;
   withdrawals: WithdrawalEntry[];
+  stageTrends: Record<CooBucket, number[]>;
+  revenueTrend: number[];
+  curriculumTrends: Record<string, number[]>;
+  preAdmissionTrend: number[];
+  postAdmissionTrend: number[];
   from?: string;
   to?: string;
 }) {
@@ -118,6 +129,7 @@ export function CooDashboard({
             <CardContent className="py-5">
               <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{c.label}</div>
               <div className="font-display text-2xl font-semibold">{totals[c.key]}</div>
+              <Sparkline values={stageTrends[c.key]} id={`stage-${c.key}`} className="mt-2 h-7 w-full" />
             </CardContent>
           </Card>
         ))}
@@ -125,6 +137,7 @@ export function CooDashboard({
           <CardContent className="py-5">
             <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Total revenue</div>
             <div className="font-display text-2xl font-semibold">{formatINR(totals.revenuePaise)}</div>
+            <Sparkline values={revenueTrend} id="revenue" className="mt-2 h-7 w-full" />
           </CardContent>
         </Card>
         {curriculumBreakdown.map((c) => (
@@ -134,6 +147,7 @@ export function CooDashboard({
                 {c.curriculum} enrolled
               </div>
               <div className="font-display text-2xl font-semibold">{c.count}</div>
+              <Sparkline values={curriculumTrends[c.curriculum] ?? []} id={`curriculum-${c.curriculum}`} className="mt-2 h-7 w-full" />
             </CardContent>
           </Card>
         ))}
@@ -143,6 +157,7 @@ export function CooDashboard({
               Pre-admission withdrawals
             </div>
             <div className="font-display text-2xl font-semibold">{withdrawalStats.preAdmission}</div>
+            <Sparkline values={preAdmissionTrend} id="pre-admission" className="mt-2 h-7 w-full" />
           </CardContent>
         </Card>
         <Card className="shadow-luxe">
@@ -151,6 +166,7 @@ export function CooDashboard({
               Post-admission withdrawals
             </div>
             <div className="font-display text-2xl font-semibold">{withdrawalStats.postAdmission}</div>
+            <Sparkline values={postAdmissionTrend} id="post-admission" className="mt-2 h-7 w-full" />
           </CardContent>
         </Card>
       </div>
