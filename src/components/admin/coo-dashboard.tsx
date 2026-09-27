@@ -1,10 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { ArrowUpDown, ArrowUp, ArrowDown, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { formatDateTime } from "@/lib/utils";
+import { formatDateTime, formatINR } from "@/lib/utils";
 import { STATUS_LABEL, type AppStatus } from "@/lib/types";
 import type { CooBucket, CooFunnelStats, CooStatsRow } from "@/lib/marketing-stats";
 
@@ -41,10 +42,19 @@ const PALETTE = ["#1b7e9a", "#2f8f6b", "#c08a2d", "#94ac9f", "#c0392b", "#475569
 export function CooDashboard({
   staff,
   totals,
+  sourceBreakdown,
+  from,
+  to,
 }: {
   staff: StaffEntry[];
   totals: CooFunnelStats;
+  sourceBreakdown: { source: string; label: string; count: number }[];
+  from?: string;
+  to?: string;
 }) {
+  const rangeQuery = new URLSearchParams({ ...(from ? { from } : {}), ...(to ? { to } : {}) }).toString();
+  const maxSource = Math.max(1, ...sourceBreakdown.map((s) => s.count));
+  const totalSourceCount = sourceBreakdown.reduce((n, s) => n + s.count, 0);
   const [sortKey, setSortKey] = useState<SortKey>("conversion");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [modal, setModal] = useState<{ name: string; bucket: CooBucket } | null>(null);
@@ -81,7 +91,7 @@ export function CooDashboard({
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-4">
         {COLUMNS.map((c) => (
           <Card key={c.key} className="shadow-luxe">
             <CardContent className="py-5">
@@ -90,7 +100,44 @@ export function CooDashboard({
             </CardContent>
           </Card>
         ))}
+        <Card className="shadow-luxe">
+          <CardContent className="py-5">
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Total revenue</div>
+            <div className="font-display text-2xl font-semibold">{formatINR(totals.revenuePaise)}</div>
+          </CardContent>
+        </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Leads by source</CardTitle>
+          <CardDescription>Which channel is actually producing enquiries, for the selected range.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {sourceBreakdown.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No enquiries yet for this range.</p>
+          ) : (
+            sourceBreakdown.map((s, i) => {
+              const pct = Math.round((s.count / maxSource) * 100);
+              const share = totalSourceCount > 0 ? Math.round((s.count / totalSourceCount) * 100) : 0;
+              return (
+                <div key={s.source} className="flex items-center gap-3">
+                  <div className="w-24 shrink-0 truncate text-sm font-medium">{s.label}</div>
+                  <div className="h-6 flex-1 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{ width: `${pct}%`, backgroundColor: PALETTE[i % PALETTE.length] }}
+                    />
+                  </div>
+                  <div className="w-24 shrink-0 text-right text-sm font-medium tabular-nums">
+                    {s.count} ({share}%)
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -170,12 +217,20 @@ export function CooDashboard({
                       Conversion rate <SortIcon column="conversion" />
                     </button>
                   </th>
+                  <th className="py-2 pr-4 text-right font-medium">Revenue</th>
                 </tr>
               </thead>
               <tbody>
                 {sorted.map((s) => (
                   <tr key={s.id} className="border-b border-border/60 last:border-0 hover:bg-muted/30">
-                    <td className="py-2.5 pr-4 font-medium">{s.name}</td>
+                    <td className="py-2.5 pr-4 font-medium">
+                      <Link
+                        href={`/admin/team/${s.id}${rangeQuery ? `?${rangeQuery}` : ""}`}
+                        className="text-primary underline-offset-2 hover:underline"
+                      >
+                        {s.name}
+                      </Link>
+                    </td>
                     {COLUMNS.map((c) => (
                       <td key={c.key} className="py-2.5 pr-4 text-right">
                         <button
@@ -191,6 +246,7 @@ export function CooDashboard({
                     <td className="py-2.5 pr-4 text-right">
                       <Badge tone="success">{conversionLabel(s.stats)}</Badge>
                     </td>
+                    <td className="py-2.5 pr-4 text-right whitespace-nowrap">{formatINR(s.stats.revenuePaise)}</td>
                   </tr>
                 ))}
               </tbody>

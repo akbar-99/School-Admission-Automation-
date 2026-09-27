@@ -5,7 +5,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button, buttonVariants } from "@/components/ui/button";
 import Link from "next/link";
-import { computeCooStatsByCreator, EMPTY_COO_STATS, type CooStatsRow } from "@/lib/marketing-stats";
+import {
+  computeCooStatsByCreator,
+  computeSourceBreakdown,
+  EMPTY_COO_STATS,
+  type CooStatsRow,
+} from "@/lib/marketing-stats";
 import { CooDashboard } from "@/components/admin/coo-dashboard";
 
 function isoDate(d: Date): string {
@@ -104,7 +109,7 @@ async function CooDashboardData({ from, to }: { from?: string; to?: string }) {
   let query = admin
     .from("applications")
     .select(
-      "id, status, grade_applying, created_by, erp_status, created_at, lead_student_name, students(full_name), parents(full_name)",
+      "id, status, grade_applying, created_by, erp_status, created_at, lead_student_name, lead_source, lead_source_other, students(full_name), parents(full_name), payments(amount, status)",
     )
     .not("created_by", "is", null);
   if (from) query = query.gte("created_at", `${from}T00:00:00`);
@@ -132,10 +137,12 @@ async function CooDashboardData({ from, to }: { from?: string; to?: string }) {
       acc.waitingPayment += s.waitingPayment;
       acc.admissionCompleted += s.admissionCompleted;
       acc.addedToCourse += s.addedToCourse;
+      acc.revenuePaise += s.revenuePaise;
       return acc;
     },
     { ...EMPTY_COO_STATS },
   );
+  const sourceBreakdown = computeSourceBreakdown(rows);
 
   return (
     <CooDashboard
@@ -153,6 +160,9 @@ async function CooDashboardData({ from, to }: { from?: string; to?: string }) {
         },
       }))}
       totals={totals}
+      sourceBreakdown={sourceBreakdown}
+      from={from}
+      to={to}
     />
   );
 }

@@ -16,7 +16,6 @@ export default async function AdminLayout({
         { href: "/admin/coo-dashboard", label: "Team dashboard" },
         { href: "/marketing", label: "Leads" },
         { href: "/admin/payments", label: "Payments" },
-        { href: "/admin/marketing-performance", label: "Marketing performance" },
         { href: "/admin/assessments", label: "Assessments" },
         { href: "/admin/sections", label: "Sections" },
         { href: "/admin/staff", label: "Staff" },

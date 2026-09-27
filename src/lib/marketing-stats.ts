@@ -1,5 +1,5 @@
 import "server-only";
-import type { AppStatus } from "@/lib/types";
+import { LEAD_SOURCE_LABEL, type AppStatus } from "@/lib/types";
 import { needsAssessment } from "@/lib/assessment";
 
 // Statuses that mean a lead reached at least this funnel stage. Derived from
@@ -110,6 +110,7 @@ export interface CooFunnelStats {
   waitingPayment: number;
   admissionCompleted: number;
   addedToCourse: number;
+  revenuePaise: number;
 }
 
 export const EMPTY_COO_STATS: CooFunnelStats = {
@@ -119,6 +120,7 @@ export const EMPTY_COO_STATS: CooFunnelStats = {
   waitingPayment: 0,
   admissionCompleted: 0,
   addedToCourse: 0,
+  revenuePaise: 0,
 };
 
 export interface CooStatsRow {
@@ -129,8 +131,11 @@ export interface CooStatsRow {
   erp_status: string | null;
   created_at: string;
   lead_student_name: string | null;
+  lead_source: string | null;
+  lead_source_other: string | null;
   students: { full_name: string } | null;
   parents: { full_name: string } | null;
+  payments?: { amount: number; status: string }[] | null;
 }
 
 export type CooBucket =
@@ -198,9 +203,35 @@ export function computeCooStatsByCreator(rows: CooStatsRow[]): Map<string, CooCr
       e.stats.addedToCourse += 1;
       e.rows.addedToCourse.push(row);
     }
+    for (const p of row.payments ?? []) {
+      if (p.status === "completed") e.stats.revenuePaise += p.amount;
+    }
   }
 
   return byCreator;
+}
+
+// Which lead source is actually producing enquiries — shared by the
+// team-wide breakdown and a single person's own breakdown on their detail
+// page, so both use the exact same grouping/sort logic. Grouped by the raw
+// source value only (never the free-text "other" detail some rows carry) —
+// this is an aggregate count per source, not a per-lead display, so every
+// "other" lead is one "Other" bucket regardless of what each one typed.
+export function computeSourceBreakdown(
+  rows: { lead_source: string | null }[],
+): { source: string; label: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const key = row.lead_source ?? "unknown";
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([source, count]) => ({
+      source,
+      label: (LEAD_SOURCE_LABEL as Record<string, string>)[source] ?? "Unknown",
+      count,
+    }))
+    .sort((a, b) => b.count - a.count);
 }
 
 export function cooConversionLabel(stats: CooFunnelStats): string {
