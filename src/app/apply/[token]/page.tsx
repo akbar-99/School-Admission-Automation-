@@ -524,22 +524,28 @@ async function Content({
                 </p>
               )}
 
+              {/* One primary action at a time: Confirm while a confirmation is
+                  still needed, then Done once there's nothing left to do.
+                  Rescheduling stays available but as a quiet link, so it
+                  doesn't compete with the main step. */}
               {slot.confirmed_at ? (
                 <Alert variant="success">✓ You&apos;ve confirmed you&apos;ll attend.</Alert>
               ) : (
                 canReschedule && (
                   <a
                     href={`/api/assessment/confirm/${token}`}
-                    className={buttonVariants({ variant: "outline", size: "sm" })}
+                    className={buttonVariants({ className: "w-full sm:w-auto" })}
                   >
                     Confirm I&apos;ll attend
                   </a>
                 )
               )}
 
+              {!(canReschedule && !slot.confirmed_at) && <BookingDone />}
+
               {canReschedule && (
-                <details className="rounded-md border border-border p-3 text-sm">
-                  <summary className="cursor-pointer font-medium text-muted-foreground">
+                <details className="text-sm">
+                  <summary className="cursor-pointer text-muted-foreground underline-offset-2 hover:underline">
                     Need to reschedule?
                   </summary>
                   <p className="mt-2 text-xs text-muted-foreground">
@@ -553,8 +559,6 @@ async function Content({
                   </form>
                 </details>
               )}
-
-              <BookingDone />
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">Slot details unavailable.</p>
