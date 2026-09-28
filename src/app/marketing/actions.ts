@@ -338,13 +338,21 @@ export async function sendInstagramReply(formData: FormData) {
     redirect(`/marketing/leads/${input.application_id}?error=` + encodeURIComponent(result.error));
   }
 
-  await admin.from("instagram_messages").insert({
+  // The echo of this same message can reach the webhook before this insert
+  // lands — upsert on the message id so whichever arrives second attributes
+  // it to this rep instead of losing the row to the unique index.
+  const outbound = {
     application_id: input.application_id,
     direction: "outbound",
     message_text: input.message,
     provider_message_id: result.messageId || null,
     sent_by: profile.id,
-  });
+  };
+  if (outbound.provider_message_id) {
+    await admin.from("instagram_messages").upsert(outbound, { onConflict: "provider_message_id" });
+  } else {
+    await admin.from("instagram_messages").insert(outbound);
+  }
   await logAudit({
     actorId: profile.id,
     actorRole: profile.role,
@@ -447,4 +455,42 @@ export async function restoreWithdrawn(formData: FormData) {
 
   revalidatePath("/marketing");
   redirect("/marketing?restored=1");
+}
+
+const DismissLeadSchema = z.object({ application_id: z.string().uuid() });
+
+// Takes an unclaimed enquiry out of the pool without deleting it — for one
+// that was already answered in the Instagram app, or needs no follow-up.
+// Only ever applies to a still-unclaimed lead; a new message from the
+// parent puts it back (see handleInboundInstagramMessage).
+export async function dismissLead(formData: FormData) {
+  const { profile } = await requireRole(["marketing", "admin", "coo"]);
+  const parsed = DismissLeadSchema.safeParse({ application_id: formData.get("application_id") });
+  if (!parsed.success) {
+    redirect("/marketing?error=" + encodeURIComponent("Invalid enquiry."));
+  }
+
+  const admin = createSupabaseAdminClient();
+  const { data } = await admin
+    .from("applications")
+    .update({ dismissed_at: new Date().toISOString(), dismissed_by: profile.id })
+    .eq("id", parsed.data!.application_id)
+    .is("created_by", null)
+    .is("dismissed_at", null)
+    .select("id")
+    .maybeSingle();
+  if (!data) {
+    redirect("/marketing?error=" + encodeURIComponent("That enquiry was just claimed or dismissed by someone else."));
+  }
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "lead.dismissed",
+    entity: "application",
+    entityId: data!.id,
+  });
+
+  revalidatePath("/marketing");
+  redirect("/marketing?dismissed=1");
 }

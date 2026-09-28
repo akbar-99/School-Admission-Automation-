@@ -18,6 +18,7 @@ interface Message {
   id: string;
   direction: "inbound" | "outbound";
   message_text: string;
+  sent_by: string | null;
   created_at: string;
 }
 
@@ -43,7 +44,7 @@ export default async function LeadConversationPage({
     admin.from("parents").select("full_name").eq("id", app.parent_id).maybeSingle(),
     admin
       .from("instagram_messages")
-      .select("id, direction, message_text, created_at")
+      .select("id, direction, message_text, sent_by, created_at")
       .eq("application_id", id)
       .order("created_at", { ascending: true }),
   ]);
@@ -94,7 +95,10 @@ export default async function LeadConversationPage({
                   >
                     {m.message_text}
                   </div>
-                  <span className="px-1 text-[11px] text-muted-foreground">{formatDateTime(m.created_at)}</span>
+                  <span className="px-1 text-[11px] text-muted-foreground">
+                    {m.direction === "outbound" && !m.sent_by && "Sent from the Instagram app · "}
+                    {formatDateTime(m.created_at)}
+                  </span>
                 </div>
               ))
             )}

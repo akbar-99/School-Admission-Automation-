@@ -4,7 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireRole } from "@/lib/auth";
 import { applyUrl } from "@/lib/parent";
 import { formatDateTime } from "@/lib/utils";
-import { createLead, claimLead, addContactInfo, markWithdrawn, restoreWithdrawn } from "./actions";
+import { createLead, claimLead, dismissLead, addContactInfo, markWithdrawn, restoreWithdrawn } from "./actions";
 import { LeadSourceSelect } from "@/components/marketing/lead-source-select";
 import { describeFilters, parseAdmissionsFilters } from "@/lib/admissions-report";
 import { StatusBadge } from "@/components/status-badge";
@@ -51,6 +51,9 @@ interface UnclaimedRow {
   lead_message: string | null;
   created_at: string;
   parents: { full_name: string } | null;
+  // Last reply staff typed straight into the Instagram app (not this app) —
+  // means the enquiry is already being handled somewhere else.
+  lastAppReply?: string | null;
 }
 
 function isoDate(d: Date): string {
@@ -71,9 +74,10 @@ export default async function MarketingPage({
     from?: string;
     to?: string;
     claimed?: string;
+    dismissed?: string;
   }>;
 }) {
-  const { created, error, duplicate, status, from, to, claimed } = await searchParams;
+  const { created, error, duplicate, status, from, to, claimed, dismissed } = await searchParams;
   let duplicateInfo: {
     input: {
       parent_name: string;
@@ -123,6 +127,11 @@ export default async function MarketingPage({
       )}
       {error && <Alert variant="error">{error}</Alert>}
       {claimed && <Alert variant="success">Enquiry claimed — it&apos;s now in your leads below.</Alert>}
+      {dismissed && (
+        <Alert variant="success">
+          Enquiry dismissed. If this parent sends a new message, it&apos;ll come back to the pool automatically.
+        </Alert>
+      )}
 
       {duplicateInfo && (
         <Alert variant="warning" className="space-y-3">
@@ -237,9 +246,23 @@ async function UnclaimedLeadsSection() {
     .from("applications")
     .select("id, lead_source, lead_source_other, lead_message, created_at, parents(full_name)")
     .is("created_by", null)
+    .is("dismissed_at", null)
     .order("created_at", { ascending: true });
   const rows = (data ?? []) as unknown as UnclaimedRow[];
   if (rows.length === 0) return null;
+
+  // Staff replies typed straight into the Instagram app arrive as outbound
+  // messages with no sender in this app — surface the latest per enquiry.
+  const { data: replies } = await admin
+    .from("instagram_messages")
+    .select("application_id, message_text, created_at")
+    .in("application_id", rows.map((r) => r.id))
+    .eq("direction", "outbound")
+    .is("sent_by", null)
+    .order("created_at", { ascending: true });
+  const lastReplyByApp = new Map<string, string>();
+  for (const m of replies ?? []) lastReplyByApp.set(m.application_id, m.message_text);
+  for (const r of rows) r.lastAppReply = lastReplyByApp.get(r.id) ?? null;
 
   return (
     <Card className="border-primary/30">
@@ -265,13 +288,29 @@ async function UnclaimedLeadsSection() {
                   &quot;{r.lead_message}&quot;
                 </div>
               )}
+              {r.lastAppReply && (
+                <div className="mt-2 max-w-md space-y-1">
+                  <Badge tone="warning">Already replied on Instagram</Badge>
+                  <div className="text-xs text-muted-foreground">
+                    Last reply: &quot;{r.lastAppReply}&quot;
+                  </div>
+                </div>
+              )}
             </div>
-            <form action={claimLead}>
-              <input type="hidden" name="application_id" value={r.id} />
-              <SubmitButton size="sm" pendingText="Claiming…">
-                Claim
-              </SubmitButton>
-            </form>
+            <div className="flex items-center gap-2">
+              <form action={dismissLead}>
+                <input type="hidden" name="application_id" value={r.id} />
+                <SubmitButton size="sm" variant="ghost" pendingText="…">
+                  Dismiss
+                </SubmitButton>
+              </form>
+              <form action={claimLead}>
+                <input type="hidden" name="application_id" value={r.id} />
+                <SubmitButton size="sm" pendingText="Claiming…">
+                  Claim
+                </SubmitButton>
+              </form>
+            </div>
           </div>
         ))}
       </CardContent>

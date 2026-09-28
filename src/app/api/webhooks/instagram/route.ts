@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { config } from "@/lib/config";
-import { handleInboundInstagramMessage } from "@/lib/workflow";
+import { handleInboundInstagramMessage, recordInstagramEcho } from "@/lib/workflow";
 
 // Instagram DM enquiries, captured as unclaimed leads for any marketing team
 // member to pick up (see handleInboundInstagramMessage in workflow.ts). This
@@ -32,6 +32,7 @@ export async function GET(request: Request) {
 
 interface InstagramMessagingEvent {
   sender: { id: string }; // IGSID
+  recipient?: { id: string }; // for an echo: the customer's IGSID
   timestamp?: number;
   message?: {
     mid: string;
@@ -70,7 +71,17 @@ export async function POST(request: Request) {
     // rep replying from the native Instagram app) — never a new enquiry. A
     // "like"/heart-react on a message has no `message` field at all (it's a
     // separate reaction event), so it's already excluded here too.
-    if (!event.message || event.message.is_echo) continue;
+    if (!event.message) continue;
+    // An echo is a message this account itself sent — typically staff
+    // replying in the native Instagram app. Record it in the thread, never
+    // treat it as a new enquiry.
+    if (event.message.is_echo) {
+      const to = event.recipient?.id;
+      const echoText =
+        event.message.text?.trim() || (event.message.attachments?.length ? "(attachment)" : "");
+      if (to && echoText) await recordInstagramEcho(to, event.message.mid ?? null, echoText);
+      continue;
+    }
     const hasAttachment = Boolean(event.message.attachments?.length);
     // An emoji-only/no-real-words plain message (a stray 👍 or similar) isn't
     // a genuine enquiry signal — skip it. A structured interaction (e.g. the

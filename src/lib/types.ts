@@ -141,6 +141,8 @@ export interface Application {
   withdrawal_type: WithdrawalType | null;
   withdrawal_reason: string | null;
   withdrawn_by: string | null;
+  dismissed_at: string | null;
+  dismissed_by: string | null;
   created_at: string;
   updated_at: string;
 }

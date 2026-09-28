@@ -188,7 +188,7 @@ export async function handleInboundInstagramMessage(
   // thread is a cosmetic, rare edge case, not a functional problem).
   const { data: existing } = await admin
     .from("applications")
-    .select("id, created_by, parent_id")
+    .select("id, created_by, parent_id, dismissed_at")
     .eq("external_contact_id", igsid)
     .maybeSingle();
   if (existing) {
@@ -197,6 +197,20 @@ export async function handleInboundInstagramMessage(
       direction: "inbound",
       message_text: text ?? "(no message text)",
     });
+    // A dismissed, still-unclaimed enquiry that writes again is live again —
+    // put it back in the pool and tell the team, rather than losing the
+    // parent's new message in a thread nobody is watching.
+    if (existing.dismissed_at && !existing.created_by) {
+      const { data: revived } = await admin
+        .from("applications")
+        .update({ dismissed_at: null, dismissed_by: null })
+        .eq("id", existing.id)
+        .select("*")
+        .maybeSingle();
+      const { data: parentRow } = await admin.from("parents").select("*").eq("id", existing.parent_id).maybeSingle();
+      if (revived && parentRow) await notifyNewUnclaimedLead(revived as Application, parentRow as Parent);
+      return;
+    }
     // Only ping the owning rep once someone's actually claimed it — before
     // that, notifyNewUnclaimedLead already fired on the first message, and
     // repeat pings to every marketing member on each follow-up would just
@@ -250,6 +264,56 @@ export async function handleInboundInstagramMessage(
   });
 
   await notifyNewUnclaimedLead(app as Application, parent as Parent);
+}
+
+// A reply typed directly in the Instagram app (not through this app) reaches
+// us as a webhook "echo". Recorded into the same thread so the history is
+// complete and the unclaimed pool can show the enquiry was already answered.
+// Never creates a lead: an echo to someone we have no record of is ignored.
+export async function recordInstagramEcho(
+  recipientIgsid: string,
+  messageId: string | null,
+  text: string,
+): Promise<void> {
+  const admin = createSupabaseAdminClient();
+  const { data: app } = await admin
+    .from("applications")
+    .select("id")
+    .eq("external_contact_id", recipientIgsid)
+    .maybeSingle();
+  if (!app) return;
+
+  // Already saved — this app's own reply also echoes back through here.
+  if (messageId) {
+    const { data: dup } = await admin
+      .from("instagram_messages")
+      .select("id")
+      .eq("provider_message_id", messageId)
+      .maybeSingle();
+    if (dup) return;
+  }
+  // Belt-and-braces for the same case if the ids ever don't line up: an
+  // identical reply sent from this app in the last couple of minutes.
+  const since = new Date(Date.now() - 2 * 60_000).toISOString();
+  const { data: recent } = await admin
+    .from("instagram_messages")
+    .select("id")
+    .eq("application_id", app.id)
+    .eq("direction", "outbound")
+    .eq("message_text", text)
+    .not("sent_by", "is", null)
+    .gte("created_at", since)
+    .limit(1);
+  if (recent && recent.length > 0) return;
+
+  const { error } = await admin.from("instagram_messages").insert({
+    application_id: app.id,
+    direction: "outbound",
+    message_text: text,
+    provider_message_id: messageId,
+    sent_by: null,
+  });
+  if (error) console.error("[workflow] failed to record Instagram echo", error);
 }
 
 // A new message arrived on an already-claimed Instagram thread — let the
