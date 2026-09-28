@@ -29,6 +29,7 @@ interface SlotRow {
     id: string;
     status: string;
     grade_applying: string | null;
+    lead_student_name: string | null;
     students: { full_name: string; dob: string | null } | null;
     parents: { full_name: string; phone: string; email: string | null } | null;
   } | null;
@@ -105,7 +106,7 @@ async function TeacherBody() {
     admin
       .from("assessment_slots")
       .select(
-        "id, starts_at, ends_at, is_open, application_id, zoom_start_url, unavailable_reported, applications(id, status, grade_applying, students(full_name, dob), parents(full_name, phone, email))",
+        "id, starts_at, ends_at, is_open, application_id, zoom_start_url, unavailable_reported, applications(id, status, grade_applying, lead_student_name, students(full_name, dob), parents(full_name, phone, email))",
       )
       .eq("teacher_id", teacherId)
       .order("starts_at", { ascending: true }),
@@ -173,7 +174,7 @@ async function TeacherBody() {
   // page for the live Realtime event still gets notified on their next visit.
   const initialAlerts = toRecord.map((s) => ({
     id: s.id,
-    text: `${s.applications?.students?.full_name ?? "A parent"} booked your assessment slot on ${formatInZone(s.starts_at, schoolTz)} ${schoolLabel}.`,
+    text: `${(s.applications?.students?.full_name ?? s.applications?.lead_student_name) ?? "A parent"} booked your assessment slot on ${formatInZone(s.starts_at, schoolTz)} ${schoolLabel}.`,
   }));
 
   // "Starts in 10 minutes" popups for each upcoming booked assessment still
@@ -184,7 +185,7 @@ async function TeacherBody() {
     .map((s) => ({
       id: `reminder-${s.id}`,
       at: new Date(new Date(s.starts_at).getTime() - 10 * 60_000).toISOString(),
-      text: `Your assessment with ${s.applications?.students?.full_name ?? "an applicant"} starts in 10 minutes.`,
+      text: `Your assessment with ${(s.applications?.students?.full_name ?? s.applications?.lead_student_name) ?? "an applicant"} starts in 10 minutes.`,
     }));
 
   return (
@@ -232,7 +233,7 @@ async function TeacherBody() {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <div className="text-base font-semibold">
-                      {s.applications?.students?.full_name ?? "Applicant"}
+                      {s.applications?.students?.full_name ?? s.applications?.lead_student_name ?? "Applicant"}
                     </div>
                     <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                       <span>Grade {s.applications?.grade_applying}</span>

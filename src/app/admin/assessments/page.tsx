@@ -29,6 +29,7 @@ interface RequestRow {
   preferred_assessment_date: string | null;
   preferred_assessment_date_alt: string | null;
   preferred_assessment_tz: string | null;
+  lead_student_name: string | null;
   students: { full_name: string } | null;
   parents: { full_name: string; phone: string } | null;
 }
@@ -45,6 +46,7 @@ interface SlotRow {
   applications: {
     status: string;
     grade_applying: string | null;
+    lead_student_name: string | null;
     students: { full_name: string } | null;
     parents: { full_name: string; phone: string } | null;
   } | null;
@@ -55,7 +57,7 @@ interface UnavailableRow {
   teacher_id: string | null;
   application_id: string | null;
   users: { full_name: string | null; email: string | null } | null;
-  applications: { students: { full_name: string } | null } | null;
+  applications: { lead_student_name: string | null; students: { full_name: string } | null } | null;
 }
 interface TeacherStats {
   totalSlots: number;
@@ -118,7 +120,7 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
   let slotQuery = admin
     .from("assessment_slots")
     .select(
-      "id, starts_at, is_open, application_id, teacher_id, claimed_by_teacher, unavailable_reported, zoom_join_url, users(full_name, email), applications(status, grade_applying, students(full_name), parents(full_name, phone))",
+      "id, starts_at, is_open, application_id, teacher_id, claimed_by_teacher, unavailable_reported, zoom_join_url, users(full_name, email), applications(status, grade_applying, lead_student_name, students(full_name), parents(full_name, phone))",
     )
     .order("starts_at", { ascending: true });
   if (teacherFilter === "unclaimed") {
@@ -144,7 +146,7 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
     admin
       .from("applications")
       .select(
-        "id, grade_applying, preferred_assessment_date, preferred_assessment_date_alt, preferred_assessment_tz, students(full_name), parents(full_name, phone)",
+        "id, grade_applying, preferred_assessment_date, preferred_assessment_date_alt, preferred_assessment_tz, lead_student_name, students(full_name), parents(full_name, phone)",
       )
       .eq("status", "FORM_SUBMITTED")
       .order("preferred_assessment_date", { ascending: true }),
@@ -159,7 +161,7 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
     admin
       .from("assessment_slots")
       .select(
-        "id, starts_at, teacher_id, application_id, users(full_name, email), applications(students(full_name))",
+        "id, starts_at, teacher_id, application_id, users(full_name, email), applications(lead_student_name, students(full_name))",
       )
       .eq("unavailable_reported", true)
       .order("starts_at", { ascending: true }),
@@ -174,7 +176,9 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
   const unavailableInitialAlerts = unavailableSlots.map((s) => ({
     id: s.id,
     text: `${s.users?.full_name ?? s.users?.email ?? "A teacher"} can't attend the assessment${
-      s.applications?.students?.full_name ? ` for ${s.applications.students.full_name}` : ""
+      (s.applications?.students?.full_name ?? s.applications?.lead_student_name)
+        ? ` for ${s.applications?.students?.full_name ?? s.applications?.lead_student_name}`
+        : ""
     } on ${formatInZoneWithDay(s.starts_at, schoolTz)} ${schoolLabel}.`,
   }));
 
@@ -297,7 +301,8 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
                   <span className="text-muted-foreground">
                     {" "}
                     · was {s.users?.full_name ?? s.users?.email ?? "unassigned"}
-                    {s.applications?.students?.full_name && ` · ${s.applications.students.full_name}`}
+                    {(s.applications?.students?.full_name ?? s.applications?.lead_student_name) &&
+                      ` · ${s.applications?.students?.full_name ?? s.applications?.lead_student_name}`}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -432,7 +437,7 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
                 <AssignAssessmentRow
                   key={r.id}
                   applicationId={r.id}
-                  studentName={r.students?.full_name ?? "Applicant"}
+                  studentName={r.students?.full_name ?? r.lead_student_name ?? "Applicant"}
                   grade={r.grade_applying}
                   phone={r.parents?.phone ?? null}
                   preferred={
@@ -480,7 +485,7 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
               >
                 <div>
                   <span className="font-medium">
-                    {s.applications?.students?.full_name ?? "Applicant"}
+                    {s.applications?.students?.full_name ?? s.applications?.lead_student_name ?? "Applicant"}
                   </span>
                   <span className="text-muted-foreground">
                     {" "}· Grade {s.applications?.grade_applying ?? "—"} · {s.users?.full_name ?? "Unassigned"}
@@ -694,9 +699,11 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
                         <Badge tone={tone}>{label}</Badge>
                       </TD>
                       <TD>
-                        {booked && s.applications?.students?.full_name ? (
+                        {booked && s.applications ? (
                           <div>
-                            <div className="font-medium">{s.applications.students.full_name}</div>
+                            <div className="font-medium">
+                              {s.applications.students?.full_name ?? s.applications.lead_student_name ?? "Applicant"}
+                            </div>
                             <div className="text-xs text-muted-foreground">
                               Grade {s.applications.grade_applying ?? "—"}
                               {s.applications.parents?.phone && ` · ${s.applications.parents.phone}`}

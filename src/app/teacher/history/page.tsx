@@ -17,6 +17,7 @@ interface ResultRow {
   assessment_slots: { starts_at: string } | null;
   applications: {
     grade_applying: string | null;
+    lead_student_name: string | null;
     students: { full_name: string; dob: string | null } | null;
     parents: { full_name: string; phone: string; email: string | null } | null;
   } | null;
@@ -71,7 +72,7 @@ async function HistoryBody() {
   const { data } = await admin
     .from("assessment_results")
     .select(
-      "id, outcome, remarks, subjects, created_at, assessment_slots(starts_at), applications(grade_applying, students(full_name, dob), parents(full_name, phone, email))",
+      "id, outcome, remarks, subjects, created_at, assessment_slots(starts_at), applications(grade_applying, lead_student_name, students(full_name, dob), parents(full_name, phone, email))",
     )
     .eq("teacher_id", teacherId)
     .order("created_at", { ascending: false });
@@ -105,7 +106,7 @@ async function HistoryBody() {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <div className="text-base font-semibold">
-                      {r.applications?.students?.full_name ?? "Applicant"}
+                      {r.applications?.students?.full_name ?? r.applications?.lead_student_name ?? "Applicant"}
                     </div>
                     <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                       <span>Grade {r.applications?.grade_applying ?? "—"}</span>
