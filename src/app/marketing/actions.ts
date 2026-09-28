@@ -7,8 +7,17 @@ import { requireRole } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { notifyLeadCreated, notifyLeadClaimed } from "@/lib/workflow";
 import { sendInstagramMessage } from "@/lib/instagram";
+import { sendFacebookMessage } from "@/lib/facebook";
 import { logAudit } from "@/lib/audit";
 import { LEAD_SOURCES, type Application, type Parent } from "@/lib/types";
+
+// The two DM channels this app can chat through — keyed by lead_source, so
+// the one conversation page/action serves either without duplicating the UI.
+const SOCIAL_MESSAGES_TABLE = {
+  instagram: "instagram_messages",
+  facebook: "facebook_messages",
+} as const;
+type SocialLeadSource = keyof typeof SOCIAL_MESSAGES_TABLE;
 
 const LeadSchema = z
   .object({
@@ -305,11 +314,11 @@ const SendInstagramReplySchema = z.object({
   message: z.string().trim().min(1, "Message can't be empty"),
 });
 
-// Sends a real Instagram DM reply from inside the app. Instagram enforces a
-// ~24h messaging window from the person's last message — a send outside
-// that window fails with a clear error from sendInstagramMessage, surfaced
-// back to the rep as-is rather than silently swallowed.
-export async function sendInstagramReply(formData: FormData) {
+// Sends a real DM reply from inside the app — Instagram or Facebook Page
+// Messenger, whichever this lead came from. Both enforce a messaging window
+// from the person's last message; a send outside that window fails with a
+// clear error surfaced back to the rep as-is rather than silently swallowed.
+export async function sendSocialReply(formData: FormData) {
   const { profile } = await requireRole(["marketing", "admin", "coo"]);
   const parsed = SendInstagramReplySchema.safeParse({
     application_id: formData.get("application_id"),
@@ -323,17 +332,24 @@ export async function sendInstagramReply(formData: FormData) {
   const admin = createSupabaseAdminClient();
   const { data: app } = await admin
     .from("applications")
-    .select("id, created_by, external_contact_id")
+    .select("id, created_by, external_contact_id, lead_source")
     .eq("id", input.application_id)
     .maybeSingle();
   if (!app || (profile.role === "marketing" && app.created_by !== profile.id)) {
     redirect("/marketing?error=" + encodeURIComponent("Enquiry not found."));
   }
   if (!app!.external_contact_id) {
-    redirect(`/marketing/leads/${input.application_id}?error=` + encodeURIComponent("Not an Instagram enquiry."));
+    redirect(`/marketing/leads/${input.application_id}?error=` + encodeURIComponent("Not a social DM enquiry."));
+  }
+  const messagesTable = SOCIAL_MESSAGES_TABLE[app!.lead_source as SocialLeadSource];
+  if (!messagesTable) {
+    redirect(`/marketing/leads/${input.application_id}?error=` + encodeURIComponent("Not a social DM enquiry."));
   }
 
-  const result = await sendInstagramMessage(app!.external_contact_id, input.message);
+  const result =
+    app!.lead_source === "facebook"
+      ? await sendFacebookMessage(app!.external_contact_id, input.message)
+      : await sendInstagramMessage(app!.external_contact_id, input.message);
   if (!result.ok) {
     redirect(`/marketing/leads/${input.application_id}?error=` + encodeURIComponent(result.error));
   }
@@ -349,14 +365,14 @@ export async function sendInstagramReply(formData: FormData) {
     sent_by: profile.id,
   };
   if (outbound.provider_message_id) {
-    await admin.from("instagram_messages").upsert(outbound, { onConflict: "provider_message_id" });
+    await admin.from(messagesTable).upsert(outbound, { onConflict: "provider_message_id" });
   } else {
-    await admin.from("instagram_messages").insert(outbound);
+    await admin.from(messagesTable).insert(outbound);
   }
   await logAudit({
     actorId: profile.id,
     actorRole: profile.role,
-    action: "instagram.reply_sent",
+    action: `${app!.lead_source}.reply_sent`,
     entity: "application",
     entityId: input.application_id,
   });

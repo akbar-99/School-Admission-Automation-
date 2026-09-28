@@ -141,6 +141,13 @@ export const config = {
     // granted on the same Meta App — set INSTAGRAM_TOKEN explicitly if a
     // separate token ends up being required.
     instagramToken: process.env.INSTAGRAM_TOKEN || process.env.WHATSAPP_TOKEN || "",
+    // Facebook Page Messenger — whether its App Secret is shared with
+    // WhatsApp/Instagram's or distinct is unconfirmed until tested live
+    // (Instagram's turned out to be its own, separate from WhatsApp's).
+    facebookAppSecret: process.env.FACEBOOK_APP_SECRET ?? "",
+    // Page Access Token for the connected Facebook Page, used both to send
+    // replies and to look up a sender's name via the Graph API.
+    facebookPageToken: process.env.FACEBOOK_PAGE_TOKEN ?? "",
     // SMTP email transport (e.g. Hostinger). Preferred over Resend when set.
     smtp: {
       host: process.env.SMTP_HOST ?? "",

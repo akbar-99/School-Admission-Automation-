@@ -10,6 +10,7 @@ import { describeFilters, parseAdmissionsFilters } from "@/lib/admissions-report
 import { StatusBadge } from "@/components/status-badge";
 import { WithdrawalBadge } from "@/components/withdrawal-badge";
 import { Badge } from "@/components/ui/badge";
+import { SourceIcon } from "@/components/icons/lead-source-icons";
 import { CopyButton } from "@/components/copy-button";
 import { PhoneField } from "@/components/apply/phone-field";
 import { SubmitButton } from "@/components/submit-button";
@@ -251,17 +252,29 @@ async function UnclaimedLeadsSection() {
   const rows = (data ?? []) as unknown as UnclaimedRow[];
   if (rows.length === 0) return null;
 
-  // Staff replies typed straight into the Instagram app arrive as outbound
-  // messages with no sender in this app — surface the latest per enquiry.
-  const { data: replies } = await admin
-    .from("instagram_messages")
-    .select("application_id, message_text, created_at")
-    .in("application_id", rows.map((r) => r.id))
-    .eq("direction", "outbound")
-    .is("sent_by", null)
-    .order("created_at", { ascending: true });
+  // Staff replies typed straight into the native app (Instagram or
+  // Facebook) arrive as outbound messages with no sender in this app —
+  // surface the latest per enquiry. Querying both tables for every id is
+  // harmless: an id from the other platform simply matches nothing.
+  const appIds = rows.map((r) => r.id);
+  const [{ data: igReplies }, { data: fbReplies }] = await Promise.all([
+    admin
+      .from("instagram_messages")
+      .select("application_id, message_text, created_at")
+      .in("application_id", appIds)
+      .eq("direction", "outbound")
+      .is("sent_by", null)
+      .order("created_at", { ascending: true }),
+    admin
+      .from("facebook_messages")
+      .select("application_id, message_text, created_at")
+      .in("application_id", appIds)
+      .eq("direction", "outbound")
+      .is("sent_by", null)
+      .order("created_at", { ascending: true }),
+  ]);
   const lastReplyByApp = new Map<string, string>();
-  for (const m of replies ?? []) lastReplyByApp.set(m.application_id, m.message_text);
+  for (const m of [...(igReplies ?? []), ...(fbReplies ?? [])]) lastReplyByApp.set(m.application_id, m.message_text);
   for (const r of rows) r.lastAppReply = lastReplyByApp.get(r.id) ?? null;
 
   return (
@@ -280,7 +293,8 @@ async function UnclaimedLeadsSection() {
           >
             <div>
               <div className="font-medium">{r.parents?.full_name ?? "—"}</div>
-              <div className="text-xs text-muted-foreground">
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <SourceIcon source={r.lead_source ?? "other"} className="size-3.5 shrink-0" />
                 {leadSourceLabel(r.lead_source, r.lead_source_other)} · {formatDateTime(r.created_at)}
               </div>
               {r.lead_message && (
@@ -290,7 +304,9 @@ async function UnclaimedLeadsSection() {
               )}
               {r.lastAppReply && (
                 <div className="mt-2 max-w-md space-y-1">
-                  <Badge tone="warning">Already replied on Instagram</Badge>
+                  <Badge tone="warning">
+                    Already replied on {leadSourceLabel(r.lead_source, r.lead_source_other)}
+                  </Badge>
                   <div className="text-xs text-muted-foreground">
                     Last reply: &quot;{r.lastAppReply}&quot;
                   </div>

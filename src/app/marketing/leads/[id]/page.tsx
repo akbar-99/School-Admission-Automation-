@@ -4,7 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import { requireRole } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { formatDateTime } from "@/lib/utils";
-import { sendInstagramReply } from "../../actions";
+import { sendSocialReply } from "../../actions";
 import { StatusBadge } from "@/components/status-badge";
 import { SubmitButton } from "@/components/submit-button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Alert } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { Application } from "@/lib/types";
+import { leadSourceLabel, type Application } from "@/lib/types";
 
 interface Message {
   id: string;
@@ -21,6 +21,13 @@ interface Message {
   sent_by: string | null;
   created_at: string;
 }
+
+// The one conversation page serves either DM channel — keyed by lead_source
+// so it never needs duplicating (mirrors SOCIAL_MESSAGES_TABLE in actions.ts).
+const SOCIAL_MESSAGES_TABLE: Record<string, string> = {
+  instagram: "instagram_messages",
+  facebook: "facebook_messages",
+};
 
 export default async function LeadConversationPage({
   params,
@@ -39,11 +46,14 @@ export default async function LeadConversationPage({
   const app = appRow as Application;
   if (profile.role === "marketing" && app.created_by !== profile.id) notFound();
   if (!app.external_contact_id) notFound();
+  const messagesTable = SOCIAL_MESSAGES_TABLE[app.lead_source ?? ""];
+  if (!messagesTable) notFound();
+  const source = leadSourceLabel(app.lead_source);
 
   const [{ data: parent }, { data: messagesData }] = await Promise.all([
     admin.from("parents").select("full_name").eq("id", app.parent_id).maybeSingle(),
     admin
-      .from("instagram_messages")
+      .from(messagesTable)
       .select("id, direction, message_text, sent_by, created_at")
       .eq("application_id", id)
       .order("created_at", { ascending: true }),
@@ -61,7 +71,7 @@ export default async function LeadConversationPage({
           <StatusBadge status={app.status} />
         </div>
         <p className="text-muted-foreground">
-          Instagram {app.lead_source_other ?? ""} — messages sent here go straight to their Instagram DMs.
+          {source} {app.lead_source_other ?? ""} — messages sent here go straight to their {source} DMs.
         </p>
       </div>
 
@@ -71,7 +81,7 @@ export default async function LeadConversationPage({
         <CardHeader>
           <CardTitle>Conversation</CardTitle>
           <CardDescription>
-            Instagram only allows replies within ~24 hours of their last message — if a send fails, that&apos;s
+            {source} only allows replies within ~24 hours of their last message — if a send fails, that&apos;s
             usually why.
           </CardDescription>
         </CardHeader>
@@ -96,7 +106,7 @@ export default async function LeadConversationPage({
                     {m.message_text}
                   </div>
                   <span className="px-1 text-[11px] text-muted-foreground">
-                    {m.direction === "outbound" && !m.sent_by && "Sent from the Instagram app · "}
+                    {m.direction === "outbound" && !m.sent_by && `Sent from the ${source} app · `}
                     {formatDateTime(m.created_at)}
                   </span>
                 </div>
@@ -104,7 +114,7 @@ export default async function LeadConversationPage({
             )}
           </div>
 
-          <form action={sendInstagramReply} className="flex items-end gap-2.5">
+          <form action={sendSocialReply} className="flex items-end gap-2.5">
             <input type="hidden" name="application_id" value={app.id} />
             <Textarea name="message" placeholder="Type a reply…" required className="flex-1" rows={2} />
             <SubmitButton pendingText="Sending…">Send</SubmitButton>

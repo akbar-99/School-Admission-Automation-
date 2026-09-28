@@ -60,8 +60,9 @@ export default async function TermsPage() {
           <section>
             <h2 className="font-display text-xl font-semibold text-foreground">Communications</h2>
             <p className="mt-2">
-              By providing your phone number, email, or messaging us on WhatsApp or Instagram, you
-              consent to receiving admission-related updates through those channels.
+              By providing your phone number, email, or messaging us on WhatsApp, Instagram, or
+              Facebook Messenger, you consent to receiving admission-related updates through those
+              channels.
             </p>
           </section>
 

@@ -172,13 +172,26 @@ export async function notifyLeadCreated(app: Application, parent: Parent) {
 // to send it to until a rep gets the parent's number from the DM
 // conversation and submits it via addContactInfo.
 // ---------------------------------------------------------------------------
-export async function handleInboundInstagramMessage(
-  igsid: string,
+type SocialPlatform = "instagram" | "facebook";
+
+const SOCIAL_MESSAGES_TABLE: Record<SocialPlatform, "instagram_messages" | "facebook_messages"> = {
+  instagram: "instagram_messages",
+  facebook: "facebook_messages",
+};
+
+// Shared by handleInboundInstagramMessage/handleInboundFacebookMessage below
+// — same lead-creation/existing-sender/dismissed-revival logic either way,
+// parameterized only on which messages table to write to and which
+// lead_source value a brand-new lead gets.
+async function handleInboundSocialMessage(
+  platform: SocialPlatform,
+  contactId: string,
   profile: { name?: string | null; username?: string | null },
   messageText?: string | null,
 ): Promise<void> {
   const admin = createSupabaseAdminClient();
   const text = messageText?.trim() || null;
+  const messagesTable = SOCIAL_MESSAGES_TABLE[platform];
 
   // Already-known sender (any status) — an ordinary reply in an existing
   // conversation, not a new lead. Also makes a duplicate webhook delivery of
@@ -189,10 +202,10 @@ export async function handleInboundInstagramMessage(
   const { data: existing } = await admin
     .from("applications")
     .select("id, created_by, parent_id, dismissed_at")
-    .eq("external_contact_id", igsid)
+    .eq("external_contact_id", contactId)
     .maybeSingle();
   if (existing) {
-    await admin.from("instagram_messages").insert({
+    await admin.from(messagesTable).insert({
       application_id: existing.id,
       direction: "inbound",
       message_text: text ?? "(no message text)",
@@ -222,20 +235,20 @@ export async function handleInboundInstagramMessage(
         .eq("id", existing.parent_id)
         .maybeSingle();
       if (parentRow) {
-        await notifyNewInstagramMessage(existing.created_by, existing.id, parentRow as Parent, text);
+        await notifyNewSocialMessage(platform, existing.created_by, existing.id, parentRow as Parent, text);
       }
     }
     return;
   }
 
-  const displayName = profile.name?.trim() || profile.username?.trim() || "Instagram enquiry";
+  const displayName = profile.name?.trim() || profile.username?.trim() || `${leadSourceLabel(platform)} enquiry`;
   const { data: parent, error: pErr } = await admin
     .from("parents")
     .insert({ full_name: displayName, phone: null, email: null })
     .select("*")
     .single();
   if (pErr || !parent) {
-    console.error("[workflow] failed to create parent for inbound Instagram DM", pErr);
+    console.error(`[workflow] failed to create parent for inbound ${platform} DM`, pErr);
     return;
   }
 
@@ -244,20 +257,20 @@ export async function handleInboundInstagramMessage(
     .insert({
       parent_id: parent.id,
       status: "LEAD_CREATED",
-      lead_source: "instagram",
+      lead_source: platform,
       lead_source_other: profile.username ? `@${profile.username}` : null,
       lead_message: text,
-      external_contact_id: igsid,
+      external_contact_id: contactId,
       created_by: null,
     })
     .select("*")
     .single();
   if (aErr || !app) {
-    console.error("[workflow] failed to create application for inbound Instagram DM", aErr);
+    console.error(`[workflow] failed to create application for inbound ${platform} DM`, aErr);
     return;
   }
 
-  await admin.from("instagram_messages").insert({
+  await admin.from(messagesTable).insert({
     application_id: app.id,
     direction: "inbound",
     message_text: text ?? "(no message text)",
@@ -266,27 +279,51 @@ export async function handleInboundInstagramMessage(
   await notifyNewUnclaimedLead(app as Application, parent as Parent);
 }
 
-// A reply typed directly in the Instagram app (not through this app) reaches
-// us as a webhook "echo". Recorded into the same thread so the history is
-// complete and the unclaimed pool can show the enquiry was already answered.
-// Never creates a lead: an echo to someone we have no record of is ignored.
-export async function recordInstagramEcho(
-  recipientIgsid: string,
+// A new unclaimed lead came in via Instagram DM — for any marketing team
+// member to pick up via claim_lead. No N-1 admission link goes out yet:
+// there's no phone/email to send it to until a rep gets the parent's number
+// from the DM conversation and submits it via addContactInfo.
+export async function handleInboundInstagramMessage(
+  igsid: string,
+  profile: { name?: string | null; username?: string | null },
+  messageText?: string | null,
+): Promise<void> {
+  return handleInboundSocialMessage("instagram", igsid, profile, messageText);
+}
+
+// Same as handleInboundInstagramMessage, for a Facebook Page Messenger DM.
+export async function handleInboundFacebookMessage(
+  psid: string,
+  profile: { name?: string | null; username?: string | null },
+  messageText?: string | null,
+): Promise<void> {
+  return handleInboundSocialMessage("facebook", psid, profile, messageText);
+}
+
+// Shared by recordInstagramEcho/recordFacebookEcho below — a reply typed
+// directly in the native app (not through this app) reaches us as a webhook
+// "echo". Recorded into the same thread so the history is complete and the
+// unclaimed pool can show the enquiry was already answered. Never creates a
+// lead: an echo to someone we have no record of is ignored.
+async function recordSocialEcho(
+  platform: SocialPlatform,
+  recipientContactId: string,
   messageId: string | null,
   text: string,
 ): Promise<void> {
   const admin = createSupabaseAdminClient();
+  const messagesTable = SOCIAL_MESSAGES_TABLE[platform];
   const { data: app } = await admin
     .from("applications")
     .select("id")
-    .eq("external_contact_id", recipientIgsid)
+    .eq("external_contact_id", recipientContactId)
     .maybeSingle();
   if (!app) return;
 
   // Already saved — this app's own reply also echoes back through here.
   if (messageId) {
     const { data: dup } = await admin
-      .from("instagram_messages")
+      .from(messagesTable)
       .select("id")
       .eq("provider_message_id", messageId)
       .maybeSingle();
@@ -296,7 +333,7 @@ export async function recordInstagramEcho(
   // identical reply sent from this app in the last couple of minutes.
   const since = new Date(Date.now() - 2 * 60_000).toISOString();
   const { data: recent } = await admin
-    .from("instagram_messages")
+    .from(messagesTable)
     .select("id")
     .eq("application_id", app.id)
     .eq("direction", "outbound")
@@ -306,20 +343,29 @@ export async function recordInstagramEcho(
     .limit(1);
   if (recent && recent.length > 0) return;
 
-  const { error } = await admin.from("instagram_messages").insert({
+  const { error } = await admin.from(messagesTable).insert({
     application_id: app.id,
     direction: "outbound",
     message_text: text,
     provider_message_id: messageId,
     sent_by: null,
   });
-  if (error) console.error("[workflow] failed to record Instagram echo", error);
+  if (error) console.error(`[workflow] failed to record ${platform} echo`, error);
 }
 
-// A new message arrived on an already-claimed Instagram thread — let the
+export async function recordInstagramEcho(recipientIgsid: string, messageId: string | null, text: string): Promise<void> {
+  return recordSocialEcho("instagram", recipientIgsid, messageId, text);
+}
+
+export async function recordFacebookEcho(recipientPsid: string, messageId: string | null, text: string): Promise<void> {
+  return recordSocialEcho("facebook", recipientPsid, messageId, text);
+}
+
+// A new message arrived on an already-claimed social DM thread — let the
 // owning rep know, mirroring notifyLeadCreator's single-recipient shape
 // (src/lib/workflow.ts:119): resolve the one owner, send directly to them.
-async function notifyNewInstagramMessage(
+async function notifyNewSocialMessage(
+  platform: SocialPlatform,
   ownerId: string,
   applicationId: string,
   parent: Parent,
@@ -329,14 +375,15 @@ async function notifyNewInstagramMessage(
   const { data: owner } = await admin.from("users").select("email, phone").eq("id", ownerId).maybeSingle();
   if (!owner || (!owner.email && !owner.phone)) return;
   const quoted = messageText ? `: "${messageText}"` : "";
+  const source = leadSourceLabel(platform);
   await dispatch(
     toStaffMember(
       { email: owner.email, phone: owner.phone },
       {
         applicationId,
-        event: "IG_NEW_MESSAGE",
-        subject: "New message from your Instagram lead",
-        body: `${parent.full_name} sent a new message on Instagram${quoted}`,
+        event: platform === "instagram" ? "IG_NEW_MESSAGE" : "FB_NEW_MESSAGE",
+        subject: `New message from your ${source} lead`,
+        body: `${parent.full_name} sent a new message on ${source}${quoted}`,
       },
     ),
   );
