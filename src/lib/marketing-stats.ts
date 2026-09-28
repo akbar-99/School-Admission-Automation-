@@ -255,18 +255,20 @@ export function computeSourceBreakdown(
     .sort((a, b) => b.count - a.count);
 }
 
-// Curriculum split of actually-enrolled students (erp_status "synced" — the
-// same milestone as the "Added to course" stat), not every enquiry's stated
-// preference — someone can prefer Cambridge at enquiry time and still not
-// enroll. Falls back to the application's preferred_curriculum only if the
-// student record itself has no curriculum set yet.
+// Curriculum split of actually-enrolled students (status ENROLLED — payment
+// done and admission complete), not every enquiry's stated preference —
+// someone can prefer Cambridge at enquiry time and still not enroll. Kept
+// separate from erp_status on purpose: a student can be fully enrolled while
+// their ERP sync is still pending or has no class mapping, and that must not
+// hide them here. Falls back to the application's preferred_curriculum only
+// if the student record itself has no curriculum set yet.
 export function computeCurriculumBreakdown(
-  rows: Pick<CooStatsRow, "erp_status" | "students" | "preferred_curriculum">[],
+  rows: Pick<CooStatsRow, "status" | "students" | "preferred_curriculum">[],
 ): { curriculum: string; count: number }[] {
   const counts = new Map<string, number>(CURRICULUM_OPTIONS.map((c) => [c, 0]));
   let other = 0;
   for (const row of rows) {
-    if (row.erp_status !== "synced") continue;
+    if (row.status !== "ENROLLED") continue;
     const value = row.students?.curriculum ?? row.preferred_curriculum ?? null;
     if (value && counts.has(value)) {
       counts.set(value, (counts.get(value) ?? 0) + 1);

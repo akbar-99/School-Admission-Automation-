@@ -207,7 +207,7 @@ async function CooDashboardData({ from, to }: { from?: string; to?: string }) {
   const curriculumTrends = Object.fromEntries(
     curriculumBreakdown.map((c) => {
       const matched = rows.filter((r) => {
-        if (r.erp_status !== "synced") return false;
+        if (r.status !== "ENROLLED") return false;
         const value = r.students?.curriculum ?? r.preferred_curriculum ?? null;
         if (c.curriculum === "Other") return !value || !(CURRICULUM_OPTIONS as readonly string[]).includes(value);
         return value === c.curriculum;
