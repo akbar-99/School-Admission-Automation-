@@ -5,9 +5,10 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireRole } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { notifyLeadCreated, notifyLeadClaimed } from "@/lib/workflow";
+import { notifyLeadCreated, notifyLeadClaimed, removeEnrollmentFromGoogleSheet } from "@/lib/workflow";
 import { sendInstagramMessage } from "@/lib/instagram";
 import { sendFacebookMessage } from "@/lib/facebook";
+import { deactivateErpStudent } from "@/lib/erp";
 import { logAudit } from "@/lib/audit";
 import { LEAD_SOURCES, type Application, type Parent } from "@/lib/types";
 
@@ -405,7 +406,7 @@ export async function markWithdrawn(formData: FormData) {
   const admin = createSupabaseAdminClient();
   const { data: app } = await admin
     .from("applications")
-    .select("id, created_by, erp_status")
+    .select("id, created_by, erp_status, erp_student_id, section_id, admission_number, grade_applying")
     .eq("id", input.application_id)
     .maybeSingle();
   if (!app || (profile.role === "marketing" && app.created_by !== profile.id)) {
@@ -426,6 +427,32 @@ export async function markWithdrawn(formData: FormData) {
     redirect("/marketing?error=" + encodeURIComponent("Could not mark as withdrawn."));
   }
 
+  // They no longer occupy the seat, aren't on the real class roster, and
+  // shouldn't stay active in the ERP — section_id itself is deliberately
+  // left in place as a historical record (see the roster query in
+  // src/app/admin/sections/page.tsx, which excludes withdrawn applications
+  // rather than relying on section_id being cleared). All three are
+  // best-effort: the withdrawal itself is already recorded above regardless
+  // of whether these side effects succeed.
+  if (app!.section_id) {
+    const { data: sec } = await admin.from("sections").select("filled").eq("id", app!.section_id).maybeSingle();
+    if (sec) {
+      await admin.from("sections").update({ filled: Math.max(0, sec.filled - 1) }).eq("id", app!.section_id);
+    }
+  }
+  await removeEnrollmentFromGoogleSheet(app!.id, app!.admission_number, app!.section_id, app!.grade_applying);
+  if (app!.erp_student_id) {
+    const result = await deactivateErpStudent(app!.erp_student_id);
+    if (!result.ok) {
+      await logAudit({
+        action: "erp.deactivate_failed",
+        entity: "application",
+        entityId: app!.id,
+        details: { error: result.error, context: "withdrawal" },
+      });
+    }
+  }
+
   await logAudit({
     actorId: profile.id,
     actorRole: profile.role,
@@ -436,6 +463,7 @@ export async function markWithdrawn(formData: FormData) {
   });
 
   revalidatePath("/marketing");
+  revalidatePath("/admin/sections");
   redirect("/marketing?withdrawn=1");
 }
 
@@ -453,12 +481,31 @@ export async function restoreWithdrawn(formData: FormData) {
   }
 
   const admin = createSupabaseAdminClient();
+  const { data: app } = await admin
+    .from("applications")
+    .select("id, section_id")
+    .eq("id", parsed.data!.application_id)
+    .maybeSingle();
+  if (!app) {
+    redirect("/marketing?error=" + encodeURIComponent("Enquiry not found."));
+  }
+
   const { error } = await admin
     .from("applications")
     .update({ withdrawn_at: null, withdrawal_type: null, withdrawal_reason: null, withdrawn_by: null })
-    .eq("id", parsed.data!.application_id);
+    .eq("id", app!.id);
   if (error) {
     redirect("/marketing?error=" + encodeURIComponent("Could not restore this enquiry."));
+  }
+
+  // Give the seat back — the Google Sheets row and any ERP deactivation from
+  // markWithdrawn are NOT automatically redone here (re-adding those safely
+  // needs the full resync flow, not a blind reverse); use the existing ERP
+  // retry / resync actions afterward if this application had already gotten
+  // that far.
+  if (app!.section_id) {
+    const { data: sec } = await admin.from("sections").select("filled").eq("id", app!.section_id).maybeSingle();
+    if (sec) await admin.from("sections").update({ filled: sec.filled + 1 }).eq("id", app!.section_id);
   }
 
   await logAudit({
@@ -466,10 +513,11 @@ export async function restoreWithdrawn(formData: FormData) {
     actorRole: profile.role,
     action: "lead.withdrawal_restored",
     entity: "application",
-    entityId: parsed.data!.application_id,
+    entityId: app!.id,
   });
 
   revalidatePath("/marketing");
+  revalidatePath("/admin/sections");
   redirect("/marketing?restored=1");
 }
 

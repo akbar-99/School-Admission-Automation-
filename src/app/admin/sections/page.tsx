@@ -98,12 +98,16 @@ async function SectionsList() {
 
   // Students currently enrolled in each section — section_id is only ever
   // set by enroll_application, so this is exactly "who's enrolled here".
+  // Excludes a withdrawn student: they no longer occupy the seat, even
+  // though section_id is deliberately left on their application as a
+  // historical record (see markWithdrawn, src/app/marketing/actions.ts).
   const sectionIds = sections.map((s) => s.id);
   const { data: enrolledData } = sectionIds.length
     ? await admin
         .from("applications")
         .select("id, section_id, admission_number, status, students(full_name), parents(full_name)")
         .in("section_id", sectionIds)
+        .is("withdrawn_at", null)
     : { data: [] };
   const enrolledRows = (enrolledData ?? []) as unknown as {
     id: string;
