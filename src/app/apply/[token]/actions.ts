@@ -427,7 +427,7 @@ export async function submitRemainingDetails(formData: FormData) {
   });
 
   const { data: fresh } = await admin.from("applications").select("*").eq("id", app.id).single();
-  await sendAgreement(fresh as Application, parent);
+  await sendAgreement(fresh as Application, parent, studentRow.curriculum);
 
   redirect(`/apply/${token}`);
 }
@@ -567,6 +567,7 @@ export async function mockCompletePayment(formData: FormData) {
 
   const { orderId } = await ensureOrderForApplication(app as Application, {
     includeStudyMaterial: formData.get("include_study_material") === "on",
+    curriculum: bundle.student?.curriculum ?? app.preferred_curriculum,
   });
   await markPaymentCompleted({
     orderId,
@@ -587,7 +588,10 @@ export async function mockCompleteStudyMaterialPayment(formData: FormData) {
   if (!bundle) fail(token, "This admission link is invalid or expired.");
   const app = bundle.application;
 
-  const { orderId } = await ensureStudyMaterialOnlyOrder(app as Application);
+  const { orderId } = await ensureStudyMaterialOnlyOrder(
+    app as Application,
+    bundle.student?.curriculum ?? app.preferred_curriculum,
+  );
   await markPaymentCompleted({
     orderId,
     paymentId: `pay_mock_${Date.now()}`,

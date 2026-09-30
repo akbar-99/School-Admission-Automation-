@@ -88,6 +88,10 @@ async function Content({
   const { application: app, parent, student } = bundle;
   const status = app.status as AppStatus;
   const admin = createSupabaseAdminClient();
+  // CBSE families arrange their own textbooks — see getStudyMaterialFeeForGrade
+  // and the Onboarding pack below (booksDepartmentPhones/booksProviderWebsite).
+  const curriculum = student?.curriculum ?? app.preferred_curriculum;
+  const isCbse = curriculum === "CBSE";
 
   // These four reads are all independent of each other (none needs another's
   // result), so they run as one Promise.all round-trip instead of one after
@@ -115,7 +119,7 @@ async function Content({
           .maybeSingle()
           .then((r) => r.data as { outcome: string; remarks: string | null; subjects?: SubjectResult[] } | null)
       : Promise.resolve(null),
-    getStudyMaterialFeeForGrade(app.grade_applying),
+    getStudyMaterialFeeForGrade(app.grade_applying, curriculum),
   ]);
 
   // Distinct class timings offered for this grade, for the stage-2 timing
@@ -783,14 +787,45 @@ async function Content({
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4 text-sm">
-            <div>
-              <div className="font-medium">Study material list</div>
-              <ul className="ml-5 list-disc text-muted-foreground">
-                {settings.studyMaterialItems.map((item, i) => (
-                  <li key={i}>{item}</li>
-                ))}
-              </ul>
-            </div>
+            {isCbse ? (
+              <div>
+                <div className="font-medium">Books &amp; study material</div>
+                <p className="text-muted-foreground">
+                  CBSE textbooks and workbooks are arranged separately. Contact our books
+                  department to order:
+                </p>
+                <ul className="ml-5 list-disc text-muted-foreground">
+                  {settings.booksDepartmentPhonesItems.map((p, i) => (
+                    <li key={i}>
+                      <a href={`tel:${p.replace(/\s+/g, "")}`} className="text-primary hover:underline">
+                        {p}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+                {settings.booksProviderWebsite && (
+                  <p className="mt-1">
+                    <a
+                      href={settings.booksProviderWebsite}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-primary hover:underline"
+                    >
+                      {settings.booksProviderWebsite}
+                    </a>
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div>
+                <div className="font-medium">Study material list</div>
+                <ul className="ml-5 list-disc text-muted-foreground">
+                  {settings.studyMaterialItems.map((item, i) => (
+                    <li key={i}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <div>
               <div className="font-medium">Academic calendar</div>
               <p className="text-muted-foreground">

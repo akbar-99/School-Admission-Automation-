@@ -15,6 +15,9 @@ export interface AppSettings {
   academicOrientation: string;
   studyMaterial: string; // raw, one item per line
   studyMaterialItems: string[]; // parsed list
+  booksDepartmentPhones: string; // raw, one number per line — CBSE onboarding pack
+  booksDepartmentPhonesItems: string[]; // parsed list
+  booksProviderWebsite: string; // CBSE onboarding pack
   assessmentSubjects: string; // raw, one subject per line
   assessmentSubjectsItems: string[]; // parsed list scored on the assessment
   assessmentReminder2hMinutes: number; // lead time for the confirm/reschedule reminder
@@ -29,12 +32,16 @@ const DEFAULT_STUDY_MATERIAL = [
   "School uniform & ID card (collect from front office)",
 ].join("\n");
 
+const DEFAULT_BOOKS_DEPARTMENT_PHONES = ["+91 95399 31818", "+91 73062 21818"].join("\n");
+
 export const SETTINGS_DEFAULTS = {
   feePaise: config.admission.feePaise,
   agreementTerms: DEFAULT_TERMS,
   schoolName: "Broadway Home Schooling",
   schoolPhone: "+91 95399 61818",
   schoolEmail: "info@broadwayhomeschool.com",
+  booksDepartmentPhones: DEFAULT_BOOKS_DEPARTMENT_PHONES,
+  booksProviderWebsite: "",
   academicTermStart: `${config.admission.year}-06-15`,
   academicOrientation: `${config.admission.year}-06-10`,
   studyMaterial: DEFAULT_STUDY_MATERIAL,
@@ -65,6 +72,7 @@ export const getSettings = cache(async (): Promise<AppSettings> => {
       .filter(Boolean);
 
   const studyMaterial = str("study_material", SETTINGS_DEFAULTS.studyMaterial);
+  const booksDepartmentPhones = str("books_department_phones", SETTINGS_DEFAULTS.booksDepartmentPhones);
   const assessmentSubjects = str("assessment_subjects", SETTINGS_DEFAULTS.assessmentSubjects);
   const assessmentSubjectsItems = toList(assessmentSubjects);
   return {
@@ -77,6 +85,9 @@ export const getSettings = cache(async (): Promise<AppSettings> => {
     academicOrientation: str("academic_orientation", SETTINGS_DEFAULTS.academicOrientation),
     studyMaterial,
     studyMaterialItems: toList(studyMaterial),
+    booksDepartmentPhones,
+    booksDepartmentPhonesItems: toList(booksDepartmentPhones),
+    booksProviderWebsite: str("books_provider_website", SETTINGS_DEFAULTS.booksProviderWebsite),
     assessmentSubjects,
     // Fall back to defaults if the admin saved an empty list.
     assessmentSubjectsItems: assessmentSubjectsItems.length
@@ -97,8 +108,16 @@ export const getStudyMaterialFees = cache(async (): Promise<Record<string, numbe
   return Object.fromEntries((data ?? []).map((r) => [r.grade as string, r.fee_paise as number]));
 });
 
-export async function getStudyMaterialFeeForGrade(grade: string | null | undefined): Promise<number> {
+// CBSE families arrange textbooks separately (see booksDepartmentPhones /
+// booksProviderWebsite in the onboarding pack) — the school never charges or
+// supplies study material for them, regardless of what's configured for
+// their grade. No schema change: study_material_fees stays grade-only.
+export async function getStudyMaterialFeeForGrade(
+  grade: string | null | undefined,
+  curriculum?: string | null,
+): Promise<number> {
   if (!grade) return 0;
+  if (curriculum === "CBSE") return 0;
   const fees = await getStudyMaterialFees();
   return fees[grade] ?? 0;
 }

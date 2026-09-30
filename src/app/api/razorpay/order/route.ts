@@ -19,6 +19,7 @@ export async function POST(request: Request) {
   try {
     const { orderId, amount } = await ensureOrderForApplication(bundle.application as Application, {
       includeStudyMaterial: Boolean(includeStudyMaterial),
+      curriculum: bundle.student?.curriculum ?? bundle.application.preferred_curriculum,
     });
     return NextResponse.json({
       orderId,

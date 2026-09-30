@@ -19,7 +19,7 @@ const PAYABLE = new Set([
 // only added to the order (and its own snapshot column) if selected.
 export async function ensureOrderForApplication(
   app: Application,
-  opts?: { includeStudyMaterial?: boolean },
+  opts?: { includeStudyMaterial?: boolean; curriculum?: string | null },
 ): Promise<{ payment: Payment; orderId: string; amount: number }> {
   if (!PAYABLE.has(app.status)) {
     throw new Error(`Application not payable in status ${app.status}`);
@@ -29,7 +29,7 @@ export async function ensureOrderForApplication(
 
   const { feePaise } = await getSettings();
   const studyMaterialAmount = includeStudyMaterial
-    ? await getStudyMaterialFeeForGrade(app.grade_applying)
+    ? await getStudyMaterialFeeForGrade(app.grade_applying, opts?.curriculum)
     : 0;
   const admissionAmount = feePaise;
   const totalAmount = admissionAmount + studyMaterialAmount;
@@ -102,6 +102,7 @@ export async function ensureOrderForApplication(
 // to route here instead of the full enrollment flow.
 export async function ensureStudyMaterialOnlyOrder(
   app: Application,
+  curriculum?: string | null,
 ): Promise<{ payment: Payment; orderId: string; amount: number }> {
   if (app.status !== "ENROLLED") {
     throw new Error("Study material payment is only available after enrollment");
@@ -110,7 +111,7 @@ export async function ensureStudyMaterialOnlyOrder(
     throw new Error("Study material fee has already been paid");
   }
   const admin = createSupabaseAdminClient();
-  const studyMaterialAmount = await getStudyMaterialFeeForGrade(app.grade_applying);
+  const studyMaterialAmount = await getStudyMaterialFeeForGrade(app.grade_applying, curriculum);
   if (studyMaterialAmount <= 0) {
     throw new Error("No study material fee is configured for this grade");
   }

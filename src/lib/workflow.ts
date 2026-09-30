@@ -458,11 +458,11 @@ export async function notifyDuplicateDetailsBlocked(
 // ---------------------------------------------------------------------------
 // N-6 Agreement + Razorpay payment link
 // ---------------------------------------------------------------------------
-export async function sendAgreement(app: Application, parent: Parent) {
+export async function sendAgreement(app: Application, parent: Parent, curriculum?: string | null) {
   const portal = applyUrl(app.access_token);
   const [{ feePaise }, studyMaterialFeePaise] = await Promise.all([
     getSettings(),
-    getStudyMaterialFeeForGrade(app.grade_applying),
+    getStudyMaterialFeeForGrade(app.grade_applying, curriculum ?? app.preferred_curriculum),
   ]);
   const studyMaterialLine =
     studyMaterialFeePaise > 0
@@ -1829,6 +1829,10 @@ export async function handlePaymentCompleted(
   const app = appRow as Application;
   const { data: parentRow } = await admin.from("parents").select("*").eq("id", app.parent_id).single();
   const parent = parentRow as Parent;
+  const { data: studentRow } = app.student_id
+    ? await admin.from("students").select("curriculum").eq("id", app.student_id).maybeSingle()
+    : { data: null };
+  const isCbse = (studentRow?.curriculum ?? app.preferred_curriculum) === "CBSE";
 
   if (res.status === "NEEDS_ADMIN") {
     // `already` => this app was already in NEEDS_ADMIN; don't re-alert admins on
@@ -1904,6 +1908,22 @@ export async function handlePaymentCompleted(
         }),
       ]
     : [];
+  // CBSE families arrange their own textbooks — spell out the books
+  // department contact and provider link directly in the message body
+  // (email/SMS and, via admission_confirmed_cbse_v1, WhatsApp too), not just
+  // as a portal link.
+  let onboardingLine = `Onboarding details (study material list, academic calendar and contacts) are available in your portal: ${applyUrl(app.access_token)}\n\n`;
+  let booksPhones = "";
+  if (isCbse) {
+    const { booksDepartmentPhonesItems, booksProviderWebsite } = await getSettings();
+    booksPhones = booksDepartmentPhonesItems.join(" / ") || "the school office";
+    const website = booksProviderWebsite ? ` Order online: ${booksProviderWebsite}.` : "";
+    onboardingLine =
+      `Your child follows the CBSE curriculum, so textbooks are arranged separately — ` +
+      `contact our books department at ${booksPhones}.${website}\n` +
+      `Full onboarding details (academic calendar and contacts) are in your portal: ${applyUrl(app.access_token)}\n\n`;
+  }
+
   await dispatch([
     ...receiptMessages,
     ...multiChannel(
@@ -1913,19 +1933,32 @@ export async function handlePaymentCompleted(
         subject: "Welcome — admission confirmed",
         body:
           `Hello ${parent.full_name},\n\nWelcome! Admission is confirmed.\nAdmission number: ${res.admission_number}\nClass & section: ${res.section}\n\n` +
-          `Onboarding details (study material list, academic calendar and contacts) are available in your portal: ${applyUrl(app.access_token)}\n\n` +
+          onboardingLine +
           `Questions? Contact ${contact.name} at ${contact.phone}.`,
-        whatsappTemplate: {
-          name: "admission_confirmed_v2",
-          params: [
-            parent.full_name,
-            res.admission_number ?? "—",
-            res.section ?? "—",
-            applyUrl(app.access_token),
-            contact.name,
-            contact.phone,
-          ],
-        },
+        whatsappTemplate: isCbse
+          ? {
+              name: "admission_confirmed_cbse_v1",
+              params: [
+                parent.full_name,
+                res.admission_number ?? "—",
+                res.section ?? "—",
+                booksPhones,
+                applyUrl(app.access_token),
+                contact.name,
+                contact.phone,
+              ],
+            }
+          : {
+              name: "admission_confirmed_v2",
+              params: [
+                parent.full_name,
+                res.admission_number ?? "—",
+                res.section ?? "—",
+                applyUrl(app.access_token),
+                contact.name,
+                contact.phone,
+              ],
+            },
       },
       parent,
     ),

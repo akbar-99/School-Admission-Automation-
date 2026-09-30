@@ -136,7 +136,34 @@ export default async function AdminSettingsPage({
                   className="min-h-24"
                 />
                 <p className="text-xs text-muted-foreground">
-                  One item per line. Shown in the onboarding pack after enrollment.
+                  One item per line. Shown in the onboarding pack after enrollment, for a
+                  Cambridge student.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="books_department_phones">Onboarding — books department phone(s)</Label>
+                <Textarea
+                  id="books_department_phones"
+                  name="books_department_phones"
+                  defaultValue={s.booksDepartmentPhones}
+                  className="min-h-24"
+                />
+                <p className="text-xs text-muted-foreground">
+                  One number per line. Shown instead of the study material list for a CBSE
+                  student, who arranges their own textbooks.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="books_provider_website">Onboarding — books provider website</Label>
+                <Input
+                  id="books_provider_website"
+                  name="books_provider_website"
+                  type="url"
+                  defaultValue={s.booksProviderWebsite}
+                  placeholder="https://example.com"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Optional. Shown alongside the books department number(s) for a CBSE student.
                 </p>
               </div>
               <div className="space-y-1.5 sm:col-span-2">

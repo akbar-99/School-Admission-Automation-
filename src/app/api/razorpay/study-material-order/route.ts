@@ -16,7 +16,10 @@ export async function POST(request: Request) {
   if (!bundle) return NextResponse.json({ error: "Invalid or expired link" }, { status: 404 });
 
   try {
-    const { orderId, amount } = await ensureStudyMaterialOnlyOrder(bundle.application as Application);
+    const { orderId, amount } = await ensureStudyMaterialOnlyOrder(
+      bundle.application as Application,
+      bundle.student?.curriculum ?? bundle.application.preferred_curriculum,
+    );
     return NextResponse.json({
       orderId,
       amount,
