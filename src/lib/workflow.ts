@@ -80,18 +80,34 @@ function staffContextLine(studentName: string, parentName: string): string {
 }
 
 // Every staff-facing WhatsApp send reuses the one generic approved template
-// (staff_alert_v5): {{1}} a short reference, {{2}} the detail — the
-// subject/body pair every call site already provides fits this directly, so
-// no per-event template is needed for internal alerts. v2 said "Open the
-// admin portal", wrong for teacher-only events like a slot assignment; v3's
-// reword ("Check your dashboard for details") got auto-reclassified from
-// Utility to Marketing by Meta's classifier. v4 kept v2's exact proven-Utility
-// structure with a role-neutral CTA, but crammed {{1}} and {{2}} into one
-// run-on sentence ("Admission record update for {{1}}. Status: {{2}}.") —
-// unreadable once {{2}} carries real content. v5 keeps the same two params
-// (a template parameter still can't contain a newline itself, so this is a
-// fixed-text change, not a code change at any call site) but puts each on
-// its own paragraph. Freeform text only delivers within a 24h
+// (staff_alert_v6, confirmed APPROVED + still category UTILITY): {{1}} a
+// short reference, {{2}} the detail — the subject/body pair every call site
+// already provides fits this directly, so no per-event template is needed
+// for internal alerts. v2 said "Open the admin portal", wrong for
+// teacher-only events like a slot assignment; v3's reword ("Check your
+// dashboard for details") got auto-reclassified from Utility to Marketing by
+// Meta's classifier. v4 kept v2's exact proven-Utility structure with a
+// role-neutral CTA, but crammed {{1}} and {{2}} into one run-on sentence
+// ("Admission record update for {{1}}. Status: {{2}}.") — unreadable once
+// {{2}} carries real content. v5 tried fixing that by cutting the fixed
+// wording down to "🔔 {{1}}\n\n{{2}}\n\n..." — Meta's classifier
+// reclassified it Utility -> Marketing, same failure as v3 (too little fixed
+// transactional wording, too generic). v6 keeps v4's exact proven-Utility
+// sentences verbatim, only replacing the spaces between them with paragraph
+// breaks (a template parameter still can't contain a newline itself, so this
+// is a fixed-text-only change).
+//
+// IMPORTANT: never point this at a new template name before independently
+// confirming via GET /{template-id}?fields=name,status,category with
+// WHATSAPP_TOKEN that it's both APPROVED and still category UTILITY — the
+// WhatsApp Manager UI's own status badge is not sufficient proof (it showed
+// v5 as fine before the reclassification notice appeared). Pointing this at
+// v6 before that confirmation landed broke every real staff WhatsApp alert
+// in production for about half an hour, because local dev shares the same
+// live WhatsApp credentials as production — an "uncommitted, not pushed"
+// code change is NOT safe here the way it is for the database.
+//
+// Freeform text only delivers within a 24h
 // window the recipient opened themselves — outside that window the WhatsApp
 // Cloud API can still accept the request (logged here as "sent") and then
 // silently fail to deliver it async, with no webhook configured to report
@@ -109,7 +125,7 @@ function toStaffMember(
   // that already ends in "." produced a stray double period.
   const detail = base.body.replace(/\s*\n+\s*/g, " ").trim().replace(/\.+$/, "");
   return multiChannel(
-    { ...base, whatsappTemplate: { name: "staff_alert_v5", params: [base.subject ?? base.event, detail] } },
+    { ...base, whatsappTemplate: { name: "staff_alert_v6", params: [base.subject ?? base.event, detail] } },
     contact,
     ["email", "whatsapp"],
   );
