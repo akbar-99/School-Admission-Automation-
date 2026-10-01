@@ -154,13 +154,13 @@ async function PaymentsTable({
         </Card>
       </div>
 
-      <Card>
+      <Card id="payments">
         <CardHeader>
           <CardTitle>All transactions ({rows.length})</CardTitle>
           <CardDescription>Most recent first.</CardDescription>
         </CardHeader>
         <CardContent>
-          <form action="/admin/payments" method="get" className="mb-4 flex flex-wrap items-end gap-3">
+          <form action="/admin/payments#payments" method="get" className="mb-4 flex flex-wrap items-end gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="status">Status</Label>
               <Select id="status" name="status" defaultValue={status ?? ""} className="w-44">
@@ -185,7 +185,7 @@ async function PaymentsTable({
               Filter
             </Button>
             {hasFilters && (
-              <Link href="/admin/payments" className={buttonVariants({ variant: "ghost" })}>
+              <Link href="/admin/payments#payments" className={buttonVariants({ variant: "ghost" })}>
                 Clear
               </Link>
             )}

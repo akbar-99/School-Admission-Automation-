@@ -226,7 +226,7 @@ async function ApplicationsTableSection({
   ).toString();
 
   return (
-    <Card>
+    <Card id="applications">
       <CardHeader>
         <CardTitle>Applications</CardTitle>
         <CardDescription>
@@ -236,7 +236,7 @@ async function ApplicationsTableSection({
       <CardContent>
         <div className="mb-4 flex flex-wrap gap-2 border-b border-border pb-4">
           <Link
-            href="/admin"
+            href="/admin#applications"
             className={cn(
               "rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors",
               !filters.status
@@ -249,7 +249,7 @@ async function ApplicationsTableSection({
           {(Object.keys(STATUS_LABEL) as AppStatus[]).map((s) => (
             <Link
               key={s}
-              href={`/admin?status=${s}`}
+              href={`/admin?status=${s}#applications`}
               className={cn(
                 "rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors",
                 filters.status === s
@@ -262,7 +262,7 @@ async function ApplicationsTableSection({
           ))}
         </div>
 
-        <form action="/admin" method="get" className="mb-4 space-y-4 border-b border-border pb-4">
+        <form action="/admin#applications" method="get" className="mb-4 space-y-4 border-b border-border pb-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="status">Status</Label>
@@ -307,7 +307,7 @@ async function ApplicationsTableSection({
                 Filter
               </Button>
               {hasFilters && (
-                <Link href="/admin" className={buttonVariants({ variant: "ghost" })}>
+                <Link href="/admin#applications" className={buttonVariants({ variant: "ghost" })}>
                   Clear
                 </Link>
               )}

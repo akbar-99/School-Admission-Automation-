@@ -371,7 +371,7 @@ async function LeadsTableSection({
     if (status) params.set("status", status);
     params.set("from", f);
     params.set("to", t);
-    return `/marketing?${params.toString()}`;
+    return `/marketing?${params.toString()}#leads`;
   };
   const today = isoDate(new Date());
   const presets = [
@@ -389,13 +389,13 @@ async function LeadsTableSection({
   const filterSummary = describeFilters(parseAdmissionsFilters({ status, from, to }));
 
   return (
-    <Card>
+    <Card id="leads">
       <CardHeader>
         <CardTitle>{scopedToOwn ? "Your leads" : "All leads"} ({rows.length})</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="mb-4 space-y-3 border-b border-border pb-4">
-          <form action="/marketing" method="get" className="flex flex-wrap items-end gap-3">
+          <form action="/marketing#leads" method="get" className="flex flex-wrap items-end gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="status">Status</Label>
               <Select id="status" name="status" defaultValue={status ?? ""} className="w-48">
@@ -419,7 +419,7 @@ async function LeadsTableSection({
               Filter
             </Button>
             {hasFilters && (
-              <Link href="/marketing" className={buttonVariants({ variant: "ghost" })}>
+              <Link href="/marketing#leads" className={buttonVariants({ variant: "ghost" })}>
                 Clear
               </Link>
             )}

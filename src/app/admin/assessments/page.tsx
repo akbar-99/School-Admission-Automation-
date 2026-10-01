@@ -569,7 +569,7 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="slots">
         <CardHeader>
           <CardTitle>All slots ({slots.length})</CardTitle>
           <CardDescription>
@@ -578,7 +578,7 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
         </CardHeader>
         <CardContent>
           <form
-            action="/admin/assessments"
+            action="/admin/assessments#slots"
             method="get"
             className="mb-4 flex flex-wrap items-end gap-3"
           >
