@@ -6,7 +6,7 @@ import { loadApplicationByToken } from "@/lib/parent";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { config, CURRICULUM_OPTIONS } from "@/lib/config";
 import { getSettings, getStudyMaterialFeeForGrade } from "@/lib/settings";
-import { getClassOptions } from "@/lib/classes";
+import { getClassOptions, isKgClass } from "@/lib/classes";
 import { needsAssessment } from "@/lib/assessment";
 import {
   formatDateTime,
@@ -787,7 +787,7 @@ async function Content({
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4 text-sm">
-            {isCbse ? (
+            {isCbse && !isKgClass(app.grade_applying ?? "") ? (
               <div>
                 <div className="font-medium">Books &amp; study material</div>
                 <p className="text-muted-foreground">

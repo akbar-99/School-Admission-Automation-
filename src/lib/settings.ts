@@ -2,6 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { config, ASSESSMENT_SUBJECTS } from "@/lib/config";
+import { isKgClass } from "@/lib/classes";
 
 // Admin-editable settings stored in the app_config table (key/value), read at
 // runtime so changes apply without a redeploy. Falls back to sensible defaults.
@@ -110,14 +111,15 @@ export const getStudyMaterialFees = cache(async (): Promise<Record<string, numbe
 
 // CBSE families arrange textbooks separately (see booksDepartmentPhones /
 // booksProviderWebsite in the onboarding pack) — the school never charges or
-// supplies study material for them, regardless of what's configured for
-// their grade. No schema change: study_material_fees stays grade-only.
+// supplies study material for them, EXCEPT in KG, where the school still
+// supplies it regardless of curriculum. No schema change: study_material_fees
+// stays grade-only.
 export async function getStudyMaterialFeeForGrade(
   grade: string | null | undefined,
   curriculum?: string | null,
 ): Promise<number> {
   if (!grade) return 0;
-  if (curriculum === "CBSE") return 0;
+  if (curriculum === "CBSE" && !isKgClass(grade)) return 0;
   const fees = await getStudyMaterialFees();
   return fees[grade] ?? 0;
 }
