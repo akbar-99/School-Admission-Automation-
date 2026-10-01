@@ -11,6 +11,7 @@ export default async function MarketingLayout({
     <DashboardShell
       roleLabel={profile.role === "marketing" ? "Marketing" : profile.role === "coo" ? "COO" : "Admin"}
       userName={profile.full_name ?? profile.email ?? "Marketing"}
+      homeHref="/marketing"
       nav={[
         { href: "/marketing", label: "Leads" },
         { href: "/marketing/performance", label: "Your performance" },

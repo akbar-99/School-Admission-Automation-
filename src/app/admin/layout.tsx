@@ -11,6 +11,7 @@ export default async function AdminLayout({
     <DashboardShell
       roleLabel={profile.role === "coo" ? "COO" : "Admin"}
       userName={profile.full_name ?? profile.email ?? "Admin"}
+      homeHref="/admin"
       nav={[
         { href: "/admin", label: "Overview" },
         ...(profile.role === "coo" ? [{ href: "/admin/coo-dashboard", label: "Team dashboard" }] : []),

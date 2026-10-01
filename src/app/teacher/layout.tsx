@@ -11,6 +11,7 @@ export default async function TeacherLayout({
     <DashboardShell
       roleLabel="Assessment Teacher"
       userName={profile.full_name ?? profile.email ?? "Teacher"}
+      homeHref="/teacher"
       nav={[
         { href: "/teacher", label: "Assessments" },
         { href: "/teacher/history", label: "Assessment history" },

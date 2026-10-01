@@ -13,11 +13,13 @@ export function DashboardShell({
   roleLabel,
   userName,
   nav,
+  homeHref,
   children,
 }: {
   roleLabel: string;
   userName: string;
   nav: NavItem[];
+  homeHref: string;
   children: React.ReactNode;
 }) {
   return (
@@ -25,7 +27,7 @@ export function DashboardShell({
       <header className="glass sticky top-0 z-20 border-b border-border/70 print:hidden">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-3">
           <div className="flex items-center gap-7">
-            <Link href="/" aria-label="Broadway Home Schooling">
+            <Link href={homeHref} aria-label="Broadway Home Schooling">
               <Logo size="sm" />
             </Link>
             <nav className="hidden items-center gap-1 md:flex">
