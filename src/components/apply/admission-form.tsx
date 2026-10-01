@@ -152,22 +152,18 @@ export function RemainingDetailsForm({
             <div className="space-y-1.5 sm:col-span-2">
               <Label>Preferred class timing</Label>
               <div className="space-y-2">
-                <label className="flex cursor-pointer items-center gap-3 rounded-md border border-border px-3 py-2 text-sm transition-colors has-[:checked]:border-primary has-[:checked]:bg-secondary">
-                  <input
-                    type="radio"
-                    name="preferred_class_timing"
-                    value=""
-                    defaultChecked
-                    className="shrink-0"
-                  />
-                  <span>No preference</span>
-                </label>
-                {timingOptions.map((t) => (
+                {timingOptions.map((t, i) => (
                   <label
                     key={t}
                     className="flex cursor-pointer items-center gap-3 rounded-md border border-border px-3 py-2 text-sm transition-colors has-[:checked]:border-primary has-[:checked]:bg-secondary"
                   >
-                    <input type="radio" name="preferred_class_timing" value={t} className="shrink-0" />
+                    <input
+                      type="radio"
+                      name="preferred_class_timing"
+                      value={t}
+                      defaultChecked={i === 0}
+                      className="shrink-0"
+                    />
                     <span>{t}</span>
                   </label>
                 ))}
