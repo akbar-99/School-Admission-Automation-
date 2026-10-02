@@ -181,7 +181,15 @@ export async function markPaymentCompleted(params: {
   const payment = payRow as Payment | null;
   if (!payment) return { ok: false, reason: "not_found" };
 
-  // Idempotent: if already completed, just ensure enrollment ran.
+  // The payments-row update is idempotent on its own (skip once already
+  // "completed"), but the applications-row transition below is NOT nested
+  // inside this check — Standard Checkout lets one order take several
+  // attempts, so an earlier failed sub-attempt on this same order may have
+  // already (wrongly, in hindsight) flipped the application to
+  // PAYMENT_FAILED before this, the genuinely successful attempt, ran. That
+  // transition must always get a chance to run and correct it, even if the
+  // payments row itself was already marked completed by an earlier,
+  // incomplete pass through this function.
   if (payment.status !== "completed") {
     const { error: payErr } = await admin
       .from("payments")
@@ -200,35 +208,37 @@ export async function markPaymentCompleted(params: {
       });
       return { ok: false, applicationId: payment.application_id, reason: "db_error" };
     }
+  }
 
-    // A study-material-only payment happens after enrollment (the parent
-    // declined it at the main payment step and is paying separately later)
-    // — the application is already ENROLLED, so there's no status transition
-    // here, just the study_material_paid flag. The main payment sets that
-    // same flag too when the parent included study material in it (it isn't
-    // exclusively the "paid later" branch's job).
-    const { error: appErr } = payment.includes_admission
-      ? await admin
-          .from("applications")
-          .update({
-            status: "PAYMENT_COMPLETED",
-            ...(payment.includes_study_material ? { study_material_paid: true } : {}),
-          })
-          .eq("id", payment.application_id)
-          .eq("status", "PAYMENT_PENDING")
-      : await admin
-          .from("applications")
-          .update({ study_material_paid: true })
-          .eq("id", payment.application_id);
-    if (appErr) {
-      await logAudit({
-        action: "payment.completed_db_error",
-        entity: "application",
-        entityId: payment.application_id,
-        details: { order_id: params.orderId, payment_id: params.paymentId, error: appErr.message },
-      });
-      return { ok: false, applicationId: payment.application_id, reason: "db_error" };
-    }
+  // A study-material-only payment happens after enrollment (the parent
+  // declined it at the main payment step and is paying separately later) —
+  // the application is already ENROLLED, so there's no status transition
+  // here, just the study_material_paid flag. The main payment sets that
+  // same flag too when the parent included study material in it (it isn't
+  // exclusively the "paid later" branch's job). Both branches are naturally
+  // idempotent/no-op once the application has already moved past the states
+  // they target.
+  const { error: appErr } = payment.includes_admission
+    ? await admin
+        .from("applications")
+        .update({
+          status: "PAYMENT_COMPLETED",
+          ...(payment.includes_study_material ? { study_material_paid: true } : {}),
+        })
+        .eq("id", payment.application_id)
+        .in("status", ["PAYMENT_PENDING", "PAYMENT_FAILED"])
+    : await admin
+        .from("applications")
+        .update({ study_material_paid: true })
+        .eq("id", payment.application_id);
+  if (appErr) {
+    await logAudit({
+      action: "payment.completed_db_error",
+      entity: "application",
+      entityId: payment.application_id,
+      details: { order_id: params.orderId, payment_id: params.paymentId, error: appErr.message },
+    });
+    return { ok: false, applicationId: payment.application_id, reason: "db_error" };
   }
 
   await logAudit({
