@@ -22,6 +22,7 @@ export interface AppSettings {
   assessmentSubjects: string; // raw, one subject per line
   assessmentSubjectsItems: string[]; // parsed list scored on the assessment
   assessmentReminder2hMinutes: number; // lead time for the confirm/reschedule reminder
+  unavailableSlotEscalationHours: number; // re-alert admin/COO if a "can't attend" report sits unreassigned this long
 }
 
 const DEFAULT_TERMS =
@@ -48,6 +49,7 @@ export const SETTINGS_DEFAULTS = {
   studyMaterial: DEFAULT_STUDY_MATERIAL,
   assessmentSubjects: ASSESSMENT_SUBJECTS.join("\n"),
   assessmentReminder2hMinutes: 120,
+  unavailableSlotEscalationHours: 4,
 };
 
 // Cached per-request so multiple reads during one render hit the DB once.
@@ -97,6 +99,10 @@ export const getSettings = cache(async (): Promise<AppSettings> => {
     assessmentReminder2hMinutes: num(
       "assessment_reminder_2h_minutes",
       SETTINGS_DEFAULTS.assessmentReminder2hMinutes,
+    ),
+    unavailableSlotEscalationHours: num(
+      "unavailable_slot_escalation_hours",
+      SETTINGS_DEFAULTS.unavailableSlotEscalationHours,
     ),
   };
 });

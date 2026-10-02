@@ -1114,12 +1114,48 @@ export async function notifyTeacherUnavailable(
   const when = `${formatInZone(slot.starts_at, config.school.timezone)} ${config.school.timezoneLabel}`;
   const who = slot.studentName ? ` for ${slot.studentName}` : "";
   await dispatch(
-    fanToStaff(await staffContacts(["admin"]), {
+    fanToStaff(await staffContacts(["admin", "coo"]), {
       event: "SLOT_UNAVAILABLE",
       subject: "Teacher unavailable — assessment needs reassignment",
       body: `${t?.full_name ?? t?.email ?? "A teacher"} reported they can't attend the assessment${who} on ${when}. Please reassign it to another teacher.`,
     }),
   );
+}
+
+// A "can't attend" report that nobody reassigned in time — re-alert admin/COO
+// so a parent's booking doesn't just sit unassigned indefinitely. Triggered by
+// the cron pass in /api/cron/assessment-reminders; resets the moment
+// reassignSlotTeacher actually reassigns the slot (see admin/actions.ts).
+export async function notifyUnavailableSlotEscalation(slot: {
+  id: string;
+  teacher_id: string | null;
+  starts_at: string;
+  application_id: string;
+  hoursSinceReported: number;
+}) {
+  const admin = createSupabaseAdminClient();
+  const [{ data: t }, { data: appRow }] = await Promise.all([
+    slot.teacher_id
+      ? admin.from("users").select("full_name, email").eq("id", slot.teacher_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    admin.from("applications").select("*").eq("id", slot.application_id).maybeSingle(),
+  ]);
+  const studentName = appRow ? await studentLabel(appRow as Application) : null;
+  const when = `${formatInZone(slot.starts_at, config.school.timezone)} ${config.school.timezoneLabel}`;
+  const who = studentName ? ` for ${studentName}` : "";
+  await dispatch(
+    fanToStaff(await staffContacts(["admin", "coo"]), {
+      event: "SLOT_UNAVAILABLE_ESCALATED",
+      subject: "STILL UNASSIGNED — assessment needs a teacher",
+      body: `${t?.full_name ?? t?.email ?? "A teacher"} reported they can't attend the assessment${who} on ${when}, and it's been over ${slot.hoursSinceReported} hours with no reassignment. Please reassign it now.`,
+    }),
+  );
+  await logAudit({
+    action: "assessment.unavailable_escalated",
+    entity: "assessment_slot",
+    entityId: slot.id,
+    details: { hoursSinceReported: slot.hoursSinceReported },
+  });
 }
 
 // ---------------------------------------------------------------------------

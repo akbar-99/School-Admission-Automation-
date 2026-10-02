@@ -300,6 +300,7 @@ export async function reassignSlotTeacher(formData: FormData) {
       claimed_by_teacher: false, // admin-assigned, not self-claimed
       unavailable_reported: false,
       unavailable_reported_at: null,
+      unavailable_escalated: false,
       // Force the Zoom meeting to regenerate under the new host.
       ...(slot!.application_id
         ? {
@@ -521,6 +522,14 @@ export async function updateSettings(formData: FormData) {
     );
   }
 
+  const escalationHours = Number(formData.get("unavailable_slot_escalation_hours"));
+  if (!Number.isInteger(escalationHours) || escalationHours < 1 || escalationHours > 72) {
+    redirect(
+      "/admin/settings?error=" +
+        encodeURIComponent("Enter an escalation wait time between 1 and 72 hours."),
+    );
+  }
+
   const rows = [
     { key: "admission_fee_paise", value: String(feePaise) },
     { key: "agreement_terms", value: String(formData.get("agreement_terms") ?? "").trim() },
@@ -534,6 +543,7 @@ export async function updateSettings(formData: FormData) {
     { key: "books_provider_website", value: String(formData.get("books_provider_website") ?? "").trim() },
     { key: "assessment_subjects", value: String(formData.get("assessment_subjects") ?? "").trim() },
     { key: "assessment_reminder_2h_minutes", value: String(reminderMinutes) },
+    { key: "unavailable_slot_escalation_hours", value: String(escalationHours) },
   ];
 
   const admin = createSupabaseAdminClient();

@@ -127,6 +127,25 @@ export default async function AdminSettingsPage({
                   it fires, not how precisely.
                 </p>
               </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="unavailable_slot_escalation_hours">
+                  Unavailable-teacher escalation — wait time (hours)
+                </Label>
+                <Input
+                  id="unavailable_slot_escalation_hours"
+                  name="unavailable_slot_escalation_hours"
+                  type="number"
+                  min={1}
+                  max={72}
+                  step={1}
+                  defaultValue={s.unavailableSlotEscalationHours}
+                />
+                <p className="text-xs text-muted-foreground">
+                  If a teacher reports they can&apos;t attend a booked assessment and nobody
+                  reassigns it within this many hours, admin/COO get re-alerted. Same cron
+                  dependency as the reminder above.
+                </p>
+              </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="study_material">Onboarding — study material list</Label>
                 <Textarea

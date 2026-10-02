@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { notifyAssessmentReminder, notifyAssessmentReminder2h } from "@/lib/workflow";
+import {
+  notifyAssessmentReminder,
+  notifyAssessmentReminder2h,
+  notifyUnavailableSlotEscalation,
+} from "@/lib/workflow";
 import { config } from "@/lib/config";
 import { getSettings } from "@/lib/settings";
 
@@ -93,11 +97,46 @@ export async function GET(request: Request) {
     }
   }
 
+  // Same claim-via-UPDATE pattern again — a teacher's "can't attend" report
+  // that nobody reassigned within the admin-configured window gets a second,
+  // louder alert instead of sitting silently forever. unavailable_escalated
+  // is reset to false by reassignSlotTeacher, so a slot that's reassigned and
+  // later re-flagged can escalate again.
+  const { unavailableSlotEscalationHours } = await getSettings();
+  const reportedBefore = new Date(now.getTime() - unavailableSlotEscalationHours * 3_600_000);
+  const { data: claimedEscalations, error: errorEscalation } = await admin
+    .from("assessment_slots")
+    .update({ unavailable_escalated: true })
+    .not("application_id", "is", null)
+    .eq("unavailable_reported", true)
+    .eq("unavailable_escalated", false)
+    .lte("unavailable_reported_at", reportedBefore.toISOString())
+    .select("id, application_id, teacher_id, starts_at, unavailable_reported_at");
+
+  let escalated = 0;
+  if (errorEscalation) {
+    console.error("[cron/assessment-reminders] escalation claim query failed", errorEscalation);
+  } else {
+    for (const slot of claimedEscalations ?? []) {
+      try {
+        const hoursSinceReported = Math.round(
+          (now.getTime() - new Date(slot.unavailable_reported_at as string).getTime()) / 3_600_000,
+        );
+        await notifyUnavailableSlotEscalation({ ...slot, hoursSinceReported });
+        escalated += 1;
+      } catch (err) {
+        console.error("[cron/assessment-reminders] failed to send escalation for slot", slot.id, err);
+      }
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     checked: claimed?.length ?? 0,
     reminded: sent,
     checked2h: claimed2h?.length ?? 0,
     reminded2h: sent2h,
+    checkedEscalation: claimedEscalations?.length ?? 0,
+    escalated,
   });
 }
