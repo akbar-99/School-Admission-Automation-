@@ -17,56 +17,73 @@ interface RazorpayContext {
   parentPhone: string;
 }
 
-// Razorpay's hosted checkout (a full-page redirect the browser POSTs to and
-// pays on, required by the payment aggregator's compliance review) rather
-// than the JS popup widget — no checkout.js to load, no in-page handler.
-// Razorpay POSTs the result back to callback_url, which does the actual
-// signature verification and crediting (see /api/razorpay/callback).
-function submitToHostedCheckout(opts: {
-  orderId: string;
-  amount: number;
+// Minimal shape of the global checkout.js exposes — not Razorpay's full SDK
+// typings (they don't ship any), just what this file actually calls.
+interface RazorpaySuccessResponse {
+  razorpay_order_id: string;
+  razorpay_payment_id: string;
+  razorpay_signature: string;
+}
+interface RazorpayFailureResponse {
+  error: { metadata?: { order_id?: string }; description?: string };
+}
+interface RazorpayCheckoutOptions {
+  key: string;
+  amount: string;
   currency: string;
-  keyId: string;
-  token: string;
+  order_id: string;
+  name: string;
   description: string;
-  ctx: RazorpayContext;
-}) {
-  const origin = window.location.origin;
-  const fields: Record<string, string> = {
-    key_id: opts.keyId,
-    amount: String(opts.amount),
-    currency: opts.currency,
-    order_id: opts.orderId,
-    name: "Broadway Home Schooling",
-    description: opts.description,
-    "prefill[name]": opts.ctx.parentName,
-    "prefill[email]": opts.ctx.parentEmail ?? "",
-    "prefill[contact]": opts.ctx.parentPhone.replace(/\D/g, ""),
-    "theme[color]": "#1b7e9a",
-    callback_url: `${origin}/api/razorpay/callback?token=${encodeURIComponent(opts.token)}`,
-    cancel_url: `${origin}/api/razorpay/cancel?token=${encodeURIComponent(opts.token)}`,
-  };
-  const form = document.createElement("form");
-  form.method = "POST";
-  form.action = "https://api.razorpay.com/v1/checkout/embedded";
-  form.style.display = "none";
-  for (const [name, value] of Object.entries(fields)) {
-    const input = document.createElement("input");
-    input.type = "hidden";
-    input.name = name;
-    input.value = value;
-    form.appendChild(input);
+  prefill: { name: string; email: string; contact: string };
+  theme: { color: string };
+  handler: (response: RazorpaySuccessResponse) => void;
+  modal: { ondismiss: () => void };
+}
+interface RazorpayInstance {
+  open(): void;
+  on(event: "payment.failed", handler: (response: RazorpayFailureResponse) => void): void;
+}
+declare global {
+  interface Window {
+    Razorpay?: new (options: RazorpayCheckoutOptions) => RazorpayInstance;
   }
-  document.body.appendChild(form);
-  form.submit();
 }
 
-async function payWithHostedCheckout(opts: {
+const CHECKOUT_SCRIPT_SRC = "https://checkout.razorpay.com/v1/checkout.js";
+
+// Standard Checkout loads lazily — only once a parent actually clicks Pay —
+// rather than on every visit to the apply page. Razorpay confirmed (support
+// ticket #21209267) that the old Hosted Checkout integration (a full-page
+// form POST to api.razorpay.com/v1/checkout/embedded) can never show a UPI
+// QR code; Standard Checkout's overlay widget is the one that does, and is
+// what the Dashboard's Payment Configuration (UPI QR/Apps/ID toggles)
+// actually governs. The payment form itself still renders entirely inside
+// Razorpay's own iframe — this page never touches a card number or UPI ID.
+function loadCheckoutScript(): Promise<void> {
+  if (window.Razorpay) return Promise.resolve();
+  const existing = document.querySelector<HTMLScriptElement>(`script[src="${CHECKOUT_SCRIPT_SRC}"]`);
+  if (existing) {
+    return new Promise((resolve, reject) => {
+      existing.addEventListener("load", () => resolve());
+      existing.addEventListener("error", () => reject(new Error("Could not load the payment form.")));
+    });
+  }
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = CHECKOUT_SCRIPT_SRC;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Could not load the payment form."));
+    document.body.appendChild(script);
+  });
+}
+
+async function payWithRazorpayCheckout(opts: {
   orderEndpoint: string;
   orderBody: Record<string, unknown>;
   token: string;
   description: string;
   ctx: RazorpayContext;
+  onSettled: (error: string | null) => void;
 }) {
   const res = await fetch(opts.orderEndpoint, {
     method: "POST",
@@ -75,16 +92,63 @@ async function payWithHostedCheckout(opts: {
   });
   if (!res.ok) throw new Error((await res.json()).error ?? "Could not start payment");
   const { orderId, amount, currency, keyId } = await res.json();
-  // The browser navigates away here — nothing after this line runs.
-  submitToHostedCheckout({
-    orderId,
-    amount,
+
+  await loadCheckoutScript();
+  if (!window.Razorpay) throw new Error("Could not load the payment form.");
+
+  const rzp = new window.Razorpay({
+    key: keyId ?? opts.ctx.razorpayKeyId,
+    amount: String(amount),
     currency,
-    keyId: keyId ?? opts.ctx.razorpayKeyId,
-    token: opts.token,
+    order_id: orderId,
+    name: "Broadway Home Schooling",
     description: opts.description,
-    ctx: opts.ctx,
+    prefill: {
+      name: opts.ctx.parentName,
+      email: opts.ctx.parentEmail ?? "",
+      contact: opts.ctx.parentPhone.replace(/\D/g, ""),
+    },
+    theme: { color: "#1b7e9a" },
+    handler: (response) => {
+      fetch("/api/razorpay/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderId: response.razorpay_order_id,
+          paymentId: response.razorpay_payment_id,
+          signature: response.razorpay_signature,
+        }),
+      })
+        .then((r) => {
+          if (!r.ok) throw new Error();
+          // Reload so the server component picks up the now-completed
+          // payment and shows the next step — same end state the old
+          // hosted-checkout callback redirect produced.
+          window.location.reload();
+        })
+        .catch(() => {
+          opts.onSettled(
+            "Payment succeeded but we couldn't confirm it immediately. Refresh this page in a moment — if it still doesn't show, contact the school.",
+          );
+        });
+    },
+    modal: {
+      ondismiss: () => opts.onSettled(null),
+    },
   });
+
+  rzp.on("payment.failed", (response) => {
+    const orderIdFromError = response.error.metadata?.order_id ?? orderId;
+    fetch("/api/razorpay/failed", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderId: orderIdFromError, reason: response.error.description }),
+    }).finally(() => {
+      opts.onSettled("Payment did not complete. Please try again.");
+    });
+  });
+
+  rzp.open();
 }
 
 // The main payment stage — two cards: Admission (required, locked) and Study
@@ -110,12 +174,16 @@ export function PaymentSelector({
     setBusy(true);
     setError(null);
     try {
-      await payWithHostedCheckout({
+      await payWithRazorpayCheckout({
         orderEndpoint: "/api/razorpay/order",
         orderBody: { token, includeStudyMaterial },
         token,
         description: includeStudyMaterial ? "Admission fee + Study material" : "Admission fee",
         ctx,
+        onSettled: (err) => {
+          setBusy(false);
+          setError(err);
+        },
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Payment error");
@@ -222,12 +290,16 @@ export function StudyMaterialPayPanel({
     setBusy(true);
     setError(null);
     try {
-      await payWithHostedCheckout({
+      await payWithRazorpayCheckout({
         orderEndpoint: "/api/razorpay/study-material-order",
         orderBody: { token },
         token,
         description: "Study material payment",
         ctx,
+        onSettled: (err) => {
+          setBusy(false);
+          setError(err);
+        },
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Payment error");

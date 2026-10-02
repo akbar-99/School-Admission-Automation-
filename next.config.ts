@@ -7,10 +7,12 @@ import type { NextConfig } from "next";
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const supabaseWs = supabaseUrl.replace(/^http/, "ws");
 
-// Required for Razorpay's hosted checkout (a full-page form POST to
-// api.razorpay.com, not the JS popup widget) — without form-action and
-// frame-src covering Razorpay's domains, the browser silently blocks the
-// redirect/return with no visible error.
+// Required for Razorpay's Standard Checkout (the checkout.js overlay widget,
+// loaded and opened client-side in src/components/apply/pay-panel.tsx) —
+// script-src loads checkout.js itself, frame-src covers the payment-form
+// iframe it opens over the page. Widened to https://*.razorpay.com since the
+// overlay also pulls sub-resources (fonts/images) from other razorpay.com
+// subdomains, not just checkout.razorpay.com/api.razorpay.com.
 const ContentSecurityPolicy = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://checkout.razorpay.com https://cdn.razorpay.com",
@@ -18,10 +20,10 @@ const ContentSecurityPolicy = [
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
   `connect-src 'self' ${supabaseUrl} ${supabaseWs} https://*.razorpay.com https://lumberjack.razorpay.com`,
-  "frame-src https://api.razorpay.com https://checkout.razorpay.com",
+  "frame-src https://*.razorpay.com",
   "object-src 'none'",
   "base-uri 'self'",
-  "form-action 'self' https://api.razorpay.com https://checkout.razorpay.com",
+  "form-action 'self'",
   "frame-ancestors 'none'",
   "upgrade-insecure-requests",
 ].join("; ");
