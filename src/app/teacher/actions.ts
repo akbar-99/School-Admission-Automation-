@@ -68,9 +68,7 @@ export async function reportUnavailable(formData: FormData) {
   const admin = createSupabaseAdminClient();
   const { data: slot } = await admin
     .from("assessment_slots")
-    .select(
-      "id, teacher_id, starts_at, application_id, applications(students(full_name))",
-    )
+    .select("id, teacher_id, starts_at, application_id")
     .eq("id", slot_id)
     .maybeSingle();
   if (!slot || slot.teacher_id !== profile.id) {
@@ -112,14 +110,10 @@ export async function reportUnavailable(formData: FormData) {
     entityId: slot_id,
   });
 
-  const students = slot.applications as unknown as
-    | { students: { full_name: string | null } | null }
-    | { students: { full_name: string | null } | null }[]
-    | null;
-  const studentName = Array.isArray(students)
-    ? (students[0]?.students?.full_name ?? null)
-    : (students?.students?.full_name ?? null);
-  await notifyTeacherUnavailable(profile.id, { starts_at: slot.starts_at, studentName });
+  await notifyTeacherUnavailable(profile.id, {
+    starts_at: slot.starts_at,
+    applicationId: slot.application_id,
+  });
 
   revalidatePath("/teacher");
   revalidatePath("/admin/assessments");

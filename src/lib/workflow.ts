@@ -79,6 +79,16 @@ function staffContextLine(studentName: string, parentName: string): string {
   return `Student: ${studentName} | Parent: ${parentName}. `;
 }
 
+// Convenience wrapper around studentLabel + a parent lookup, for call sites
+// that only have the Application row in hand and want the standard "Student:
+// X | Parent: Y. " prefix. Returns "" if the parent row can't be found.
+async function applicationContext(app: Application): Promise<string> {
+  const admin = createSupabaseAdminClient();
+  const { data: parentRow } = await admin.from("parents").select("full_name").eq("id", app.parent_id).maybeSingle();
+  if (!parentRow?.full_name) return "";
+  return staffContextLine(await studentLabel(app), parentRow.full_name);
+}
+
 // Every staff-facing WhatsApp send reuses the one generic approved template
 // (staff_alert_v6, confirmed APPROVED + still category UTILITY): {{1}} a
 // short reference, {{2}} the detail — the subject/body pair every call site
@@ -1098,34 +1108,53 @@ export async function notifySlotClaimed(teacherId: string, slot: { starts_at: st
 }
 
 // ---------------------------------------------------------------------------
-// A teacher reported they can't attend a booked assessment — admins need to
-// reassign it to another teacher.
+// A teacher reported they can't attend a booked assessment — admin/COO need
+// to reassign it, and the marketing rep who owns the lead (notifyLeadCreator)
+// should know too, since they're often who the parent calls with questions.
+// Every message here names the teacher, student, and parent — whoever reads
+// it needs to know exactly who's affected without digging through the
+// dashboard first.
 // ---------------------------------------------------------------------------
 export async function notifyTeacherUnavailable(
   teacherId: string,
-  slot: { starts_at: string; studentName?: string | null },
+  slot: { starts_at: string; applicationId: string },
 ) {
   const admin = createSupabaseAdminClient();
-  const { data: t } = await admin
-    .from("users")
-    .select("full_name, email")
-    .eq("id", teacherId)
-    .maybeSingle();
+  const [{ data: t }, { data: appRow }] = await Promise.all([
+    admin.from("users").select("full_name, email").eq("id", teacherId).maybeSingle(),
+    admin.from("applications").select("*").eq("id", slot.applicationId).maybeSingle(),
+  ]);
+  const app = appRow as Application | null;
+  const context = app ? await applicationContext(app) : "";
+  const teacherName = t?.full_name ?? t?.email ?? "A teacher";
   const when = `${formatInZone(slot.starts_at, config.school.timezone)} ${config.school.timezoneLabel}`;
-  const who = slot.studentName ? ` for ${slot.studentName}` : "";
-  await dispatch(
-    fanToStaff(await staffContacts(["admin", "coo"]), {
+  const body = `${context}${teacherName} reported they can't attend this assessment on ${when}. Please reassign it to another teacher.`;
+
+  const messages: OutboundMessage[] = [
+    ...fanToStaff(await staffContacts(["admin", "coo"]), {
       event: "SLOT_UNAVAILABLE",
       subject: "Teacher unavailable — assessment needs reassignment",
-      body: `${t?.full_name ?? t?.email ?? "A teacher"} reported they can't attend the assessment${who} on ${when}. Please reassign it to another teacher.`,
+      body,
     }),
-  );
+  ];
+  if (app) {
+    messages.push(
+      ...(await notifyLeadCreator(app, {
+        applicationId: app.id,
+        event: "SLOT_UNAVAILABLE",
+        subject: "Your lead's assessment teacher can't attend",
+        body,
+      })),
+    );
+  }
+  await dispatch(messages);
 }
 
 // A "can't attend" report that nobody reassigned in time — re-alert admin/COO
-// so a parent's booking doesn't just sit unassigned indefinitely. Triggered by
-// the cron pass in /api/cron/assessment-reminders; resets the moment
-// reassignSlotTeacher actually reassigns the slot (see admin/actions.ts).
+// (and marketing) so a parent's booking doesn't just sit unassigned
+// indefinitely. Triggered by the cron pass in /api/cron/assessment-reminders;
+// resets the moment reassignSlotTeacher actually reassigns the slot (see
+// admin/actions.ts).
 export async function notifyUnavailableSlotEscalation(slot: {
   id: string;
   teacher_id: string | null;
@@ -1140,16 +1169,30 @@ export async function notifyUnavailableSlotEscalation(slot: {
       : Promise.resolve({ data: null }),
     admin.from("applications").select("*").eq("id", slot.application_id).maybeSingle(),
   ]);
-  const studentName = appRow ? await studentLabel(appRow as Application) : null;
+  const app = appRow as Application | null;
+  const context = app ? await applicationContext(app) : "";
+  const teacherName = t?.full_name ?? t?.email ?? "A teacher";
   const when = `${formatInZone(slot.starts_at, config.school.timezone)} ${config.school.timezoneLabel}`;
-  const who = studentName ? ` for ${studentName}` : "";
-  await dispatch(
-    fanToStaff(await staffContacts(["admin", "coo"]), {
+  const body = `${context}${teacherName} reported they can't attend this assessment on ${when}, and it's been over ${slot.hoursSinceReported} hours with no reassignment. Please reassign it now.`;
+
+  const messages: OutboundMessage[] = [
+    ...fanToStaff(await staffContacts(["admin", "coo"]), {
       event: "SLOT_UNAVAILABLE_ESCALATED",
       subject: "STILL UNASSIGNED — assessment needs a teacher",
-      body: `${t?.full_name ?? t?.email ?? "A teacher"} reported they can't attend the assessment${who} on ${when}, and it's been over ${slot.hoursSinceReported} hours with no reassignment. Please reassign it now.`,
+      body,
     }),
-  );
+  ];
+  if (app) {
+    messages.push(
+      ...(await notifyLeadCreator(app, {
+        applicationId: app.id,
+        event: "SLOT_UNAVAILABLE_ESCALATED",
+        subject: "Your lead's assessment is still unassigned",
+        body,
+      })),
+    );
+  }
+  await dispatch(messages);
   await logAudit({
     action: "assessment.unavailable_escalated",
     entity: "assessment_slot",
@@ -1186,14 +1229,16 @@ export async function notifySlotReassigned(input: {
   const context = app && parent ? staffContextLine(await studentLabel(app), parent.full_name) : "";
 
   const messages: OutboundMessage[] = [];
+  let oldTeacherName: string | null = null;
 
   if (input.oldTeacherId) {
     const { data: old } = await admin
       .from("users")
-      .select("email, phone")
+      .select("full_name, email, phone")
       .eq("id", input.oldTeacherId)
       .maybeSingle();
     if (old) {
+      oldTeacherName = old.full_name ?? old.email;
       messages.push(
         ...toStaffMember(
           { email: old.email, phone: old.phone },
@@ -1209,9 +1254,10 @@ export async function notifySlotReassigned(input: {
 
   const { data: newT } = await admin
     .from("users")
-    .select("email, phone")
+    .select("full_name, email, phone")
     .eq("id", input.newTeacherId)
     .maybeSingle();
+  const newTeacherName = newT?.full_name ?? newT?.email ?? "another teacher";
   if (newT) {
     messages.push(
       ...toStaffMember(
@@ -1222,6 +1268,17 @@ export async function notifySlotReassigned(input: {
           body: `${context}An assessment on ${when} has been reassigned to you. Check your dashboard for details.`,
         },
       ),
+    );
+  }
+
+  if (app) {
+    messages.push(
+      ...(await notifyLeadCreator(app, {
+        applicationId: app.id,
+        event: "SLOT_REASSIGNED",
+        subject: "Your lead's assessment teacher has changed",
+        body: `${context}The assessment on ${when} has been reassigned${oldTeacherName ? ` from ${oldTeacherName}` : ""} to ${newTeacherName}.`,
+      })),
     );
   }
 
