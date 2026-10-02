@@ -49,6 +49,12 @@ class LogProvider implements NotificationProvider {
 }
 
 // SMTP transport (e.g. Hostinger), created lazily and reused across sends.
+// nodemailer's own defaults (connectionTimeout/socketTimeout ~2 minutes) are
+// long enough to blow past a reverse proxy's gateway timeout well before the
+// send itself fails — the caller (and whoever's waiting on it, e.g. the
+// Standard Checkout completion flow) sees a dead connection/502 long before
+// nodemailer gives up, with no record of what happened. Tightened so a stuck
+// SMTP connection fails fast and cleanly instead.
 let mailer: Transporter | null = null;
 function smtpTransport(): Transporter {
   if (!mailer) {
@@ -58,10 +64,17 @@ function smtpTransport(): Transporter {
       port,
       secure: port === 465, // implicit TLS on 465; STARTTLS on 587
       auth: { user, pass },
+      connectionTimeout: 15_000,
+      greetingTimeout: 15_000,
+      socketTimeout: 15_000,
     });
   }
   return mailer;
 }
+
+// Same reasoning as the SMTP timeouts above — bound external-call latency so
+// a stalled send fails fast instead of hanging past whatever's waiting on it.
+const EXTERNAL_CALL_TIMEOUT_MS = 15_000;
 
 // Live provider: routes per channel to SMTP / Resend / MSG91 / WhatsApp.
 // A configured channel that fails THROWS (so dispatch records it as `failed`);
@@ -89,6 +102,7 @@ class LiveProvider implements NotificationProvider {
       if (config.notifications.resendApiKey) {
         const res = await fetch("https://api.resend.com/emails", {
           method: "POST",
+          signal: AbortSignal.timeout(EXTERNAL_CALL_TIMEOUT_MS),
           headers: {
             Authorization: `Bearer ${config.notifications.resendApiKey}`,
             "Content-Type": "application/json",
@@ -140,6 +154,7 @@ class LiveProvider implements NotificationProvider {
         `https://graph.facebook.com/v20.0/${config.notifications.whatsappPhoneId}/messages`,
         {
           method: "POST",
+          signal: AbortSignal.timeout(EXTERNAL_CALL_TIMEOUT_MS),
           headers: {
             Authorization: `Bearer ${config.notifications.whatsappToken}`,
             "Content-Type": "application/json",
