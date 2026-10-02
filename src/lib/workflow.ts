@@ -778,8 +778,10 @@ export async function backfillZoomLink(appId: string): Promise<boolean> {
 // 10-minutes-before reminder — fired by the polling cron route
 // (/api/cron/assessment-reminders), once per slot (guarded there by
 // assessment_slots.reminder_sent so a slot is never reminded twice). Notifies
-// the parent and the assigned teacher; by this point the Zoom link is already
-// active (it opens 30 minutes early), so it's safe to include.
+// the parent and the assigned teacher. Re-runs ensureZoomForApplication
+// (idempotent — returns the existing meeting if one's already there) so a
+// slot whose Zoom creation failed back at booking time gets one more chance
+// to generate a real link before this, its last scheduled message, goes out.
 // ---------------------------------------------------------------------------
 export async function notifyAssessmentReminder(slot: {
   application_id: string;
@@ -801,9 +803,14 @@ export async function notifyAssessmentReminder(slot: {
   if (!parentRow) return;
   const parent = parentRow as Parent;
 
+  const meeting = await ensureZoomForApplication(app.id);
+  const zoomJoinUrl = meeting?.joinUrl ?? slot.zoom_join_url;
+  const zoomPasscode = meeting?.passcode ?? slot.zoom_passcode;
+  const zoomStartUrl = meeting?.startUrl ?? slot.zoom_start_url;
+
   const when = `${formatInZone(slot.starts_at, config.school.timezone)} ${config.school.timezoneLabel}`;
-  const joinLine = slot.zoom_join_url
-    ? `\n\nJoin here:\n${slot.zoom_join_url}${slot.zoom_passcode ? `\nPasscode: ${slot.zoom_passcode}` : ""}`
+  const joinLine = zoomJoinUrl
+    ? `\n\nJoin here:\n${zoomJoinUrl}${zoomPasscode ? `\nPasscode: ${zoomPasscode}` : ""}`
     : "";
   const contact = await leadCreatorContact(app);
   const context = staffContextLine(await studentLabel(app), parent.full_name);
@@ -841,7 +848,7 @@ export async function notifyAssessmentReminder(slot: {
       .eq("id", slot.teacher_id)
       .maybeSingle();
     if (t) {
-      const hostLine = slot.zoom_start_url ? `\n\nStart as host:\n${slot.zoom_start_url}` : "";
+      const hostLine = zoomStartUrl ? `\n\nStart as host:\n${zoomStartUrl}` : "";
       messages.push(
         ...toStaffMember(
           { email: t.email, phone: t.phone },
