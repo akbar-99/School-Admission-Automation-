@@ -885,10 +885,7 @@ function formatLeadTime(minutes: number): string {
   return rem === 0 ? hourPart : `${hourPart} ${rem} minutes`;
 }
 
-export async function notifyAssessmentReminder2h(
-  slot: { application_id: string; starts_at: string },
-  leadMinutes: number,
-) {
+export async function notifyAssessmentReminder2h(slot: { application_id: string; starts_at: string }) {
   const admin = createSupabaseAdminClient();
   const { data: appRow } = await admin
     .from("applications")
@@ -904,7 +901,17 @@ export async function notifyAssessmentReminder2h(
   const when = `${formatInZone(slot.starts_at, config.school.timezone)} ${config.school.timezoneLabel}`;
   const confirmUrl = `${config.appUrl}/api/assessment/confirm/${app.access_token}`;
   const rescheduleUrl = applyUrl(app.access_token);
-  const lead = formatLeadTime(leadMinutes);
+  // The configured lead time (assessmentReminder2hMinutes) only decides the
+  // cron's polling WINDOW — how far ahead it starts looking for slots to
+  // remind. It is NOT how far away the slot actually is: a slot booked with
+  // less notice than that window (e.g. a same-day booking) can be due in a
+  // fraction of the configured time, and the message must say so honestly
+  // instead of repeating the configured value verbatim.
+  const actualMinutesRemaining = Math.max(
+    0,
+    Math.round((new Date(slot.starts_at).getTime() - Date.now()) / 60_000),
+  );
+  const lead = formatLeadTime(actualMinutesRemaining);
   const contact = await leadCreatorContact(app);
 
   await dispatch(

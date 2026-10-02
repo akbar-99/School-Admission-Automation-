@@ -89,7 +89,7 @@ export async function GET(request: Request) {
   } else {
     for (const slot of claimed2h ?? []) {
       try {
-        await notifyAssessmentReminder2h(slot, assessmentReminder2hMinutes);
+        await notifyAssessmentReminder2h(slot);
         sent2h += 1;
       } catch (err) {
         console.error("[cron/assessment-reminders] failed to send 2h reminder for slot", slot.id, err);
