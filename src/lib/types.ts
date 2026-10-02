@@ -134,6 +134,7 @@ export interface Application {
   erp_class_name: string | null;
   erp_student_id: string | null;
   erp_warning: string | null;
+  google_sheet_synced: boolean;
   access_token: string;
   token_expires_at: string;
   created_by: string | null;

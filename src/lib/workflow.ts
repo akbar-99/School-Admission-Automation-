@@ -79,6 +79,26 @@ function staffContextLine(studentName: string, parentName: string): string {
   return `Student: ${studentName} | Parent: ${parentName}. `;
 }
 
+// Which (channel, recipient) pairs already have a recorded "sent" row for
+// this application+event — lets a resumed call (handlePaymentCompleted can
+// be interrupted mid-dispatch, e.g. by a proxy timeout) skip whatever
+// already went out while still delivering whatever didn't, instead of
+// either re-sending everything or silently giving up on the rest.
+async function alreadySentPairs(applicationId: string, event: string): Promise<Set<string>> {
+  const admin = createSupabaseAdminClient();
+  const { data } = await admin
+    .from("notifications")
+    .select("channel, recipient")
+    .eq("application_id", applicationId)
+    .eq("event", event)
+    .eq("status", "sent");
+  return new Set((data ?? []).map((r) => `${r.channel}|${r.recipient}`));
+}
+
+function excludeAlreadySent(messages: OutboundMessage[], sent: Set<string>): OutboundMessage[] {
+  return messages.filter((m) => !sent.has(`${m.channel}|${m.recipient}`));
+}
+
 // Convenience wrapper around studentLabel + a parent lookup, for call sites
 // that only have the Application row in hand and want the standard "Student:
 // X | Parent: Y. " prefix. Returns "" if the parent row can't be found.
@@ -1684,6 +1704,7 @@ export async function syncEnrollmentToGoogleSheet(app: Application, parent: Pare
       return;
     }
 
+    await admin.from("applications").update({ google_sheet_synced: true }).eq("id", app.id);
     await logAudit({
       action: "google_sheets.synced",
       entity: "application",
@@ -1978,12 +1999,15 @@ export async function handlePaymentCompleted(
     return { status: "NEEDS_ADMIN" as const };
   }
 
-  // Idempotency guard: /verify (checkout) and /webhook both call this for the
-  // same payment. enroll_application returns `already` once the admission number
-  // is set, so only the first caller sends the receipt (N-7) and welcome (N-8).
-  if (res.already) {
-    return { ...res, status: "ENROLLED" as const };
-  }
+  // /verify (checkout) and /webhook both call this for the same payment, and
+  // this whole function can also be interrupted mid-flight (a proxy/gateway
+  // timeout while still working through dispatch/ERP/Sheets, all genuinely
+  // slow external calls). `res.already` on its own used to mean "nothing
+  // more to do," which was right for the fast double-fire but wrong for a
+  // genuine interruption — it silently abandoned whatever hadn't finished
+  // yet. Every step below is now independently checked and only (re)run if
+  // it didn't actually complete, so a resumed call finishes exactly what's
+  // missing and nothing more.
 
   // N-7 payment receipt + admin; N-8 welcome + onboarding + class teacher.
   // Itemized from the actual completed payment row (not current settings),
@@ -2051,8 +2075,7 @@ export async function handlePaymentCompleted(
       `Full onboarding details (academic calendar and contacts) are in your portal: ${applyUrl(app.access_token)}\n\n`;
   }
 
-  await dispatch([
-    ...receiptMessages,
+  const n8Messages: OutboundMessage[] = [
     ...multiChannel(
       {
         applicationId: app.id,
@@ -2101,11 +2124,27 @@ export async function handlePaymentCompleted(
       subject: "Your lead enrolled!",
       body: `${context}Payment complete and admission confirmed — admission no. ${res.admission_number}, ${res.section}.`,
     })),
+  ];
+
+  // Filter both batches against what's already recorded as sent for this
+  // application, so a resumed call only delivers what's actually missing —
+  // not a blind re-send of everything, and not a skip of everything either.
+  const [sentN7, sentN8] = await Promise.all([
+    alreadySentPairs(app.id, "N-7"),
+    alreadySentPairs(app.id, "N-8"),
+  ]);
+  await dispatch([
+    ...excludeAlreadySent(receiptMessages, sentN7),
+    ...excludeAlreadySent(n8Messages, sentN8),
   ]);
 
   await logAudit({ action: "enrollment.completed", entity: "application", entityId: app.id, details: res });
-  await syncEnrollmentToErp(app, parent, res.admission_number!);
-  await syncEnrollmentToGoogleSheet(app, parent, res.admission_number!);
+  if (app.erp_status !== "synced") {
+    await syncEnrollmentToErp(app, parent, res.admission_number!);
+  }
+  if (!app.google_sheet_synced) {
+    await syncEnrollmentToGoogleSheet(app, parent, res.admission_number!);
+  }
   return { ...res, status: "ENROLLED" as const };
 }
 
