@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireRole } from "@/lib/auth";
 import { applyUrl } from "@/lib/parent";
-import { formatDateTime } from "@/lib/utils";
+import { formatDateTime, cn } from "@/lib/utils";
 import { createLead, claimLead, dismissLead, addContactInfo, markWithdrawn, restoreWithdrawn } from "./actions";
 import { LeadSourceSelect } from "@/components/marketing/lead-source-select";
 import { describeFilters, parseAdmissionsFilters } from "@/lib/admissions-report";
@@ -76,9 +76,10 @@ export default async function MarketingPage({
     to?: string;
     claimed?: string;
     dismissed?: string;
+    view?: string;
   }>;
 }) {
-  const { created, error, duplicate, status, from, to, claimed, dismissed } = await searchParams;
+  const { created, error, duplicate, status, from, to, claimed, dismissed, view } = await searchParams;
   let duplicateInfo: {
     input: {
       parent_name: string;
@@ -220,7 +221,7 @@ export default async function MarketingPage({
       </Card>
 
       <Suspense fallback={<LeadsTableSkeleton />}>
-        <LeadsTableSection status={status} from={from} to={to} hasFilters={hasFilters} />
+        <LeadsTableSection status={status} from={from} to={to} view={view} hasFilters={hasFilters} />
       </Suspense>
     </div>
   );
@@ -338,11 +339,13 @@ async function LeadsTableSection({
   status,
   from,
   to,
+  view,
   hasFilters,
 }: {
   status?: string;
   from?: string;
   to?: string;
+  view?: string;
   hasFilters: boolean;
 }) {
   const { profile } = await requireRole(["marketing", "admin", "coo"]);
@@ -363,15 +366,36 @@ async function LeadsTableSection({
   if (to) query = query.lte("created_at", `${to}T23:59:59`);
 
   const { data } = await query;
-  const rows = (data ?? []) as unknown as Row[];
+  const allRows = (data ?? []) as unknown as Row[];
 
-  // Quick date-range presets — each preserves the current status filter.
+  // Instagram/Facebook DMs land here without a phone number yet — they need
+  // the rep to fill it in before they look/behave like a normal lead. Mixed
+  // into the same list as everyone else, the marketing team kept confusing
+  // them for incomplete/broken leads, so they get their own tab instead.
+  const isDmNeedsContact = (r: Row) =>
+    !r.parents?.phone && (r.lead_source === "instagram" || r.lead_source === "facebook");
+  const dmRows = allRows.filter(isDmNeedsContact);
+  const mainRows = allRows.filter((r) => !isDmNeedsContact(r));
+  const showingDm = view === "dm";
+  const rows = showingDm ? dmRows : mainRows;
+
+  // Quick date-range presets — each preserves the current status/view filter.
   const presetHref = (f: string, t: string) => {
     const params = new URLSearchParams();
     if (status) params.set("status", status);
+    if (showingDm) params.set("view", "dm");
     params.set("from", f);
     params.set("to", t);
     return `/marketing?${params.toString()}#leads`;
+  };
+  const tabHref = (dm: boolean) => {
+    const params = new URLSearchParams();
+    if (status) params.set("status", status);
+    if (from) params.set("from", from);
+    if (to) params.set("to", to);
+    if (dm) params.set("view", "dm");
+    const qs = params.toString();
+    return `/marketing${qs ? `?${qs}` : ""}#leads`;
   };
   const today = isoDate(new Date());
   const presets = [
@@ -391,11 +415,39 @@ async function LeadsTableSection({
   return (
     <Card id="leads">
       <CardHeader>
-        <CardTitle>{scopedToOwn ? "Your leads" : "All leads"} ({rows.length})</CardTitle>
+        <CardTitle>
+          {showingDm ? "Instagram/Facebook — needs contact info" : scopedToOwn ? "Your leads" : "All leads"} (
+          {rows.length})
+        </CardTitle>
       </CardHeader>
       <CardContent>
+        <div className="mb-4 flex flex-wrap gap-2">
+          <Link
+            href={tabHref(false)}
+            className={cn(
+              "rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors",
+              !showingDm
+                ? "bg-primary text-primary-foreground"
+                : "bg-secondary text-secondary-foreground hover:bg-secondary/70",
+            )}
+          >
+            All leads ({mainRows.length})
+          </Link>
+          <Link
+            href={tabHref(true)}
+            className={cn(
+              "rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors",
+              showingDm
+                ? "bg-primary text-primary-foreground"
+                : "bg-secondary text-secondary-foreground hover:bg-secondary/70",
+            )}
+          >
+            Instagram/Facebook — needs contact info ({dmRows.length})
+          </Link>
+        </div>
         <div className="mb-4 space-y-3 border-b border-border pb-4">
           <form action="/marketing#leads" method="get" className="flex flex-wrap items-end gap-3">
+            {showingDm && <input type="hidden" name="view" value="dm" />}
             <div className="space-y-1.5">
               <Label htmlFor="status">Status</Label>
               <Select id="status" name="status" defaultValue={status ?? ""} className="w-48">
@@ -419,7 +471,7 @@ async function LeadsTableSection({
               Filter
             </Button>
             {hasFilters && (
-              <Link href="/marketing#leads" className={buttonVariants({ variant: "ghost" })}>
+              <Link href={tabHref(showingDm)} className={buttonVariants({ variant: "ghost" })}>
                 Clear
               </Link>
             )}
@@ -461,7 +513,11 @@ async function LeadsTableSection({
 
         {rows.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            {hasFilters ? "No leads match this filter." : "No leads yet."}
+            {hasFilters
+              ? "No leads match this filter."
+              : showingDm
+                ? "No Instagram/Facebook leads waiting on contact info."
+                : "No leads yet."}
           </p>
         ) : (
           <Table>
