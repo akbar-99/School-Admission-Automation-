@@ -10,7 +10,7 @@ import { describeFilters, parseAdmissionsFilters } from "@/lib/admissions-report
 import { StatusBadge } from "@/components/status-badge";
 import { WithdrawalBadge } from "@/components/withdrawal-badge";
 import { Badge } from "@/components/ui/badge";
-import { SourceIcon } from "@/components/icons/lead-source-icons";
+import { SourceIcon, InstagramIcon, FacebookIcon } from "@/components/icons/lead-source-icons";
 import { CopyButton } from "@/components/copy-button";
 import { PhoneField } from "@/components/apply/phone-field";
 import { SubmitButton } from "@/components/submit-button";
@@ -436,12 +436,16 @@ async function LeadsTableSection({
           <Link
             href={tabHref(true)}
             className={cn(
-              "rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors",
-              showingDm
-                ? "bg-primary text-primary-foreground"
-                : "bg-secondary text-secondary-foreground hover:bg-secondary/70",
+              "flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium text-white transition-opacity",
+              showingDm ? "opacity-100 ring-2 ring-offset-2 ring-offset-background ring-foreground/30" : "opacity-70 hover:opacity-90",
             )}
+            style={{
+              background:
+                "linear-gradient(90deg, #1877F2 0%, #405DE6 20%, #833AB4 45%, #C13584 65%, #E1306C 80%, #FD8D32 100%)",
+            }}
           >
+            <InstagramIcon className="size-3.5 shrink-0" />
+            <FacebookIcon className="size-3.5 shrink-0" />
             Instagram/Facebook — needs contact info ({dmRows.length})
           </Link>
         </div>
