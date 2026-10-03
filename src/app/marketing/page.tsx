@@ -570,10 +570,10 @@ async function LeadsTableSection({
                     <div className="flex items-center gap-1.5 font-medium">
                       {r.parents?.full_name ?? "—"}
                       {lastMessageByApp.get(r.id)?.direction === "inbound" && (
-                        <span
-                          className="size-2 shrink-0 rounded-full bg-red-500"
-                          title="Awaiting reply"
-                        />
+                        <span className="flex items-center gap-1 text-xs font-medium text-red-600">
+                          <span className="size-2 shrink-0 rounded-full bg-red-500" />
+                          Awaiting reply
+                        </span>
                       )}
                     </div>
                     {r.parents?.phone ? (
