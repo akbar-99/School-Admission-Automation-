@@ -569,11 +569,18 @@ async function LeadsTableSection({
                   <TD>
                     <div className="flex items-center gap-1.5 font-medium">
                       {r.parents?.full_name ?? "—"}
-                      {lastMessageByApp.get(r.id)?.direction === "inbound" && (
+                      {lastMessageByApp.get(r.id)?.direction === "inbound" ? (
                         <span className="flex items-center gap-1 text-xs font-medium text-red-600">
                           <span className="size-2 shrink-0 rounded-full bg-red-500" />
                           Awaiting reply
                         </span>
+                      ) : (
+                        lastMessageByApp.get(r.id)?.direction === "outbound" && (
+                          <span className="flex items-center gap-1 text-xs font-medium text-emerald-600">
+                            <span className="size-2 shrink-0 rounded-full bg-emerald-500" />
+                            Replied
+                          </span>
+                        )
                       )}
                     </div>
                     {r.parents?.phone ? (
