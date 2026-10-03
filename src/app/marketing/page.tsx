@@ -368,6 +368,30 @@ async function LeadsTableSection({
   const { data } = await query;
   const allRows = (data ?? []) as unknown as Row[];
 
+  // Chat activity, per lead — lets the list show at a glance whether a
+  // conversation has started and who sent the last message, instead of
+  // having to open each one's Chat page to check. Only leads with a social
+  // DM contact id can ever have rows in these tables.
+  const chatAppIds = allRows.filter((r) => r.external_contact_id).map((r) => r.id);
+  const lastMessageByApp = new Map<string, { direction: "inbound" | "outbound"; created_at: string }>();
+  if (chatAppIds.length > 0) {
+    const [{ data: igMsgs }, { data: fbMsgs }] = await Promise.all([
+      admin
+        .from("instagram_messages")
+        .select("application_id, direction, created_at")
+        .in("application_id", chatAppIds)
+        .order("created_at", { ascending: true }),
+      admin
+        .from("facebook_messages")
+        .select("application_id, direction, created_at")
+        .in("application_id", chatAppIds)
+        .order("created_at", { ascending: true }),
+    ]);
+    for (const m of [...(igMsgs ?? []), ...(fbMsgs ?? [])]) {
+      lastMessageByApp.set(m.application_id, { direction: m.direction, created_at: m.created_at });
+    }
+  }
+
   // Instagram/Facebook DMs land here without a phone number yet — they need
   // the rep to fill it in before they look/behave like a normal lead. Mixed
   // into the same list as everyone else, the marketing team kept confusing
@@ -617,9 +641,23 @@ async function LeadsTableSection({
                   </TD>
                   <TD>
                     {r.external_contact_id && (
-                      <Link href={`/marketing/leads/${r.id}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
-                        Chat
-                      </Link>
+                      <div className="space-y-1">
+                        <Link href={`/marketing/leads/${r.id}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+                          Chat
+                        </Link>
+                        {(() => {
+                          const last = lastMessageByApp.get(r.id);
+                          if (!last) {
+                            return <p className="text-xs text-muted-foreground">No messages yet</p>;
+                          }
+                          return (
+                            <Badge tone={last.direction === "inbound" ? "warning" : "success"} className="block w-fit">
+                              {last.direction === "inbound" ? "Awaiting reply" : "Replied"} ·{" "}
+                              {formatDateTime(last.created_at)}
+                            </Badge>
+                          );
+                        })()}
+                      </div>
                     )}
                   </TD>
                 </TR>
