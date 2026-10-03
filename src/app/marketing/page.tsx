@@ -567,7 +567,15 @@ async function LeadsTableSection({
               {rows.map((r) => (
                 <TR key={r.id}>
                   <TD>
-                    <div className="font-medium">{r.parents?.full_name ?? "—"}</div>
+                    <div className="flex items-center gap-1.5 font-medium">
+                      {r.parents?.full_name ?? "—"}
+                      {lastMessageByApp.get(r.id)?.direction === "inbound" && (
+                        <span
+                          className="size-2 shrink-0 rounded-full bg-red-500"
+                          title="Awaiting reply"
+                        />
+                      )}
+                    </div>
                     {r.parents?.phone ? (
                       <div className="text-xs text-muted-foreground">{r.parents.phone}</div>
                     ) : (
@@ -651,10 +659,18 @@ async function LeadsTableSection({
                             return <p className="text-xs text-muted-foreground">No messages yet</p>;
                           }
                           return (
-                            <Badge tone={last.direction === "inbound" ? "warning" : "success"} className="block w-fit">
-                              {last.direction === "inbound" ? "Awaiting reply" : "Replied"} ·{" "}
+                            <div
+                              className={cn(
+                                "max-w-[140px] rounded-md px-2 py-1 text-[11px] font-medium leading-snug",
+                                last.direction === "inbound"
+                                  ? "bg-amber-50 text-amber-700"
+                                  : "bg-emerald-50 text-emerald-700",
+                              )}
+                            >
+                              {last.direction === "inbound" ? "Awaiting reply" : "Replied"}
+                              <br />
                               {formatDateTime(last.created_at)}
-                            </Badge>
+                            </div>
                           );
                         })()}
                       </div>
