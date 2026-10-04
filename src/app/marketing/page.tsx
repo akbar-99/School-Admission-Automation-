@@ -6,6 +6,7 @@ import { applyUrl } from "@/lib/parent";
 import { formatDateTime, cn } from "@/lib/utils";
 import { createLead, claimLead, dismissLead, addContactInfo, markWithdrawn, restoreWithdrawn } from "./actions";
 import { LeadSourceSelect } from "@/components/marketing/lead-source-select";
+import { LiveSearchField } from "@/components/marketing/live-search-field";
 import { describeFilters, parseAdmissionsFilters } from "@/lib/admissions-report";
 import { StatusBadge } from "@/components/status-badge";
 import { WithdrawalBadge } from "@/components/withdrawal-badge";
@@ -505,13 +506,7 @@ async function LeadsTableSection({
             {showingDm && <input type="hidden" name="view" value="dm" />}
             <div className="space-y-1.5">
               <Label htmlFor="q">Search</Label>
-              <Input
-                id="q"
-                name="q"
-                defaultValue={q ?? ""}
-                placeholder="Parent, student, or phone"
-                className="w-56"
-              />
+              <LiveSearchField defaultValue={q ?? ""} />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="status">Status</Label>
