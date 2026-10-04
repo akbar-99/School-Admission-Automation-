@@ -143,7 +143,7 @@ export function SectionErpFields({
           id={id("grade")}
           name="grade"
           placeholder="KG 1 / G1"
-          className={heightClass + (isEdit ? "w-24" : "w-28")}
+          className={heightClass + (isEdit ? "w-44" : "w-28")}
           required
           value={grade}
           onChange={(e) => {
