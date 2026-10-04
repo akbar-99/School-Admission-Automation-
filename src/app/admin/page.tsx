@@ -14,6 +14,7 @@ import {
 import { StatusBadge } from "@/components/status-badge";
 import { AdmissionsCharts } from "@/components/admin/admissions-charts";
 import { SlotRequestAlert } from "@/components/admin/slot-request-alert";
+import { LiveSearchField } from "@/components/marketing/live-search-field";
 import { SubmitButton } from "@/components/submit-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
@@ -54,12 +55,13 @@ export default async function AdminOverview({
     grade?: string;
     from?: string;
     to?: string;
+    q?: string;
   }>;
 }) {
   const sp = await searchParams;
-  const { ok, error } = sp;
+  const { ok, error, q } = sp;
   const filters = parseAdmissionsFilters(sp);
-  const hasFilters = Object.values(filters).some(Boolean);
+  const hasFilters = Object.values(filters).some(Boolean) || Boolean(q);
 
   return (
     <div className="space-y-6">
@@ -76,7 +78,7 @@ export default async function AdminOverview({
       </Suspense>
 
       <Suspense fallback={<ApplicationsTableSkeleton />}>
-        <ApplicationsTableSection filters={filters} hasFilters={hasFilters} />
+        <ApplicationsTableSection filters={filters} q={q} hasFilters={hasFilters} />
       </Suspense>
     </div>
   );
@@ -198,9 +200,11 @@ async function OverviewStatsSection() {
 
 async function ApplicationsTableSection({
   filters,
+  q,
   hasFilters,
 }: {
   filters: AdmissionsReportFilters;
+  q?: string;
   hasFilters: boolean;
 }) {
   const [reportRows, classOptions] = await Promise.all([
@@ -208,7 +212,26 @@ async function ApplicationsTableSection({
     getClassOptions(),
   ]);
 
-  const rows: Row[] = reportRows.map((r) => ({
+  // Free-text search — applied in-memory (same reasoning as the marketing
+  // leads list: the fetch is already bounded, and parent/student names live
+  // on joined tables Supabase can't ilike() in one query without a view).
+  // Phone compares on digits only, so formatting doesn't matter.
+  const needle = q?.trim().toLowerCase() ?? "";
+  const needleDigits = needle.replace(/\D/g, "");
+  const filteredReportRows = needle
+    ? reportRows.filter((r) => {
+        const parentName = r.parentName.toLowerCase();
+        const studentName = r.studentName.toLowerCase();
+        const phoneDigits = r.parentPhone.replace(/\D/g, "");
+        return (
+          parentName.includes(needle) ||
+          studentName.includes(needle) ||
+          (needleDigits.length > 0 && phoneDigits.includes(needleDigits))
+        );
+      })
+    : reportRows;
+
+  const rows: Row[] = filteredReportRows.map((r) => ({
     id: r.id,
     status: r.status,
     category: r.category,
@@ -264,6 +287,10 @@ async function ApplicationsTableSection({
 
         <form action="/admin#applications" method="get" className="mb-4 space-y-4 border-b border-border pb-4">
           <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="q">Search</Label>
+              <LiveSearchField defaultValue={q ?? ""} />
+            </div>
             <div className="space-y-1.5">
               <Label htmlFor="status">Status</Label>
               <Select id="status" name="status" defaultValue={filters.status ?? ""} className="w-48">
