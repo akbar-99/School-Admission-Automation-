@@ -77,9 +77,10 @@ export default async function MarketingPage({
     claimed?: string;
     dismissed?: string;
     view?: string;
+    q?: string;
   }>;
 }) {
-  const { created, error, duplicate, status, from, to, claimed, dismissed, view } = await searchParams;
+  const { created, error, duplicate, status, from, to, claimed, dismissed, view, q } = await searchParams;
   let duplicateInfo: {
     input: {
       parent_name: string;
@@ -107,7 +108,7 @@ export default async function MarketingPage({
       duplicateInfo = null;
     }
   }
-  const hasFilters = Boolean(status || from || to);
+  const hasFilters = Boolean(status || from || to || q);
 
   return (
     <div className="space-y-6">
@@ -221,7 +222,7 @@ export default async function MarketingPage({
       </Card>
 
       <Suspense fallback={<LeadsTableSkeleton />}>
-        <LeadsTableSection status={status} from={from} to={to} view={view} hasFilters={hasFilters} />
+        <LeadsTableSection status={status} from={from} to={to} view={view} q={q} hasFilters={hasFilters} />
       </Suspense>
     </div>
   );
@@ -340,12 +341,14 @@ async function LeadsTableSection({
   from,
   to,
   view,
+  q,
   hasFilters,
 }: {
   status?: string;
   from?: string;
   to?: string;
   view?: string;
+  q?: string;
   hasFilters: boolean;
 }) {
   const { profile } = await requireRole(["marketing", "admin", "coo"]);
@@ -366,7 +369,27 @@ async function LeadsTableSection({
   if (to) query = query.lte("created_at", `${to}T23:59:59`);
 
   const { data } = await query;
-  const allRows = (data ?? []) as unknown as Row[];
+  const fetchedRows = (data ?? []) as unknown as Row[];
+
+  // Free-text search across parent name, student name and phone — applied
+  // in-memory since the fetch above is already capped at 100 rows and
+  // spread across joined parent/student tables Supabase can't ilike() in
+  // one query without a view. Phone compares on digits only, so "99952"
+  // matches "+91 99952 24466" regardless of formatting.
+  const needle = q?.trim().toLowerCase() ?? "";
+  const needleDigits = needle.replace(/\D/g, "");
+  const allRows = needle
+    ? fetchedRows.filter((r) => {
+        const parentName = r.parents?.full_name?.toLowerCase() ?? "";
+        const studentName = (r.students?.full_name ?? r.lead_student_name ?? "").toLowerCase();
+        const phoneDigits = (r.parents?.phone ?? "").replace(/\D/g, "");
+        return (
+          parentName.includes(needle) ||
+          studentName.includes(needle) ||
+          (needleDigits.length > 0 && phoneDigits.includes(needleDigits))
+        );
+      })
+    : fetchedRows;
 
   // Chat activity, per lead — lets the list show at a glance whether a
   // conversation has started and who sent the last message, instead of
@@ -403,11 +426,12 @@ async function LeadsTableSection({
   const showingDm = view === "dm";
   const rows = showingDm ? dmRows : mainRows;
 
-  // Quick date-range presets — each preserves the current status/view filter.
+  // Quick date-range presets — each preserves the current status/view/search filter.
   const presetHref = (f: string, t: string) => {
     const params = new URLSearchParams();
     if (status) params.set("status", status);
     if (showingDm) params.set("view", "dm");
+    if (q) params.set("q", q);
     params.set("from", f);
     params.set("to", t);
     return `/marketing?${params.toString()}#leads`;
@@ -417,10 +441,13 @@ async function LeadsTableSection({
     if (status) params.set("status", status);
     if (from) params.set("from", from);
     if (to) params.set("to", to);
+    if (q) params.set("q", q);
     if (dm) params.set("view", "dm");
     const qs = params.toString();
     return `/marketing${qs ? `?${qs}` : ""}#leads`;
   };
+  // "Clear" resets status/date/search but stays on the current tab.
+  const clearHref = showingDm ? "/marketing?view=dm#leads" : "/marketing#leads";
   const today = isoDate(new Date());
   const presets = [
     { label: "Today", href: presetHref(today, today) },
@@ -477,6 +504,16 @@ async function LeadsTableSection({
           <form action="/marketing#leads" method="get" className="flex flex-wrap items-end gap-3">
             {showingDm && <input type="hidden" name="view" value="dm" />}
             <div className="space-y-1.5">
+              <Label htmlFor="q">Search</Label>
+              <Input
+                id="q"
+                name="q"
+                defaultValue={q ?? ""}
+                placeholder="Parent, student, or phone"
+                className="w-56"
+              />
+            </div>
+            <div className="space-y-1.5">
               <Label htmlFor="status">Status</Label>
               <Select id="status" name="status" defaultValue={status ?? ""} className="w-48">
                 <option value="">All statuses</option>
@@ -499,7 +536,7 @@ async function LeadsTableSection({
               Filter
             </Button>
             {hasFilters && (
-              <Link href={tabHref(showingDm)} className={buttonVariants({ variant: "ghost" })}>
+              <Link href={clearHref} className={buttonVariants({ variant: "ghost" })}>
                 Clear
               </Link>
             )}
