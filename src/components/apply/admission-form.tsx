@@ -37,12 +37,10 @@ function Section({
 export function MinimalAdmissionForm({
   token,
   gradeOptions,
-  curriculumOptions,
   defaultStudentName,
 }: {
   token: string;
   gradeOptions: readonly string[];
-  curriculumOptions: readonly string[];
   defaultStudentName?: string | null;
 }) {
   const [grade, setGrade] = useState("");
@@ -86,19 +84,6 @@ export function MinimalAdmissionForm({
           <div className="space-y-1.5">
             <Label htmlFor="age">Age *</Label>
             <Input id="age" name="age" type="number" min={1} max={25} required className="no-spinner" />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="curriculum">Preferred curriculum *</Label>
-            <Select id="curriculum" name="curriculum" required defaultValue="">
-              <option value="" disabled>
-                Select…
-              </option>
-              {curriculumOptions.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </Select>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="email">Email address *</Label>

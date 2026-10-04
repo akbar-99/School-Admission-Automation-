@@ -15,7 +15,7 @@ import {
   sendAgreement,
 } from "@/lib/workflow";
 import { logAudit } from "@/lib/audit";
-import { config } from "@/lib/config";
+import { config, CURRICULUM_OPTIONS } from "@/lib/config";
 import type { Application, DocumentRef } from "@/lib/types";
 
 const MAX_FILE = 5 * 1024 * 1024; // 5 MB (SRS FR-4a)
@@ -31,8 +31,55 @@ const MinimalFormSchema = z.object({
   age: z.coerce.number().int().min(1, "Age is required").max(25, "Enter a valid age"),
   email: z.string().trim().email("A valid email address is required"),
   whatsapp: z.string().trim().min(7, "WhatsApp number is required"),
-  curriculum: z.string().trim().min(1, "Preferred curriculum is required"),
 });
+
+// A dedicated "choose your curriculum" step runs before this form (still
+// within LEAD_CREATED), so the Class dropdown below only ever shows the
+// chosen curriculum's grades instead of Cambridge and CBSE mixed together.
+export async function selectCurriculum(formData: FormData) {
+  const token = String(formData.get("token") ?? "");
+  const curriculum = String(formData.get("curriculum") ?? "");
+  if (!(CURRICULUM_OPTIONS as readonly string[]).includes(curriculum)) {
+    fail(token, "Choose a valid curriculum.");
+  }
+  const { bundle } = await loadApplicationByToken(token);
+  if (!bundle) fail(token, "This admission link is invalid or expired.");
+  const app = bundle.application;
+  if (app.status !== "LEAD_CREATED") {
+    redirect(`/apply/${token}`);
+  }
+
+  const admin = createSupabaseAdminClient();
+  const { error } = await admin
+    .from("applications")
+    .update({ preferred_curriculum: curriculum })
+    .eq("id", app.id)
+    .eq("status", "LEAD_CREATED");
+  if (error) fail(token, error.message);
+
+  redirect(`/apply/${token}`);
+}
+
+// Lets the parent go back and pick the other curriculum before submitting
+// the admission form — only reachable pre-submission (still LEAD_CREATED).
+export async function resetCurriculum(formData: FormData) {
+  const token = String(formData.get("token") ?? "");
+  const { bundle } = await loadApplicationByToken(token);
+  if (!bundle) fail(token, "This admission link is invalid or expired.");
+  const app = bundle.application;
+  if (app.status !== "LEAD_CREATED") {
+    redirect(`/apply/${token}`);
+  }
+
+  const admin = createSupabaseAdminClient();
+  await admin
+    .from("applications")
+    .update({ preferred_curriculum: null })
+    .eq("id", app.id)
+    .eq("status", "LEAD_CREATED");
+
+  redirect(`/apply/${token}`);
+}
 
 // Stage 2 — the remaining-details form (DETAILS_PENDING -> AGREEMENT_SENT):
 // everything else. Grade/student name/email/WhatsApp were already captured
@@ -185,6 +232,12 @@ export async function submitMinimalForm(formData: FormData) {
   if (app.status !== "LEAD_CREATED") {
     redirect(`/apply/${token}`);
   }
+  // Curriculum is chosen on its own step before this form ever renders
+  // (see selectCurriculum) — if it's somehow missing, send them back there
+  // rather than letting a stale/direct form post through without one.
+  if (!app.preferred_curriculum) {
+    redirect(`/apply/${token}`);
+  }
 
   const parsed = MinimalFormSchema.safeParse({
     student_name: formData.get("student_name"),
@@ -192,7 +245,6 @@ export async function submitMinimalForm(formData: FormData) {
     age: formData.get("age"),
     email: formData.get("email"),
     whatsapp: formData.get("whatsapp"),
-    curriculum: formData.get("curriculum"),
   });
   if (!parsed.success) fail(token, parsed.error.issues[0].message);
   const input = parsed.data;
@@ -216,7 +268,6 @@ export async function submitMinimalForm(formData: FormData) {
     .update({
       lead_student_name: input.student_name,
       reported_age: input.age,
-      preferred_curriculum: input.curriculum,
       category,
       grade_applying: grade,
       status: "FORM_SUBMITTED",

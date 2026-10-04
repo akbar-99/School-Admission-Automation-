@@ -6,7 +6,7 @@ import { loadApplicationByToken } from "@/lib/parent";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { config, CURRICULUM_OPTIONS } from "@/lib/config";
 import { getSettings, getStudyMaterialFeeForGrade } from "@/lib/settings";
-import { getClassOptions, isKgClass } from "@/lib/classes";
+import { getClassOptions, isKgClass, filterClassOptionsByCurriculum } from "@/lib/classes";
 import { needsAssessment } from "@/lib/assessment";
 import {
   formatDateTime,
@@ -16,7 +16,7 @@ import {
   isZoomLinkActive,
   ZOOM_LINK_LEAD_MINUTES,
 } from "@/lib/utils";
-import { bookSlot, acceptAgreement, releaseSlot } from "./actions";
+import { bookSlot, acceptAgreement, releaseSlot, selectCurriculum, resetCurriculum } from "./actions";
 import { MinimalAdmissionForm, RemainingDetailsForm } from "@/components/apply/admission-form";
 import { BookingDone } from "@/components/apply/booking-done";
 import { EditableApplicantDetails } from "@/components/apply/editable-applicant-details";
@@ -172,7 +172,7 @@ async function Content({
           token={token}
           studentName={app.lead_student_name ?? ""}
           grade={app.grade_applying ?? ""}
-          gradeOptions={classOptions}
+          gradeOptions={filterClassOptionsByCurriculum(classOptions, app.preferred_curriculum)}
           gradeEditable={status === "FORM_SUBMITTED"}
           age={app.reported_age}
           email={parent.email ?? ""}
@@ -180,7 +180,39 @@ async function Content({
         />
       )}
 
-      {status === "LEAD_CREATED" && (
+      {status === "LEAD_CREATED" && !app.preferred_curriculum && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Choose your curriculum</CardTitle>
+            <CardDescription>
+              We&apos;ll show only the classes offered under the curriculum you pick.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {CURRICULUM_OPTIONS.map((c) => (
+                <form key={c} action={selectCurriculum}>
+                  <input type="hidden" name="token" value={token} />
+                  <input type="hidden" name="curriculum" value={c} />
+                  <button
+                    type="submit"
+                    className="flex w-full flex-col items-start gap-1 rounded-xl border-2 border-border px-5 py-4 text-left transition-colors hover:border-primary hover:bg-secondary/40"
+                  >
+                    <span className="font-display text-lg font-semibold">{c}</span>
+                    <span className="text-sm text-muted-foreground">
+                      {c === "CBSE"
+                        ? "Classes named STD 1, STD 2, and so on."
+                        : "Classes named Stage 1, Stage 2, and so on."}
+                    </span>
+                  </button>
+                </form>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {status === "LEAD_CREATED" && app.preferred_curriculum && (
         <Card>
           <CardHeader>
             <CardTitle>Admission form</CardTitle>
@@ -190,10 +222,20 @@ async function Content({
             </CardDescription>
           </CardHeader>
           <CardContent>
+            <div className="mb-4 flex items-center justify-between gap-3 rounded-lg bg-secondary/40 px-3.5 py-2.5 text-sm">
+              <span>
+                Curriculum: <strong>{app.preferred_curriculum}</strong>
+              </span>
+              <form action={resetCurriculum}>
+                <input type="hidden" name="token" value={token} />
+                <button type="submit" className="text-primary underline-offset-2 hover:underline">
+                  Change
+                </button>
+              </form>
+            </div>
             <MinimalAdmissionForm
               token={token}
-              gradeOptions={classOptions}
-              curriculumOptions={CURRICULUM_OPTIONS}
+              gradeOptions={filterClassOptionsByCurriculum(classOptions, app.preferred_curriculum)}
               defaultStudentName={app.lead_student_name}
             />
           </CardContent>

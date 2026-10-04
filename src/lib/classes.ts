@@ -32,3 +32,20 @@ export const getClassOptions = cache(async (): Promise<string[]> => {
   if (grades.length === 0) return [...GRADE_OPTIONS];
   return grades.sort(compareClasses);
 });
+
+// Cambridge sections are named "STAGE …", CBSE sections "STD …" (a naming
+// convention, not a DB column — confirmed consistent across every live
+// section as of this writing). Filters the full class list down to one
+// curriculum so the admission form's Class dropdown doesn't mix both
+// curricula's grades together. A grade following neither convention (e.g.
+// a shared "KG" class) stays visible for both, rather than being hidden.
+export function filterClassOptionsByCurriculum(grades: string[], curriculum: string | null): string[] {
+  if (!curriculum) return grades;
+  return grades.filter((g) => {
+    const isCambridgeNamed = /^stage\b/i.test(g);
+    const isCbseNamed = /^std\b/i.test(g);
+    if (curriculum === "Cambridge") return !isCbseNamed;
+    if (curriculum === "CBSE") return !isCambridgeNamed;
+    return true;
+  });
+}
