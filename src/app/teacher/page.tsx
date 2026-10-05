@@ -30,6 +30,7 @@ interface SlotRow {
     status: string;
     grade_applying: string | null;
     lead_student_name: string | null;
+    created_by: string | null;
     students: { full_name: string; dob: string | null } | null;
     parents: { full_name: string; phone: string; email: string | null } | null;
   } | null;
@@ -106,7 +107,7 @@ async function TeacherBody() {
     admin
       .from("assessment_slots")
       .select(
-        "id, starts_at, ends_at, is_open, application_id, zoom_start_url, unavailable_reported, applications(id, status, grade_applying, lead_student_name, students(full_name, dob), parents(full_name, phone, email))",
+        "id, starts_at, ends_at, is_open, application_id, zoom_start_url, unavailable_reported, applications(id, status, grade_applying, lead_student_name, created_by, students(full_name, dob), parents(full_name, phone, email))",
       )
       .eq("teacher_id", teacherId)
       .order("starts_at", { ascending: true }),
@@ -161,6 +162,20 @@ async function TeacherBody() {
   const poolSeries = Array.from(seriesMap.values()).sort((a, b) =>
     a.occurrences[0].startsAt.localeCompare(b.occurrences[0].startsAt),
   );
+
+  // Who created each lead — so the teacher can tell who to ask if something
+  // about the applicant's details needs clarifying.
+  const creatorIds = Array.from(
+    new Set(slots.map((s) => s.applications?.created_by).filter((id): id is string => Boolean(id))),
+  );
+  const creatorNameById = new Map<string, string>();
+  if (creatorIds.length > 0) {
+    const { data: creators } = await admin.from("users").select("id, full_name, email").in("id", creatorIds);
+    for (const c of creators ?? []) {
+      const name = c.full_name ?? c.email;
+      if (name) creatorNameById.set(c.id, name);
+    }
+  }
 
   const now = Date.now();
   const toRecord = slots.filter(
@@ -266,6 +281,14 @@ async function TeacherBody() {
                         </a>
                       )}
                     </div>
+                    {s.applications?.created_by && creatorNameById.get(s.applications.created_by) && (
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        Lead created by:{" "}
+                        <span className="font-medium text-foreground">
+                          {creatorNameById.get(s.applications.created_by)}
+                        </span>
+                      </div>
+                    )}
                   </div>
                   <div className="flex flex-col items-end gap-2">
                     <Badge tone="info">Booked</Badge>

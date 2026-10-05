@@ -416,6 +416,27 @@ async function LeadsTableSection({
     }
   }
 
+  // Assigned assessment teacher, per lead — so marketing can see who's
+  // handling a booked assessment without opening each one individually.
+  const teacherByApp = new Map<string, string>();
+  if (allRows.length > 0) {
+    const { data: slotRows } = await admin
+      .from("assessment_slots")
+      .select("application_id, teacher_id, users(full_name, email)")
+      .in(
+        "application_id",
+        allRows.map((r) => r.id),
+      )
+      .not("teacher_id", "is", null);
+    for (const s of (slotRows ?? []) as unknown as {
+      application_id: string;
+      users: { full_name: string | null; email: string | null } | null;
+    }[]) {
+      const name = s.users?.full_name ?? s.users?.email;
+      if (name) teacherByApp.set(s.application_id, name);
+    }
+  }
+
   // Instagram/Facebook DMs land here without a phone number yet — they need
   // the rep to fill it in before they look/behave like a normal lead. Mixed
   // into the same list as everyone else, the marketing team kept confusing
@@ -588,6 +609,7 @@ async function LeadsTableSection({
                 <TH>Category</TH>
                 <TH>Source</TH>
                 <TH>Grade</TH>
+                <TH>Teacher</TH>
                 <TH>Status</TH>
                 <TH>Withdrawal</TH>
                 <TH>Created</TH>
@@ -632,6 +654,7 @@ async function LeadsTableSection({
                   <TD>{r.category ?? "—"}</TD>
                   <TD>{leadSourceLabel(r.lead_source, r.lead_source_other)}</TD>
                   <TD>{r.grade_applying ?? "—"}</TD>
+                  <TD>{teacherByApp.get(r.id) ?? "—"}</TD>
                   <TD>
                     <div className="space-y-1">
                       <StatusBadge status={r.status} />
