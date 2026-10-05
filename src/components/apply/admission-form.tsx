@@ -314,7 +314,7 @@ export function RemainingDetailsForm({
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="photo">Photo *</Label>
-              <Input id="photo" name="photo" type="file" required accept="image/jpeg,image/png" />
+              <Input id="photo" name="photo" type="file" required accept="application/pdf,image/jpeg,image/png" />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="pen_number">PEN Number (optional)</Label>
