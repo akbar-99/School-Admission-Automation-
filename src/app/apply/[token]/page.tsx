@@ -1,4 +1,4 @@
-import { CalendarClock, BookOpen, Phone, Download } from "lucide-react";
+import { CalendarClock, BookOpen, Phone, Download, GraduationCap, Landmark, ArrowRight } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { ZoomLinkGate } from "@/components/zoom-link-gate";
 import { LiveAlerts } from "@/components/live-alerts";
@@ -190,23 +190,48 @@ async function Content({
           </CardHeader>
           <CardContent>
             <div className="grid gap-4 sm:grid-cols-2">
-              {CURRICULUM_OPTIONS.map((c) => (
-                <form key={c} action={selectCurriculum}>
-                  <input type="hidden" name="token" value={token} />
-                  <input type="hidden" name="curriculum" value={c} />
-                  <button
-                    type="submit"
-                    className="flex w-full flex-col items-start gap-1 rounded-xl border-2 border-border px-5 py-4 text-left transition-colors hover:border-primary hover:bg-secondary/40"
-                  >
-                    <span className="font-display text-lg font-semibold">{c}</span>
-                    <span className="text-sm text-muted-foreground">
-                      {c === "CBSE"
-                        ? "Classes named STD 1, STD 2, and so on."
-                        : "Classes named Stage 1, Stage 2, and so on."}
-                    </span>
-                  </button>
-                </form>
-              ))}
+              {CURRICULUM_OPTIONS.map((c) => {
+                const isCbse = c === "CBSE";
+                const Icon = isCbse ? Landmark : GraduationCap;
+                const accent = isCbse
+                  ? {
+                      iconBg: "bg-orange-50",
+                      icon: "text-orange-700",
+                      ring: "hover:ring-orange-600",
+                      text: "text-orange-700",
+                    }
+                  : {
+                      iconBg: "bg-blue-50",
+                      icon: "text-blue-700",
+                      ring: "hover:ring-blue-600",
+                      text: "text-blue-700",
+                    };
+                return (
+                  <form key={c} action={selectCurriculum} className="group">
+                    <input type="hidden" name="token" value={token} />
+                    <input type="hidden" name="curriculum" value={c} />
+                    <button
+                      type="submit"
+                      className={`flex w-full flex-col items-start gap-3 rounded-2xl border border-border bg-card px-5 py-6 text-left shadow-sm ring-1 ring-transparent transition-all hover:-translate-y-0.5 hover:shadow-md ${accent.ring}`}
+                    >
+                      <span className={`flex size-11 shrink-0 items-center justify-center rounded-full ${accent.iconBg}`}>
+                        <Icon className={`size-5 ${accent.icon}`} />
+                      </span>
+                      <span className="font-display text-xl font-semibold">{c}</span>
+                      <span className="text-sm text-muted-foreground">
+                        {isCbse
+                          ? "Classes named STD 1, STD 2, and so on."
+                          : "Classes named Stage 1, Stage 2, and so on."}
+                      </span>
+                      <span
+                        className={`mt-1 flex items-center gap-1 text-sm font-medium transition-transform group-hover:translate-x-1 ${accent.text}`}
+                      >
+                        Select <ArrowRight className="size-4" />
+                      </span>
+                    </button>
+                  </form>
+                );
+              })}
             </div>
           </CardContent>
         </Card>
