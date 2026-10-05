@@ -234,11 +234,8 @@ function GrowthBars({
   const yFor = (v: number) => padT + plotH * (1 - v / niceMax);
   const ticks = [0, 1, 2, 3, 4].map((t) => (niceMax * t) / 4);
 
-  // Teal + green (the original pairing here) sit too close together on the
-  // color wheel to tell apart at a glance, especially in a small stacked
-  // bar. Amber reads clearly against green from across the room.
   const ENROLLED = "#2f8f6b";
-  const OTHER = "#c08a2d";
+  const OTHER = "#eab308";
 
   return (
     <div className="space-y-3">
