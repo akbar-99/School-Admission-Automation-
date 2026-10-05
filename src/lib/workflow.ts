@@ -690,11 +690,17 @@ export async function handleSlotBooked(
       ? admin.from("users").select("full_name, email, phone").eq("id", slotInfo.teacher_id).maybeSingle()
       : Promise.resolve({ data: null }),
     app.created_by
-      ? admin.from("users").select("full_name, email").eq("id", app.created_by).maybeSingle()
+      ? admin.from("users").select("full_name, email, phone").eq("id", app.created_by).maybeSingle()
       : Promise.resolve({ data: null }),
   ]);
   const teacherName = teacherRow?.full_name ?? teacherRow?.email ?? null;
+  const teacherNameWithPhone = teacherName
+    ? `${teacherName}${teacherRow?.phone ? ` (${teacherRow.phone})` : ""}`
+    : null;
   const creatorName = creatorRow?.full_name ?? creatorRow?.email ?? null;
+  const creatorNameWithPhone = creatorName
+    ? `${creatorName}${creatorRow?.phone ? ` (${creatorRow.phone})` : ""}`
+    : null;
 
   // If Zoom is genuinely configured but the create call still failed (a
   // real per-teacher or transient Zoom-side problem), staff need to know
@@ -736,14 +742,16 @@ export async function handleSlotBooked(
       event: "N-4",
       subject: "Assessment slot booked",
       body: `${context}An assessment slot was booked for ${when} (Grade ${app.grade_applying})${
-        teacherName ? ` with ${teacherName}` : ""
+        teacherNameWithPhone ? ` with ${teacherNameWithPhone}` : ""
       }.`,
     }),
     ...(await notifyLeadCreator(app, {
       applicationId: app.id,
       event: "N-4",
       subject: "Your lead booked an assessment slot",
-      body: `${context}Their assessment is booked for ${when}${teacherName ? ` with ${teacherName}` : ""}.`,
+      body: `${context}Their assessment is booked for ${when}${
+        teacherNameWithPhone ? ` with ${teacherNameWithPhone}` : ""
+      }.`,
     })),
   ];
 
@@ -757,7 +765,7 @@ export async function handleSlotBooked(
           event: "N-4",
           subject: "Assessment booked for your slot",
           body: `${context}A parent booked your assessment slot on ${when} (Grade ${app.grade_applying}).${
-            creatorName ? ` Lead created by: ${creatorName}.` : ""
+            creatorNameWithPhone ? ` Lead created by: ${creatorNameWithPhone}.` : ""
           }${hostLine}${
             zoomCreationFailed
               ? "\n\nThe Zoom meeting couldn't be created automatically — admin has been notified and will generate it."
