@@ -681,7 +681,32 @@ export async function handleSlotBooked(
 
   const context = staffContextLine(await studentLabel(app), parent.full_name);
 
+  // If Zoom is genuinely configured but the create call still failed (a
+  // real per-teacher or transient Zoom-side problem), staff need to know
+  // right away — otherwise this is only ever discovered by chance, by
+  // someone noticing a "Generate Zoom link" button on the admin dashboard
+  // days later. No alert when Zoom simply isn't configured at all (that's
+  // an expected/known state, not a failure).
+  const zoomCreationFailed = config.zoom.enabled && !meeting;
+  const zoomFailureAlert: OutboundMessage[] = zoomCreationFailed
+    ? [
+        ...fanToStaff(await staffContacts(["admin", "coo"]), {
+          applicationId: app.id,
+          event: "ZOOM_CREATE_FAILED",
+          subject: "Zoom link failed to generate for a booked assessment",
+          body: `${context}An assessment was booked for ${when}, but the Zoom meeting could not be created automatically. Use "Generate Zoom link" on this application in Admin → Assessments once the issue is resolved.`,
+        }),
+        ...(await notifyLeadCreator(app, {
+          applicationId: app.id,
+          event: "ZOOM_CREATE_FAILED",
+          subject: "Zoom link didn't generate for your lead's assessment",
+          body: `${context}Their assessment is booked for ${when}, but the Zoom link needs to be generated manually — admin has been notified.`,
+        })),
+      ]
+    : [];
+
   const messages: OutboundMessage[] = [
+    ...zoomFailureAlert,
     ...multiChannel(
       {
         applicationId: app.id,
@@ -720,7 +745,11 @@ export async function handleSlotBooked(
             applicationId: app.id,
             event: "N-4",
             subject: "Assessment booked for your slot",
-            body: `${context}A parent booked your assessment slot on ${when} (Grade ${app.grade_applying}).${hostLine}`,
+            body: `${context}A parent booked your assessment slot on ${when} (Grade ${app.grade_applying}).${hostLine}${
+              zoomCreationFailed
+                ? "\n\nThe Zoom meeting couldn't be created automatically — admin has been notified and will generate it."
+                : ""
+            }`,
           },
         ),
       );
@@ -835,7 +864,23 @@ export async function notifyAssessmentReminder(slot: {
   const contact = await leadCreatorContact(app);
   const context = staffContextLine(await studentLabel(app), parent.full_name);
 
+  // Last chance before the assessment actually happens — if there's still
+  // no Zoom link at this point, staff need to know right now, not whenever
+  // someone happens to notice.
+  const zoomStillMissing = config.zoom.enabled && !zoomJoinUrl;
+  const zoomFailureAlert: OutboundMessage[] = zoomStillMissing
+    ? [
+        ...fanToStaff(await staffContacts(["admin", "coo"]), {
+          applicationId: app.id,
+          event: "ZOOM_CREATE_FAILED",
+          subject: "URGENT — Zoom link still missing, assessment in 10 minutes",
+          body: `${context}Assessment at ${when} still has no Zoom link. Generate one now from Admin → Assessments, or contact the parent directly.`,
+        }),
+      ]
+    : [];
+
   const messages: OutboundMessage[] = [
+    ...zoomFailureAlert,
     ...multiChannel(
       {
         applicationId: app.id,
