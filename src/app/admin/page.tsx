@@ -231,6 +231,34 @@ async function ApplicationsTableSection({
       })
     : reportRows;
 
+  // Who created each lead — shown under the Created date instead of its own
+  // column, since it's supporting info for that same field, not a primary
+  // one worth a whole column.
+  const creatorNameByAppId = new Map<string, string>();
+  if (filteredReportRows.length > 0) {
+    const admin = createSupabaseAdminClient();
+    const { data: appRows } = await admin
+      .from("applications")
+      .select("id, created_by")
+      .in(
+        "id",
+        filteredReportRows.map((r) => r.id),
+      );
+    const creatorIds = Array.from(
+      new Set((appRows ?? []).map((a) => a.created_by).filter((id): id is string => Boolean(id))),
+    );
+    if (creatorIds.length > 0) {
+      const { data: creators } = await admin.from("users").select("id, full_name, email").in("id", creatorIds);
+      const nameById = new Map((creators ?? []).map((c) => [c.id, c.full_name ?? c.email]));
+      for (const a of appRows ?? []) {
+        if (a.created_by) {
+          const name = nameById.get(a.created_by);
+          if (name) creatorNameByAppId.set(a.id, name);
+        }
+      }
+    }
+  }
+
   const rows: Row[] = filteredReportRows.map((r) => ({
     id: r.id,
     status: r.status,
@@ -402,8 +430,13 @@ async function ApplicationsTableSection({
                   <TD className="font-mono text-xs">{r.admission_number ?? "—"}</TD>
                   <TD>{leadSourceLabel(r.lead_source, r.lead_source_other)}</TD>
                   <TD>{r.sections ? `${r.sections.grade}-${r.sections.name}` : "—"}</TD>
-                  <TD className="whitespace-nowrap text-muted-foreground">
-                    {formatDateTime(r.created_at)}
+                  <TD className="whitespace-nowrap">
+                    {creatorNameByAppId.get(r.id) && (
+                      <div className="text-xs font-medium text-foreground">
+                        {creatorNameByAppId.get(r.id)}
+                      </div>
+                    )}
+                    <div className="text-muted-foreground">{formatDateTime(r.created_at)}</div>
                   </TD>
                 </TR>
               ))}
