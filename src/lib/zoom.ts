@@ -57,8 +57,12 @@ interface CreateMeetingInput {
   timezone: string; // IANA, e.g. "Asia/Kolkata"
 }
 
-// Create a scheduled meeting under `hostEmail`. If that user isn't on the Zoom
-// account (404) and a default host is configured, retry under the default host.
+// Create a scheduled meeting under `hostEmail`. If that fails for any reason
+// — the user isn't on the Zoom account (404), or a Zoom-side account problem
+// like a stale/orphaned scheduling-privilege reference (400) — and a default
+// host is configured, retry once under the default host rather than giving
+// up. Any single teacher's broken Zoom account shouldn't block their
+// bookings from getting a link at all.
 async function createZoomMeeting(input: CreateMeetingInput): Promise<ZoomMeeting> {
   const token = await getAccessToken();
   const body = JSON.stringify({
@@ -88,11 +92,7 @@ async function createZoomMeeting(input: CreateMeetingInput): Promise<ZoomMeeting
     });
 
   let res = await post(input.hostEmail);
-  if (
-    res.status === 404 &&
-    config.zoom.defaultHostEmail &&
-    config.zoom.defaultHostEmail !== input.hostEmail
-  ) {
+  if (!res.ok && config.zoom.defaultHostEmail && config.zoom.defaultHostEmail !== input.hostEmail) {
     res = await post(config.zoom.defaultHostEmail);
   }
   if (!res.ok) {
