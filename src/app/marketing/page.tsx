@@ -422,7 +422,7 @@ async function LeadsTableSection({
   if (allRows.length > 0) {
     const { data: slotRows } = await admin
       .from("assessment_slots")
-      .select("application_id, teacher_id, users(full_name, email)")
+      .select("application_id, teacher_id, users(full_name, email, phone)")
       .in(
         "application_id",
         allRows.map((r) => r.id),
@@ -430,10 +430,10 @@ async function LeadsTableSection({
       .not("teacher_id", "is", null);
     for (const s of (slotRows ?? []) as unknown as {
       application_id: string;
-      users: { full_name: string | null; email: string | null } | null;
+      users: { full_name: string | null; email: string | null; phone: string | null } | null;
     }[]) {
       const name = s.users?.full_name ?? s.users?.email;
-      if (name) teacherByApp.set(s.application_id, name);
+      if (name) teacherByApp.set(s.application_id, s.users?.phone ? `${name} (${s.users.phone})` : name);
     }
   }
 

@@ -170,10 +170,13 @@ async function TeacherBody() {
   );
   const creatorNameById = new Map<string, string>();
   if (creatorIds.length > 0) {
-    const { data: creators } = await admin.from("users").select("id, full_name, email").in("id", creatorIds);
+    const { data: creators } = await admin
+      .from("users")
+      .select("id, full_name, email, phone")
+      .in("id", creatorIds);
     for (const c of creators ?? []) {
       const name = c.full_name ?? c.email;
-      if (name) creatorNameById.set(c.id, name);
+      if (name) creatorNameById.set(c.id, c.phone ? `${name} (${c.phone})` : name);
     }
   }
 
