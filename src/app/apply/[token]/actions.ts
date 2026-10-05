@@ -207,15 +207,31 @@ async function uploadDocument(
   const file = value;
   if (!ALLOWED.has(file.type)) fail(token, `${label}: unsupported file type. Use PDF, JPG or PNG.`);
   if (file.size > MAX_FILE) fail(token, `${label} exceeds the 5 MB limit.`);
-  const buffer = Buffer.from(await file.arrayBuffer());
+
+  // The read + upload below are the only steps here that touch the network
+  // (a flaky mobile connection can drop mid-transfer) — caught explicitly so
+  // a stalled/failed upload becomes the same friendly error banner every
+  // other validation failure uses, instead of an unhandled exception
+  // crashing to Next's generic error page.
+  let buffer: Buffer;
+  try {
+    buffer = Buffer.from(await file.arrayBuffer());
+  } catch {
+    fail(token, `${label}: the upload was interrupted (your connection may have dropped). Please try again.`);
+  }
   if (!matchesDeclaredType(buffer, file.type)) {
     fail(token, `${label}: file content doesn't match a PDF, JPG or PNG. Please re-check the file.`);
   }
   const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
   const path = `${appId}/${category}_${Date.now()}_${safe}`;
-  const { error: upErr } = await admin.storage
-    .from("documents")
-    .upload(path, buffer, { contentType: file.type, upsert: false });
+  let upErr: { message: string } | null;
+  try {
+    ({ error: upErr } = await admin.storage
+      .from("documents")
+      .upload(path, buffer, { contentType: file.type, upsert: false }));
+  } catch {
+    fail(token, `${label}: the upload was interrupted (your connection may have dropped). Please try again.`);
+  }
   if (upErr) fail(token, `${label} upload failed: ${upErr.message}`);
   return { category, type: file.type, path, name: file.name, size: file.size };
 }
@@ -420,18 +436,14 @@ export async function submitRemainingDetails(formData: FormData) {
   }
 
   // Documents stored in typed slots (private Supabase Storage). Passport/
-  // Aadhaar, birth certificate and photo are all always required.
-  const documents: DocumentRef[] = [];
-
-  documents.push(
-    await uploadDocument(admin, token, app.id, "passport", "Passport/Aadhaar", formData.get("passport")),
-  );
-  documents.push(
-    await uploadDocument(admin, token, app.id, "birth_certificate", "Birth certificate", formData.get("birth_certificate")),
-  );
-  documents.push(
-    await uploadDocument(admin, token, app.id, "photo", "Photo", formData.get("photo")),
-  );
+  // Aadhaar, birth certificate and photo are all always required. Uploaded
+  // in parallel rather than sequentially — on a slow mobile connection,
+  // three 5 MB uploads one after another noticeably lengthens the wait.
+  const documents: DocumentRef[] = await Promise.all([
+    uploadDocument(admin, token, app.id, "passport", "Passport/Aadhaar", formData.get("passport")),
+    uploadDocument(admin, token, app.id, "birth_certificate", "Birth certificate", formData.get("birth_certificate")),
+    uploadDocument(admin, token, app.id, "photo", "Photo", formData.get("photo")),
+  ]);
 
   // Create student — the name was already captured on the minimal form.
   const { data: studentRow, error: sErr } = await admin
