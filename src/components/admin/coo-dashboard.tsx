@@ -244,7 +244,11 @@ export function CooDashboard({
             <p className="text-sm text-muted-foreground">No marketing staff yet.</p>
           ) : (
             [...staff]
-              .sort((a, b) => conversionValue(b.stats) - conversionValue(a.stats))
+              // Tied conversion rates (0.0% is common while most of a team's
+              // enquiries are still in progress) fall back to who's handled
+              // more enquiries — otherwise ties just keep whatever order the
+              // staff list happened to come in, which reads as arbitrary.
+              .sort((a, b) => conversionValue(b.stats) - conversionValue(a.stats) || b.stats.enquiries - a.stats.enquiries)
               .map((s, i) => {
                 const value = Math.max(0, conversionValue(s.stats));
                 const pct = Math.round((value / maxConversion) * 100);
