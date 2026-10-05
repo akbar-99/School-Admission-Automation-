@@ -24,7 +24,8 @@ import { Input } from "@/components/ui/input";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { FileDown, FileSpreadsheet } from "lucide-react";
-import { STATUS_LABEL, leadSourceLabel, type AppStatus } from "@/lib/types";
+import { STATUS_LABEL, leadSourceLabel, type AppStatus, type WithdrawalType } from "@/lib/types";
+import { WithdrawalBadge } from "@/components/withdrawal-badge";
 
 interface Row {
   id: string;
@@ -38,6 +39,9 @@ interface Row {
   parents: { full_name: string } | null;
   students: { full_name: string } | null;
   sections: { grade: string; name: string } | null;
+  withdrawn_at: string | null;
+  withdrawal_type: WithdrawalType | null;
+  withdrawal_reason: string | null;
 }
 
 // The heading needs no data and used to be the LCP element blocked behind
@@ -271,6 +275,9 @@ async function ApplicationsTableSection({
     parents: { full_name: r.parentName },
     students: { full_name: r.studentName },
     sections: r.sectionGrade ? { grade: r.sectionGrade, name: r.sectionName ?? "" } : null,
+    withdrawn_at: r.withdrawnAt,
+    withdrawal_type: r.withdrawalType,
+    withdrawal_reason: r.withdrawalReason,
   }));
   const exportQuery = new URLSearchParams(
     Object.entries(filters).filter(([, v]) => v) as [string, string][],
@@ -425,7 +432,14 @@ async function ApplicationsTableSection({
                   <TD>{r.category ?? "—"}</TD>
                   <TD>{r.grade_applying ?? "—"}</TD>
                   <TD>
-                    <StatusBadge status={r.status} />
+                    <div className="space-y-1">
+                      <StatusBadge status={r.status} />
+                      {r.withdrawn_at && r.withdrawal_type && (
+                        <div>
+                          <WithdrawalBadge type={r.withdrawal_type} reason={r.withdrawal_reason} />
+                        </div>
+                      )}
+                    </div>
                   </TD>
                   <TD className="font-mono text-xs">{r.admission_number ?? "—"}</TD>
                   <TD>{leadSourceLabel(r.lead_source, r.lead_source_other)}</TD>

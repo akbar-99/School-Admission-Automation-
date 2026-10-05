@@ -1,6 +1,6 @@
 import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import type { AppStatus } from "@/lib/types";
+import type { AppStatus, WithdrawalType } from "@/lib/types";
 
 export interface AdmissionsReportFilters {
   status?: AppStatus;
@@ -25,6 +25,9 @@ export interface AdmissionsReportRow {
   leadSourceOther: string | null;
   sectionGrade: string | null;
   sectionName: string | null;
+  withdrawnAt: string | null;
+  withdrawalType: WithdrawalType | null;
+  withdrawalReason: string | null;
 }
 
 // Reads the same filter keys the admin overview page's filter form submits.
@@ -65,7 +68,7 @@ export async function fetchAdmissionsReportRows(
   let query = admin
     .from("applications")
     .select(
-      "id, status, category, grade_applying, admission_number, lead_source, lead_source_other, created_at, lead_student_name, parents(full_name, phone), students(full_name), sections(grade, name)",
+      "id, status, category, grade_applying, admission_number, lead_source, lead_source_other, created_at, lead_student_name, withdrawn_at, withdrawal_type, withdrawal_reason, parents(full_name, phone), students(full_name), sections(grade, name)",
     )
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -88,6 +91,9 @@ export async function fetchAdmissionsReportRows(
     lead_source_other: string | null;
     created_at: string;
     lead_student_name: string | null;
+    withdrawn_at: string | null;
+    withdrawal_type: WithdrawalType | null;
+    withdrawal_reason: string | null;
     parents: { full_name: string; phone: string } | null;
     students: { full_name: string } | null;
     sections: { grade: string; name: string } | null;
@@ -108,5 +114,8 @@ export async function fetchAdmissionsReportRows(
     studentName: r.students?.full_name ?? r.lead_student_name ?? "—",
     sectionGrade: r.sections?.grade ?? null,
     sectionName: r.sections?.name ?? null,
+    withdrawnAt: r.withdrawn_at,
+    withdrawalType: r.withdrawal_type,
+    withdrawalReason: r.withdrawal_reason,
   }));
 }
