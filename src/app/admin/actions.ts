@@ -362,7 +362,7 @@ export async function generateZoomLink(formData: FormData) {
 
 // Regenerate a parent's admission-link token — the only way to revoke a
 // specific link early (e.g. it was forwarded or leaked) without deleting the
-// application. The old link stops working immediately; resets the 14-day
+// application. The old link stops working immediately; resets the 6-month
 // expiry from now.
 const RotateTokenSchema = z.object({ application_id: z.string().uuid() });
 
@@ -381,7 +381,11 @@ export async function rotateAccessToken(formData: FormData) {
     .from("applications")
     .update({
       access_token: crypto.randomBytes(24).toString("hex"),
-      token_expires_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+      token_expires_at: (() => {
+        const d = new Date();
+        d.setMonth(d.getMonth() + 6);
+        return d.toISOString();
+      })(),
     })
     .eq("id", application_id);
   if (error) {
