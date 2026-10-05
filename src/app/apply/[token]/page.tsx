@@ -31,6 +31,24 @@ import { Label } from "@/components/ui/label";
 import { buttonVariants } from "@/components/ui/button";
 import { outcomeLabel, type AppStatus, type SubjectResult } from "@/lib/types";
 
+// Fisher-Yates shuffle, scoped to runs of consecutive slots that share the
+// same `starts_at` (the input is already sorted chronologically, so a tied
+// run is always contiguous) — randomizes listing order within a time slot
+// without disturbing the chronological order between different times.
+function shuffleTiedByStartTime<T extends { starts_at: string }>(slots: T[]): T[] {
+  const result = [...slots];
+  let runStart = 0;
+  for (let i = 1; i <= result.length; i++) {
+    if (i < result.length && result[i].starts_at === result[runStart].starts_at) continue;
+    for (let j = i - 1; j > runStart; j--) {
+      const k = runStart + Math.floor(Math.random() * (j - runStart + 1));
+      [result[j], result[k]] = [result[k], result[j]];
+    }
+    runStart = i;
+  }
+  return result;
+}
+
 export default async function ApplyPage({
   params,
   searchParams,
@@ -451,7 +469,7 @@ async function Content({
     requestedDate: string | null;
     requestedTz: string | null;
   }) {
-    const { data: slots } = await admin
+    const { data: rawSlots } = await admin
       .from("assessment_slots")
       .select("id, starts_at, ends_at")
       .eq("is_open", true)
@@ -459,6 +477,16 @@ async function Content({
       .gt("starts_at", new Date().toISOString())
       .order("starts_at", { ascending: true })
       .limit(50);
+
+    // Parents never see which teacher a slot belongs to, so when several
+    // teachers open an identical start time, whichever one Postgres happens
+    // to return first for that tie (not randomized — effectively insertion
+    // order) would otherwise get picked first by every parent, every time,
+    // systematically starving the other teachers' identical-time slots of
+    // bookings. Shuffling within each same-start-time group (freshly, on
+    // every page load) keeps the overall chronological order intact while
+    // giving every teacher an equal chance at being listed first.
+    const slots = rawSlots ? shuffleTiedByStartTime(rawSlots) : rawSlots;
 
     return (
       <Card>
