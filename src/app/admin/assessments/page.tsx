@@ -345,75 +345,77 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
               no one to claim them.
             </Alert>
           )}
-          <form action={createAssessmentSlot} className="flex flex-wrap items-end gap-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="weekday">Day</Label>
-              <Select id="weekday" name="weekday" defaultValue="1" className="w-36">
-                <option value="1">Monday</option>
-                <option value="2">Tuesday</option>
-                <option value="3">Wednesday</option>
-                <option value="4">Thursday</option>
-                <option value="5">Friday</option>
-                <option value="6">Saturday</option>
-                <option value="0">Sunday</option>
-              </Select>
+          <form action={createAssessmentSlot} className="space-y-1.5">
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="weekday">Day</Label>
+                <Select id="weekday" name="weekday" defaultValue="1" className="w-36">
+                  <option value="1">Monday</option>
+                  <option value="2">Tuesday</option>
+                  <option value="3">Wednesday</option>
+                  <option value="4">Thursday</option>
+                  <option value="5">Friday</option>
+                  <option value="6">Saturday</option>
+                  <option value="0">Sunday</option>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="time">Time ({schoolLabel})</Label>
+                <Input id="time" name="time" type="time" required className="w-32" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="duration">Duration (min)</Label>
+                <Input
+                  id="duration"
+                  name="duration"
+                  type="number"
+                  min={10}
+                  max={240}
+                  defaultValue={30}
+                  className="w-28"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="quantity">Slots per week</Label>
+                <Input
+                  id="quantity"
+                  name="quantity"
+                  type="number"
+                  min={1}
+                  max={50}
+                  defaultValue={1}
+                  className="w-28"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="weeks">Repeat for (weeks)</Label>
+                <Input
+                  id="weeks"
+                  name="weeks"
+                  type="number"
+                  min={1}
+                  max={26}
+                  defaultValue={1}
+                  className="w-28"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="teacher_id">Assign teacher</Label>
+                <Select id="teacher_id" name="teacher_id" defaultValue="" className="min-w-56">
+                  <option value="">Open — any teacher can claim it</option>
+                  {teachers.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.full_name ?? t.email}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <SubmitButton pendingText="Creating…">Create slot(s)</SubmitButton>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="time">Time ({schoolLabel})</Label>
-              <Input id="time" name="time" type="time" required className="w-32" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="duration">Duration (min)</Label>
-              <Input
-                id="duration"
-                name="duration"
-                type="number"
-                min={10}
-                max={240}
-                defaultValue={30}
-                className="w-28"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="quantity">Slots per week</Label>
-              <Input
-                id="quantity"
-                name="quantity"
-                type="number"
-                min={1}
-                max={50}
-                defaultValue={1}
-                className="w-28"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="weeks">Repeat for (weeks)</Label>
-              <Input
-                id="weeks"
-                name="weeks"
-                type="number"
-                min={1}
-                max={26}
-                defaultValue={1}
-                className="w-28"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="teacher_id">Assign teacher</Label>
-              <Select id="teacher_id" name="teacher_id" defaultValue="" className="min-w-56">
-                <option value="">Open — any teacher can claim it</option>
-                {teachers.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.full_name ?? t.email}
-                  </option>
-                ))}
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                Only when slots per week and repeat weeks are both 1. Otherwise leave as
-                &quot;Open&quot;.
-              </p>
-            </div>
-            <SubmitButton pendingText="Creating…">Create slot(s)</SubmitButton>
+            <p className="text-xs text-muted-foreground">
+              Assign teacher only works when slots per week and repeat weeks are both 1. Otherwise
+              leave as &quot;Open&quot;.
+            </p>
           </form>
         </CardContent>
       </Card>
