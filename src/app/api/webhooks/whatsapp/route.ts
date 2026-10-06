@@ -47,11 +47,21 @@ const STATUS_RANK: Record<string, number> = {
   failed: 4,
 };
 
+// Every branch below logs — this handler had zero observability before,
+// which is exactly why "a WhatsApp message didn't arrive" was undebuggable
+// from our own data: a signature failure (wrong/missing WHATSAPP_APP_SECRET,
+// a proxy mangling the raw body, etc.) just returned 400 with no trace
+// anywhere. These lines show up in `docker logs` / Coolify's log viewer.
 export async function POST(request: Request) {
   const raw = await request.text();
   const signature = request.headers.get("x-hub-signature-256");
 
   if (!verifySignature(raw, signature)) {
+    console.error(
+      `[webhook:whatsapp] signature verification failed — header ${
+        signature ? `present (${signature.length} chars)` : "missing"
+      }, body ${raw.length} bytes, secret ${config.notifications.whatsappAppSecret ? "configured" : "MISSING"}`,
+    );
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
@@ -59,24 +69,37 @@ export async function POST(request: Request) {
   try {
     body = JSON.parse(raw);
   } catch {
+    console.error(`[webhook:whatsapp] invalid JSON payload (${raw.length} bytes)`);
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 
   const admin = createSupabaseAdminClient();
   const statuses =
     body.entry?.flatMap((e) => e.changes?.flatMap((c) => c.value?.statuses ?? []) ?? []) ?? [];
+  console.log(`[webhook:whatsapp] received ${statuses.length} status update(s)`);
 
   await Promise.all(
     statuses.map(async (s) => {
-      if (!(s.status in STATUS_RANK)) return; // ignore statuses we don't track
+      if (!(s.status in STATUS_RANK)) {
+        console.log(`[webhook:whatsapp] ${s.id} -> untracked status "${s.status}", ignored`);
+        return;
+      }
 
       const { data: existing } = await admin
         .from("notifications")
         .select("id, status")
         .eq("provider_message_id", s.id)
         .maybeSingle();
-      if (!existing) return; // unknown message id (e.g. sent before this webhook was wired up)
-      if (STATUS_RANK[s.status] <= STATUS_RANK[existing.status]) return;
+      if (!existing) {
+        console.log(`[webhook:whatsapp] ${s.id} -> no matching notification row, ignored`);
+        return;
+      }
+      if (STATUS_RANK[s.status] <= STATUS_RANK[existing.status]) {
+        console.log(
+          `[webhook:whatsapp] ${s.id} -> ${s.status} is not newer than recorded ${existing.status}, ignored`,
+        );
+        return;
+      }
 
       const error =
         s.status === "failed"
@@ -86,6 +109,7 @@ export async function POST(request: Request) {
           : null;
 
       await admin.from("notifications").update({ status: s.status, error }).eq("id", existing.id);
+      console.log(`[webhook:whatsapp] ${s.id} -> updated to ${s.status}${error ? ` (${error})` : ""}`);
     }),
   );
 
