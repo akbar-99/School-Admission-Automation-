@@ -49,7 +49,7 @@ export default async function ApplicationDetailPage({
       .eq("application_id", id)
       .order("created_at", { ascending: false }),
     app.section_id
-      ? admin.from("sections").select("grade, name").eq("id", app.section_id).maybeSingle()
+      ? admin.from("sections").select("grade, name, batch, class_timing").eq("id", app.section_id).maybeSingle()
       : Promise.resolve({ data: null }),
     admin
       .from("assessment_results")
@@ -65,7 +65,12 @@ export default async function ApplicationDetailPage({
   const student = studentRes.data as Student | null;
   const parent = parentRes.data as Parent | null;
   const payments = (paymentRes.data ?? []) as Payment[];
-  const section = sectionRes.data as { grade: string; name: string } | null;
+  const section = sectionRes.data as {
+    grade: string;
+    name: string;
+    batch: string | null;
+    class_timing: string | null;
+  } | null;
   const result = resultRes.data as {
     outcome: string;
     remarks: string | null;
@@ -145,7 +150,11 @@ export default async function ApplicationDetailPage({
         <Field label="Preferred class timing" value={app.preferred_class_timing ?? "No preference"} />
         <Field label="Source of enquiry" value={leadSourceLabel(app.lead_source, app.lead_source_other)} />
         <Field label="Admission number" value={app.admission_number ?? "—"} mono />
-        <Field label="Section" value={section ? `${section.grade}-${section.name}` : "—"} />
+        <Field
+          label="Section"
+          value={section ? `${section.grade}-${section.name}${section.batch ? ` (${section.batch})` : ""}` : "—"}
+        />
+        <Field label="Class timing" value={section?.class_timing ?? "—"} />
         <Field label="Study material" value={app.study_material_paid ? "Paid" : "Not paid"} />
         <Field label="Created" value={formatDateTime(app.created_at)} />
         <Field
