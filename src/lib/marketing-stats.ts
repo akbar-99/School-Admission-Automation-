@@ -131,7 +131,7 @@ export interface CooStatsRow {
   status: AppStatus;
   grade_applying: string | null;
   created_by: string;
-  erp_status: string | null;
+  broadway_status: string | null;
   created_at: string;
   lead_student_name: string | null;
   lead_source: string | null;
@@ -217,7 +217,7 @@ export function computeCooStatsByCreator(rows: CooStatsRow[]): Map<string, CooCr
       e.stats.admissionCompleted += 1;
       e.rows.admissionCompleted.push(row);
     }
-    if (row.erp_status === "synced") {
+    if (row.broadway_status === "synced") {
       e.stats.addedToCourse += 1;
       e.rows.addedToCourse.push(row);
     }
@@ -258,8 +258,8 @@ export function computeSourceBreakdown(
 // Curriculum split of actually-enrolled students (status ENROLLED — payment
 // done and admission complete), not every enquiry's stated preference —
 // someone can prefer Cambridge at enquiry time and still not enroll. Kept
-// separate from erp_status on purpose: a student can be fully enrolled while
-// their ERP sync is still pending or has no class mapping, and that must not
+// separate from broadway_status on purpose: a student can be fully enrolled while
+// their Broadway sync is still pending or has no class mapping, and that must not
 // hide them here. Falls back to the application's preferred_curriculum only
 // if the student record itself has no curriculum set yet.
 export function computeCurriculumBreakdown(

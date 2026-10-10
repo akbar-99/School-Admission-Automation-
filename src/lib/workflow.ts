@@ -8,7 +8,7 @@ import { logAudit } from "@/lib/audit";
 import { formatINR, formatInZone, formatDate } from "@/lib/utils";
 import { generateResultPdf } from "@/lib/result-pdf";
 import { ensureZoomForApplication } from "@/lib/zoom";
-import { sendErpAdmission, syncClassToErp } from "@/lib/erp";
+import { sendBroadwayAdmission, changeBroadwaySection } from "@/lib/broadway";
 import { appendEnrollmentRow, removeEnrollmentRow, sanitizeTabName } from "@/lib/google-sheets";
 import { needsAssessment } from "@/lib/assessment";
 import { fetchSchoolLogo } from "@/lib/school-logo";
@@ -1570,32 +1570,34 @@ export async function handleAssessmentResult(
 }
 
 // ---------------------------------------------------------------------------
-// ERP integration — after enrollment, look up the exact ERP class_name
-// configured on the section this app already assigned (Admin → Sections),
-// and notify the ERP so the student record exists there automatically.
-// This app's own sections decide the division (enroll_application's existing
-// fill-order, unchanged) — the ERP has no say in that decision, only in
-// which of its own class names each section corresponds to. Additive and
+// Broadway integration — after enrollment, look up the Broadway class this
+// app's assigned section is linked to (Admin → Sections) and send the
+// admission so the student/family exists in Broadway automatically. This
+// app's own sections still decide the division (enroll_application's
+// existing fill-order, unchanged) — Broadway has no say in that, only in
+// which of its own classes each section corresponds to. Additive and
 // independent of the enrollment notifications: never throws — any failure
-// here is logged and flagged for admin review (Admin → ERP) rather than
+// here is logged and flagged for admin review (Admin → Broadway) rather than
 // surfaced to the parent, since enrollment itself already succeeded by the
-// time this runs.
+// time this runs. Resending the same application id is safe (Broadway
+// updates the same record until the student joins), so this same function
+// serves as the retry path too — see retryBroadwaySync below.
 // ---------------------------------------------------------------------------
-export async function syncEnrollmentToErp(app: Application, parent: Parent, admissionNumber: string) {
-  if (!config.erp.enabled) return;
+export async function syncEnrollmentToBroadway(app: Application, parent: Parent, admissionNumber: string) {
+  if (!config.broadway.enabled) return;
   const admin = createSupabaseAdminClient();
 
   try {
     const { data: section } = await admin
       .from("sections")
-      .select("erp_class_name")
+      .select("broadway_class_id, broadway_class_name")
       .eq("id", app.section_id)
       .maybeSingle();
 
-    if (!section?.erp_class_name) {
-      await admin.from("applications").update({ erp_status: "no_mapping" }).eq("id", app.id);
+    if (!section?.broadway_class_id) {
+      await admin.from("applications").update({ broadway_status: "no_mapping" }).eq("id", app.id);
       await logAudit({
-        action: "erp.no_mapping",
+        action: "broadway.no_mapping",
         entity: "application",
         entityId: app.id,
         details: { section_id: app.section_id },
@@ -1603,21 +1605,13 @@ export async function syncEnrollmentToErp(app: Application, parent: Parent, admi
       await dispatch(
         fanToStaff(await staffContacts(["admin"]), {
           applicationId: app.id,
-          event: "ERP_NO_MAPPING",
-          subject: "ERP sync needs attention: no class mapping",
-          body: `${admissionNumber} can't sync to the ERP yet — the assigned section has no ERP class name set. Configure it under Admin → Sections, then retry under Admin → ERP.`,
+          event: "BROADWAY_NO_MAPPING",
+          subject: "Broadway sync needs attention: no class linked",
+          body: `${admissionNumber} can't sync to Broadway yet — the assigned section isn't linked to a Broadway class. Link it under Admin → Sections, then retry under Admin → Broadway.`,
         }),
       );
       return;
     }
-
-    const className = section.erp_class_name;
-    // Recorded before the send attempt so a crash mid-send still leaves a
-    // retryable record with the class already resolved.
-    await admin
-      .from("applications")
-      .update({ erp_status: "send_failed", erp_class_name: className })
-      .eq("id", app.id);
 
     const { data: studentRow } = await admin
       .from("students")
@@ -1626,65 +1620,117 @@ export async function syncEnrollmentToErp(app: Application, parent: Parent, admi
       .maybeSingle();
     const student = studentRow as Student | null;
     const { academicTermStart } = await getSettings();
+    const curriculum = student?.curriculum ?? app.preferred_curriculum ?? "";
 
-    const result = await sendErpAdmission({
-      admission_id: app.id,
-      student_id: admissionNumber,
-      full_name: student?.full_name ?? parent.full_name,
-      class_name: className,
-      email: parent.email,
-      phone: parent.phone,
-      gender: student?.gender ?? null,
-      date_of_birth: student?.dob ?? null,
-      address: student?.current_address ?? student?.permanent_address ?? null,
-      parent_name: parent.full_name,
-      parent_phone: parent.phone,
-      parent_email: parent.email,
-      joining_date: academicTermStart,
-    });
-
-    if (!result.ok) {
-      console.error("[erp] admission send failed", result.error);
+    if (!parent.email) {
+      await admin.from("applications").update({ broadway_status: "send_failed" }).eq("id", app.id);
       await logAudit({
-        action: "erp.send_failed",
+        action: "broadway.send_failed",
         entity: "application",
         entityId: app.id,
-        details: { error: result.error, class_name: className },
+        details: { error: "Parent has no email on file — Broadway requires one (it becomes the sign-in)." },
       });
       await dispatch(
         fanToStaff(await staffContacts(["admin"]), {
           applicationId: app.id,
-          event: "ERP_SEND_FAILED",
-          subject: "ERP sync failed",
-          body: `${admissionNumber} was assigned ERP class "${className}" but the ERP webhook call failed. Retry under Admin → ERP.`,
+          event: "BROADWAY_SEND_FAILED",
+          subject: "Broadway sync failed: no parent email",
+          body: `${admissionNumber} can't sync to Broadway — no parent email on file (Broadway requires one). Add it, then retry under Admin → Broadway.`,
         }),
       );
       return;
     }
 
-    await admin
-      .from("applications")
-      .update({ erp_status: "synced", erp_student_id: result.erpStudentId, erp_warning: result.warning })
-      .eq("id", app.id);
-    await logAudit({
-      action: "erp.synced",
-      entity: "application",
-      entityId: app.id,
-      details: { class_name: className, warning: result.warning },
+    const result = await sendBroadwayAdmission({
+      id: app.id,
+      academicYear: String(config.admission.year),
+      studentName: student?.full_name ?? parent.full_name,
+      curriculum,
+      grade: app.grade_applying ?? app.category ?? "",
+      parentName: parent.full_name,
+      parentEmail: parent.email,
+      classId: section.broadway_class_id,
+      admissionNo: admissionNumber,
+      dob: student?.dob ?? null,
+      gender: student?.gender ?? null,
+      parentPhone: parent.phone,
+      country: student?.country_of_residence ?? null,
+      enrolledOn: academicTermStart,
+      fatherName: student?.father_name ?? null,
+      fatherPhone: student?.father_phone ?? null,
+      motherName: student?.mother_name ?? null,
+      motherPhone: student?.mother_phone ?? null,
+      address: student?.current_address ?? student?.permanent_address ?? null,
+      previousSchool: student?.previous_school ?? null,
+      pen: student?.pen_number ?? null,
     });
 
-    if (result.warning) {
+    if (!result.ok) {
+      console.error("[broadway] admission send failed", result.error);
+      await admin.from("applications").update({ broadway_status: "send_failed" }).eq("id", app.id);
+      await logAudit({
+        action: "broadway.send_failed",
+        entity: "application",
+        entityId: app.id,
+        details: { error: result.error, class_id: section.broadway_class_id },
+      });
       await dispatch(
         fanToStaff(await staffContacts(["admin"]), {
           applicationId: app.id,
-          event: "ERP_WARNING",
-          subject: "ERP sync warning",
-          body: `${admissionNumber} synced to the ERP, but it returned a warning: ${result.warning}`,
+          event: "BROADWAY_SEND_FAILED",
+          subject: "Broadway sync failed",
+          body: `${admissionNumber} was assigned Broadway class "${section.broadway_class_name ?? section.broadway_class_id}" but the Broadway call failed: ${result.error}. Retry under Admin → Broadway.`,
+        }),
+      );
+      return;
+    }
+
+    // classId can come back null even on success — e.g. Broadway itself
+    // couldn't resolve the section (not expected here, since classId is
+    // always sent explicitly, but defensive regardless). Treated the same
+    // as "no mapping" so it stays in the needs-attention queue for a human
+    // to assign a section, rather than silently reading as fully synced.
+    const warningText = result.warnings.join(" ") || null;
+    const noSection = result.classId === null;
+    await admin
+      .from("applications")
+      .update({
+        broadway_status: noSection ? "no_mapping" : "synced",
+        broadway_student_id: result.studentId,
+        broadway_admission_no: result.admissionNo,
+        broadway_class_id: result.classId,
+        broadway_class_name: result.className,
+        broadway_warning: warningText,
+      })
+      .eq("id", app.id);
+    await logAudit({
+      action: "broadway.synced",
+      entity: "application",
+      entityId: app.id,
+      details: { class_id: result.classId, status: result.status, warnings: result.warnings },
+    });
+
+    if (noSection) {
+      await dispatch(
+        fanToStaff(await staffContacts(["admin"]), {
+          applicationId: app.id,
+          event: "BROADWAY_NO_MAPPING",
+          subject: "Broadway sync needs attention: no section assigned",
+          body: `${admissionNumber} was admitted in Broadway but has no section yet: ${warningText ?? "no matching section"}. Assign one there, then retry under Admin → Broadway.`,
+        }),
+      );
+    } else if (warningText) {
+      await dispatch(
+        fanToStaff(await staffContacts(["admin"]), {
+          applicationId: app.id,
+          event: "BROADWAY_WARNING",
+          subject: "Broadway sync warning",
+          body: `${admissionNumber} synced to Broadway, but it returned a warning: ${warningText}`,
         }),
       );
     }
   } catch (err) {
-    console.error("[erp] syncEnrollmentToErp threw unexpectedly", err);
+    console.error("[broadway] syncEnrollmentToBroadway threw unexpectedly", err);
   }
 }
 
@@ -1821,10 +1867,14 @@ export async function removeEnrollmentFromGoogleSheet(
   }
 }
 
-// Admin "Retry" for erp_status = 'no_mapping' — re-checks the section's ERP
-// class name (an admin should have just set it under Admin → Sections) and
-// runs the send from scratch.
-export async function retryErpSync(appId: string): Promise<void> {
+// Admin "Retry" for any stuck broadway_status (no_mapping or send_failed) —
+// just re-runs the send from scratch. Safe regardless of which failure mode:
+// resending the same application id is idempotent on Broadway's side (it
+// updates the same record until the student joins), so there's no separate
+// "resend the same class" path needed the way the old ERP integration
+// required (that one couldn't safely re-claim a seat on retry; Broadway has
+// no such concept to worry about).
+export async function retryBroadwaySync(appId: string): Promise<void> {
   const admin = createSupabaseAdminClient();
   const { data: appRow } = await admin.from("applications").select("*").eq("id", appId).maybeSingle();
   if (!appRow) return;
@@ -1832,185 +1882,101 @@ export async function retryErpSync(appId: string): Promise<void> {
   if (!app.admission_number) return; // not actually enrolled yet — nothing to sync
   const { data: parentRow } = await admin.from("parents").select("*").eq("id", app.parent_id).maybeSingle();
   if (!parentRow) return;
-  await syncEnrollmentToErp(app, parentRow as Parent, app.admission_number);
+  await syncEnrollmentToBroadway(app, parentRow as Parent, app.admission_number);
 }
 
-// Admin "Retry" for erp_status = 'send_failed' — a seat was already claimed
-// (erp_class_name is set); this must only re-send that same class to the
-// ERP, never call claim_erp_seat again, or the student would consume two
-// seats in the local tally.
-export async function resendErpAdmission(appId: string): Promise<void> {
+// Called after an admin transfers an already-enrolled student to a
+// different section (Admin -> Sections -> Transfer). If this application was
+// never synced to Broadway yet, there's nothing to do — the next sync will
+// naturally read the new section_id. If it was, push the section change
+// live via POST /admissions/section rather than just re-flagging for a
+// later retry (unlike the old ERP integration, which had no verified
+// "change class" call and had to fall back to a generic re-sync). Best-
+// effort: the local transfer has already succeeded by the time this runs,
+// so a Broadway-side failure here is logged and flagged for admin review,
+// not surfaced as a failure of the transfer itself.
+export async function changeBroadwaySectionAfterTransfer(
+  applicationId: string,
+  newSectionId: string,
+  reason: string,
+): Promise<void> {
+  if (!config.broadway.enabled) return;
   const admin = createSupabaseAdminClient();
-  const { data: appRow } = await admin.from("applications").select("*").eq("id", appId).maybeSingle();
-  if (!appRow) return;
-  const app = appRow as Application;
-  if (!app.admission_number || !app.erp_class_name) return;
-  const { data: parentRow } = await admin.from("parents").select("*").eq("id", app.parent_id).maybeSingle();
-  if (!parentRow) return;
-  const parent = parentRow as Parent;
-  const { data: studentRow } = await admin
-    .from("students")
-    .select("*")
-    .eq("id", app.student_id)
+  const { data: appRow } = await admin
+    .from("applications")
+    .select("admission_number, broadway_student_id, broadway_status")
+    .eq("id", applicationId)
     .maybeSingle();
-  const student = studentRow as Student | null;
-  const { academicTermStart } = await getSettings();
+  if (!appRow?.admission_number || !appRow.broadway_student_id) return; // never synced — nothing to push
 
-  const result = await sendErpAdmission({
-    admission_id: app.id,
-    student_id: app.admission_number,
-    full_name: student?.full_name ?? parent.full_name,
-    class_name: app.erp_class_name,
-    email: parent.email,
-    phone: parent.phone,
-    gender: student?.gender ?? null,
-    date_of_birth: student?.dob ?? null,
-    address: student?.current_address ?? student?.permanent_address ?? null,
-    parent_name: parent.full_name,
-    parent_phone: parent.phone,
-    parent_email: parent.email,
-    joining_date: academicTermStart,
-  });
-
-  if (!result.ok) {
-    console.error("[erp] resend failed", result.error);
+  const { data: section } = await admin
+    .from("sections")
+    .select("broadway_class_id, broadway_class_name")
+    .eq("id", newSectionId)
+    .maybeSingle();
+  if (!section?.broadway_class_id) {
+    await admin.from("applications").update({ broadway_status: "no_mapping" }).eq("id", applicationId);
     await logAudit({
-      action: "erp.send_failed",
+      action: "broadway.no_mapping",
       entity: "application",
-      entityId: app.id,
-      details: { error: result.error, class_name: app.erp_class_name, retry: true },
+      entityId: applicationId,
+      details: { section_id: newSectionId, context: "transfer" },
     });
+    await dispatch(
+      fanToStaff(await staffContacts(["admin"]), {
+        applicationId,
+        event: "BROADWAY_NO_MAPPING",
+        subject: "Broadway sync needs attention: section transfer",
+        body: `${appRow.admission_number} was transferred to a section with no Broadway class linked. Link it under Admin → Sections, then retry under Admin → Broadway.`,
+      }),
+    );
+    return;
+  }
+
+  const result = await changeBroadwaySection(applicationId, section.broadway_class_id, reason);
+  if (!result.ok) {
+    console.error("[broadway] section change failed", result.error);
+    await logAudit({
+      action: "broadway.section_change_failed",
+      entity: "application",
+      entityId: applicationId,
+      details: { error: result.error, class_id: section.broadway_class_id },
+    });
+    await dispatch(
+      fanToStaff(await staffContacts(["admin"]), {
+        applicationId,
+        event: "BROADWAY_SEND_FAILED",
+        subject: "Broadway section change failed",
+        body: `${appRow.admission_number} was transferred locally, but updating their Broadway section failed: ${result.error}. Retry under Admin → Broadway.`,
+      }),
+    );
     return;
   }
 
   await admin
     .from("applications")
-    .update({ erp_status: "synced", erp_student_id: result.erpStudentId, erp_warning: result.warning })
-    .eq("id", app.id);
+    .update({
+      broadway_class_id: result.classId,
+      broadway_class_name: result.className,
+      broadway_warning: result.warnings.join(" ") || null,
+    })
+    .eq("id", applicationId);
   await logAudit({
-    action: "erp.synced",
-    entity: "application",
-    entityId: app.id,
-    details: { class_name: app.erp_class_name, warning: result.warning, retry: true },
-  });
-}
-
-// Called after an admin transfers an already-enrolled student to a
-// different section (Admin -> Sections -> Transfer). The student's ERP class
-// mapping is now stale for the OLD section — rather than guessing at
-// resending a "class changed" update directly (unverified ERP behavior),
-// this re-flags the application as 'no_mapping', the same state a never-
-// mapped section produces on first sync. The existing Admin -> ERP "Retry"
-// button re-runs syncEnrollmentToErp, which re-reads the section's ERP class
-// name fresh from the (now updated) section_id — so it naturally picks up
-// the new section's mapping, or re-flags 'no_mapping' again if the new
-// section has none, all through the same already-reviewed retry path.
-export async function flagErpRecheckAfterTransfer(applicationId: string): Promise<void> {
-  if (!config.erp.enabled) return;
-  const admin = createSupabaseAdminClient();
-  const { data: appRow } = await admin
-    .from("applications")
-    .select("admission_number")
-    .eq("id", applicationId)
-    .maybeSingle();
-  if (!appRow?.admission_number) return;
-
-  await admin.from("applications").update({ erp_status: "no_mapping" }).eq("id", applicationId);
-  await logAudit({
-    action: "erp.recheck_after_transfer",
+    action: "broadway.section_changed",
     entity: "application",
     entityId: applicationId,
-    details: {},
+    details: { class_id: result.classId, warnings: result.warnings },
   });
-  await dispatch(
-    fanToStaff(await staffContacts(["admin"]), {
-      applicationId,
-      event: "ERP_NO_MAPPING",
-      subject: "ERP sync needs attention: section transfer",
-      body: `${appRow.admission_number} was transferred to a different section — the ERP class needs to be re-verified. Retry under Admin → ERP.`,
-    }),
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Push this app's own section (class/division/batch) into the ERP whenever
-// one is created or edited — a discrete call per edit, not a poll, per the
-// ERP's own instruction. Called from createSection/updateSection after their
-// own DB write succeeds; never throws — a section is fully usable in this
-// app regardless of whether the ERP mirror call succeeds, matching the same
-// "never block the primary action" precedent as Zoom/student sync. Conflicts
-// (a name collision the ERP can't resolve on its own) are surfaced to admin
-// staff and are never retried automatically — the ERP's own instruction is
-// that these need a human to resolve directly in the ERP.
-// ---------------------------------------------------------------------------
-export type SyncSectionToErpStatus = "synced" | "conflict" | "failed" | "skipped";
-
-export async function syncSectionToErp(section: {
-  id: string;
-  grade: string;
-  name: string;
-  batch: string | null;
-  capacity: number;
-}): Promise<SyncSectionToErpStatus> {
-  if (!config.erp.classWebhookEnabled) return "skipped";
-  const admin = createSupabaseAdminClient();
-
-  const result = await syncClassToErp({
-    external_class_id: section.id,
-    class_name: section.grade,
-    division: section.name,
-    batch: section.batch,
-    capacity: section.capacity,
-  });
-
-  if (result.ok) {
-    await admin
-      .from("sections")
-      .update({ erp_sync_status: "synced", erp_synced_at: new Date().toISOString() })
-      .eq("id", section.id);
-    await logAudit({
-      action: "erp.section_synced",
-      entity: "section",
-      entityId: section.id,
-      details: { action: result.action },
-    });
-    return "synced";
-  }
-
-  if (result.conflict) {
-    await admin.from("sections").update({ erp_sync_status: "conflict" }).eq("id", section.id);
-    await logAudit({
-      action: "erp.section_conflict",
-      entity: "section",
-      entityId: section.id,
-      details: { raw: result.raw },
-    });
+  if (result.warnings.length > 0) {
     await dispatch(
       fanToStaff(await staffContacts(["admin"]), {
-        event: "ERP_SECTION_CONFLICT",
-        subject: "ERP class conflict needs manual resolution",
-        body: `${section.grade}-${section.name}${section.batch ? ` (${section.batch})` : ""} couldn't sync to the ERP — a name collision needs to be resolved directly in the ERP (not something this app can retry automatically).`,
+        applicationId,
+        event: "BROADWAY_WARNING",
+        subject: "Broadway section change warning",
+        body: `${appRow.admission_number}'s Broadway section was updated, but it returned a warning: ${result.warnings.join(" ")}`,
       }),
     );
-    return "conflict";
   }
-
-  console.error("[erp] section sync failed", result.error);
-  await admin.from("sections").update({ erp_sync_status: "failed" }).eq("id", section.id);
-  await logAudit({
-    action: "erp.section_send_failed",
-    entity: "section",
-    entityId: section.id,
-    details: { error: result.error },
-  });
-  await dispatch(
-    fanToStaff(await staffContacts(["admin"]), {
-      event: "ERP_SECTION_FAILED",
-      subject: "ERP class sync failed",
-      body: `${section.grade}-${section.name}${section.batch ? ` (${section.batch})` : ""} couldn't sync to the ERP. Editing the section again will retry.`,
-    }),
-  );
-  return "failed";
 }
 
 // ---------------------------------------------------------------------------
@@ -2204,8 +2170,8 @@ export async function handlePaymentCompleted(
   ]);
 
   await logAudit({ action: "enrollment.completed", entity: "application", entityId: app.id, details: res });
-  if (app.erp_status !== "synced") {
-    await syncEnrollmentToErp(app, parent, res.admission_number!);
+  if (app.broadway_status !== "synced") {
+    await syncEnrollmentToBroadway(app, parent, res.admission_number!);
   }
   if (!app.google_sheet_synced) {
     await syncEnrollmentToGoogleSheet(app, parent, res.admission_number!);

@@ -8,7 +8,7 @@ import { requireRole } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   backfillZoomLink,
-  flagErpRecheckAfterTransfer,
+  changeBroadwaySectionAfterTransfer,
   handlePaymentCompleted,
   handleSlotBooked,
   notifyOpenSlotAvailable,
@@ -16,9 +16,8 @@ import {
   notifyTeacherSlotAssigned,
   removeEnrollmentFromGoogleSheet,
   syncEnrollmentToGoogleSheet,
-  syncSectionToErp,
 } from "@/lib/workflow";
-import { deactivateClassInErp, deactivateErpStudent } from "@/lib/erp";
+import { cancelBroadwayAdmission } from "@/lib/broadway";
 import { logAudit } from "@/lib/audit";
 import { config } from "@/lib/config";
 import { zonedTimeToUtcISO, toZonedInputValue } from "@/lib/utils";
@@ -421,30 +420,35 @@ export async function deleteApplication(formData: FormData) {
   const admin = createSupabaseAdminClient();
   const { data: app } = await admin
     .from("applications")
-    .select("id, parent_id, student_id, section_id, erp_student_id, admission_number, grade_applying")
+    .select("id, parent_id, student_id, section_id, broadway_student_id, admission_number, grade_applying")
     .eq("id", appId)
     .maybeSingle();
   if (!app) back("Application not found.", "error");
 
-  // Deactivate in the ERP before deleting locally — same reasoning as
-  // deleteSection: once this row (and its erp_student_id) is gone there's
-  // nothing left here to retry from, so a real failure blocks the delete
-  // rather than leaving a stale active student behind in the ERP. Skipped
-  // entirely if this applicant was never synced to the ERP in the first place.
-  let erpDeactivateAction: string | null = null;
-  if (app!.erp_student_id) {
-    const result = await deactivateErpStudent(app!.erp_student_id);
+  // Cancel in Broadway before deleting locally — same reasoning as before:
+  // once this row (and its broadway_student_id) is gone there's nothing left
+  // here to retry from. A real failure blocks the delete so it can be
+  // retried; a 409 (already joined — only the school can withdraw a joined
+  // student, directly in Broadway) does NOT block it, since retrying that
+  // call can never succeed — the delete proceeds and the admin is told to
+  // finish the withdrawal in Broadway separately.
+  let broadwayNote: string | null = null;
+  if (app!.broadway_student_id) {
+    const result = await cancelBroadwayAdmission(app!.id, "Application deleted by admin");
     if (!result.ok) {
-      redirect(
-        `/admin/applications/${appId}?error=` +
-          encodeURIComponent(`Could not deactivate in the ERP: ${result.error}. Try again.`),
-      );
+      if (result.alreadyJoined) {
+        broadwayNote = "This student has already joined Broadway — withdraw them there too, under Student records.";
+      } else {
+        redirect(
+          `/admin/applications/${appId}?error=` +
+            encodeURIComponent(`Could not cancel in Broadway: ${result.error}. Try again.`),
+        );
+      }
     }
-    erpDeactivateAction = result.action;
   }
 
   // Remove their row from Google Sheets too, if they were ever enrolled —
-  // best-effort only (never blocks the delete): unlike the ERP, nothing
+  // best-effort only (never blocks the delete): unlike Broadway, nothing
   // operationally depends on the sheet, it's just a reporting convenience.
   await removeEnrollmentFromGoogleSheet(app!.id, app!.admission_number, app!.section_id, app!.grade_applying);
 
@@ -480,9 +484,9 @@ export async function deleteApplication(formData: FormData) {
     action: "application.deleted",
     entity: "application",
     entityId: appId,
-    details: erpDeactivateAction ? { erp_deactivate_action: erpDeactivateAction } : undefined,
+    details: broadwayNote ? { broadway_note: broadwayNote } : undefined,
   });
-  back("Applicant deleted.");
+  back(broadwayNote ? `Applicant deleted. ${broadwayNote}` : "Applicant deleted.");
 }
 
 // Factory reset: wipe ALL applicant data (keeps staff, sections, config).
@@ -649,7 +653,7 @@ function back(msg?: string, type: "error" | "ok" = "ok") {
   redirect("/admin?" + (msg ? `${type}=${encodeURIComponent(msg)}` : ""));
 }
 
-function sectionsBack(msg?: string, type: "error" | "ok" | "duplicate" = "ok"): never {
+function sectionsBack(msg?: string, type: "error" | "ok" = "ok"): never {
   redirect("/admin/sections?" + (msg ? `${type}=${encodeURIComponent(msg)}` : ""));
 }
 
@@ -718,10 +722,23 @@ const UpdateSectionSchema = z.object({
   grade: z.string().trim().min(1),
   name: z.string().trim().min(1).max(4),
   batch: z.string().trim().max(60).optional().or(z.literal("")),
-  erp_class_name: z.string().trim().max(120).optional().or(z.literal("")),
+  broadway_class_id: z.string().trim().max(120).optional().or(z.literal("")),
   class_timing: z.string().trim().max(200).optional().or(z.literal("")),
   capacity: z.coerce.number().int().positive().max(200),
 });
+
+// Looks up the cached display name for a chosen Broadway class id, so
+// sections can show "Linked to Broadway <name>" without a join everywhere
+// that reads sections. Null id (not linking, or clearing the link) ->
+// null name, not an error.
+async function resolveBroadwayClassName(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  classId: string | null,
+): Promise<string | null> {
+  if (!classId) return null;
+  const { data } = await admin.from("broadway_classes").select("name").eq("id", classId).maybeSingle();
+  return data?.name ?? null;
+}
 
 export async function updateSection(formData: FormData) {
   const { profile } = await requireRole(["admin", "coo"]);
@@ -730,12 +747,12 @@ export async function updateSection(formData: FormData) {
     grade: formData.get("grade"),
     name: formData.get("name"),
     batch: formData.get("batch") ?? "",
-    erp_class_name: formData.get("erp_class_name") ?? "",
+    broadway_class_id: formData.get("broadway_class_id") ?? "",
     class_timing: formData.get("class_timing") ?? "",
     capacity: formData.get("capacity"),
   });
   if (!parsed.success) sectionsBack(parsed.error.issues[0].message, "error");
-  const { section_id, grade, name, batch, erp_class_name, class_timing, capacity } = parsed.data!;
+  const { section_id, grade, name, batch, broadway_class_id, class_timing, capacity } = parsed.data!;
 
   const admin = createSupabaseAdminClient();
   const { data: section } = await admin
@@ -748,13 +765,15 @@ export async function updateSection(formData: FormData) {
     sectionsBack("Capacity cannot be below current enrolment.", "error");
   }
 
+  const broadwayClassName = await resolveBroadwayClassName(admin, broadway_class_id || null);
   const { error } = await admin
     .from("sections")
     .update({
       grade: grade.toUpperCase(),
       name: name.toUpperCase(),
       batch: batch || null,
-      erp_class_name: erp_class_name || null,
+      broadway_class_id: broadway_class_id || null,
+      broadway_class_name: broadwayClassName,
       class_timing: class_timing || null,
       capacity,
     })
@@ -771,24 +790,20 @@ export async function updateSection(formData: FormData) {
       grade,
       name,
       batch: batch || null,
-      erp_class_name: erp_class_name || null,
+      broadway_class_id: broadway_class_id || null,
       class_timing: class_timing || null,
       capacity,
     },
   });
-  await syncSectionToErp({
-    id: section_id,
-    grade: grade.toUpperCase(),
-    name: name.toUpperCase(),
-    batch: batch || null,
-    capacity,
-  });
   revalidatePath("/admin/sections");
-  revalidatePath("/admin/erp");
+  revalidatePath("/admin/broadway");
   sectionsBack("Section updated.");
 }
 
-// Delete a section. Blocked while any student is enrolled in it.
+// Delete a section. Blocked while any student is enrolled in it. No Broadway
+// call — sections are only ever created/removed in Broadway itself now
+// (Admin → Classes there); deleting the tracker's local section just drops
+// its link to whatever Broadway class it pointed at.
 export async function deleteSection(formData: FormData) {
   const { profile } = await requireRole(["admin", "coo"]);
   const section_id = String(formData.get("section_id") ?? "");
@@ -812,17 +827,6 @@ export async function deleteSection(formData: FormData) {
     sectionsBack("Cannot delete: applications are still assigned to this section.", "error");
   }
 
-  // Deactivate in the ERP before deleting locally — once this row is gone
-  // there's nothing left here to retry from, so a real failure blocks the
-  // delete rather than leaving a stale active class behind in the ERP.
-  // "not_found" (never linked) and "unchanged" (already deactivated) both
-  // count as success per the ERP's own contract, so this never gets stuck
-  // on ERP state that's already correct.
-  const deactivateResult = await deactivateClassInErp(section_id);
-  if (!deactivateResult.ok) {
-    sectionsBack(`Could not deactivate in the ERP: ${deactivateResult.error}. Try again.`, "error");
-  }
-
   const { error } = await admin.from("sections").delete().eq("id", section_id);
   if (error) sectionsBack(error.message, "error");
 
@@ -832,7 +836,7 @@ export async function deleteSection(formData: FormData) {
     action: "admin.delete_section",
     entity: "section",
     entityId: section_id,
-    details: { grade: section!.grade, name: section!.name, erp_deactivate_action: deactivateResult.action },
+    details: { grade: section!.grade, name: section!.name },
   });
   revalidatePath("/admin/sections");
   sectionsBack("Section deleted.");
@@ -840,9 +844,15 @@ export async function deleteSection(formData: FormData) {
 
 // Move an already-enrolled student to a different division/batch within the
 // same grade (transfer_application_section enforces same-grade + capacity).
+// reason is forwarded to Broadway's POST /admissions/section — required on
+// Broadway's side once a student has actually joined (an "Active" transfer,
+// as opposed to just changing an "Incoming" student's planned section), so
+// it's collected here even though the tracker's own local transfer doesn't
+// need one itself.
 const TransferSectionSchema = z.object({
   application_id: z.string().uuid(),
   new_section_id: z.string().uuid(),
+  reason: z.string().trim().max(500).optional().or(z.literal("")),
 });
 
 export async function transferStudentSection(formData: FormData) {
@@ -850,9 +860,10 @@ export async function transferStudentSection(formData: FormData) {
   const parsed = TransferSectionSchema.safeParse({
     application_id: formData.get("application_id"),
     new_section_id: formData.get("new_section_id"),
+    reason: formData.get("reason") ?? "",
   });
   if (!parsed.success) sectionsBack("Invalid transfer request.", "error");
-  const { application_id, new_section_id } = parsed.data!;
+  const { application_id, new_section_id, reason } = parsed.data!;
 
   const admin = createSupabaseAdminClient();
   const { data: result, error } = await admin.rpc("transfer_application_section", {
@@ -868,7 +879,7 @@ export async function transferStudentSection(formData: FormData) {
     grade?: string;
     name?: string | null;
     batch?: string | null;
-    erp_class_name?: string | null;
+    broadway_class_id?: string | null;
   };
 
   if (r.status === "NOT_ENROLLED") sectionsBack("This student isn't enrolled in a section.", "error");
@@ -884,7 +895,11 @@ export async function transferStudentSection(formData: FormData) {
     entityId: application_id,
     details: { from_section_id: r.old_section_id, to_section_id: r.new_section_id },
   });
-  await flagErpRecheckAfterTransfer(application_id);
+  await changeBroadwaySectionAfterTransfer(
+    application_id,
+    new_section_id,
+    reason || "Section change requested by admin",
+  );
 
   // Move their Google Sheets row to the new class's tab — remove from the
   // old one, then append fresh (app.section_id is already the new section by
@@ -911,7 +926,7 @@ const SectionSchema = z.object({
   grade: z.string().trim().min(1),
   name: z.string().trim().min(1).max(4),
   batch: z.string().trim().max(60).optional().or(z.literal("")),
-  erp_class_name: z.string().trim().max(120).optional().or(z.literal("")),
+  broadway_class_id: z.string().trim().max(120).optional().or(z.literal("")),
   class_timing: z.string().trim().max(200).optional().or(z.literal("")),
   capacity: z.coerce.number().int().positive().max(200).default(30),
 });
@@ -922,21 +937,23 @@ export async function createSection(formData: FormData) {
     grade: formData.get("grade"),
     name: formData.get("name"),
     batch: formData.get("batch") ?? "",
-    erp_class_name: formData.get("erp_class_name") ?? "",
+    broadway_class_id: formData.get("broadway_class_id") ?? "",
     class_timing: formData.get("class_timing") ?? "",
     capacity: formData.get("capacity") ?? 30,
   });
   if (!parsed.success) sectionsBack("Invalid section", "error");
-  const { grade, name, batch, erp_class_name, class_timing, capacity } = parsed.data!;
+  const { grade, name, batch, broadway_class_id, class_timing, capacity } = parsed.data!;
 
   const admin = createSupabaseAdminClient();
+  const broadwayClassName = await resolveBroadwayClassName(admin, broadway_class_id || null);
   const { data: created, error } = await admin
     .from("sections")
     .insert({
       grade: grade.toUpperCase(),
       name: name.toUpperCase(),
       batch: batch || null,
-      erp_class_name: erp_class_name || null,
+      broadway_class_id: broadway_class_id || null,
+      broadway_class_name: broadwayClassName,
       class_timing: class_timing || null,
       capacity,
     })
@@ -954,37 +971,11 @@ export async function createSection(formData: FormData) {
       grade,
       name,
       batch: batch || null,
-      erp_class_name: erp_class_name || null,
+      broadway_class_id: broadway_class_id || null,
       class_timing: class_timing || null,
       capacity,
     },
   });
-  const syncStatus = await syncSectionToErp({
-    id: created!.id,
-    grade: grade.toUpperCase(),
-    name: name.toUpperCase(),
-    batch: batch || null,
-    capacity,
-  });
-
-  // A conflict means the ERP already has a class matching this exact
-  // grade/section/batch — don't let a duplicate persist here either.
-  if (syncStatus === "conflict") {
-    await admin.from("sections").delete().eq("id", created!.id);
-    await logAudit({
-      actorId: profile.id,
-      actorRole: profile.role,
-      action: "admin.create_section_blocked_duplicate",
-      entity: "section",
-      entityId: created!.id,
-      details: { grade, name, batch: batch || null },
-    });
-    revalidatePath("/admin/sections");
-    sectionsBack(
-      `A class named "${grade.toUpperCase()}-${name.toUpperCase()}${batch ? ` - ${batch}` : ""}" already exists in the ERP. Creation was blocked — resolve the naming conflict directly in the ERP, then try again.`,
-      "duplicate",
-    );
-  }
 
   revalidatePath("/admin");
   revalidatePath("/admin/sections");

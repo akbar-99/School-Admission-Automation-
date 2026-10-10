@@ -7,28 +7,37 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { SectionErpFields } from "@/components/admin/section-erp-fields";
-import { DuplicateBlockedAlert } from "@/components/admin/duplicate-blocked-alert";
+import { SectionBroadwayFields, type BroadwayClassOption } from "@/components/admin/section-broadway-fields";
 import { SectionStudentsToggle, type SectionStudentRow } from "@/components/admin/section-students-toggle";
 import type { AppStatus, Section } from "@/lib/types";
 
-const ERP_SYNC_LABEL: Record<Section["erp_sync_status"], { label: string; tone: "neutral" | "success" | "warning" | "danger" }> = {
-  pending: { label: "Not yet pushed to ERP", tone: "neutral" },
-  synced: { label: "Synced to ERP", tone: "success" },
-  conflict: { label: "ERP conflict — resolve in ERP", tone: "danger" },
-  failed: { label: "ERP push failed", tone: "warning" },
-};
+async function fetchBroadwayClassOptions(): Promise<BroadwayClassOption[]> {
+  const admin = createSupabaseAdminClient();
+  const { data } = await admin
+    .from("broadway_classes")
+    .select("id, name, curriculum, grade_label, this_year_seats_left, next_year_seats_left")
+    .order("grade", { ascending: true })
+    .order("name", { ascending: true });
+  return (data ?? []).map((c) => ({
+    id: c.id,
+    name: c.name,
+    curriculum: c.curriculum,
+    gradeLabel: c.grade_label,
+    thisYearSeatsLeft: c.this_year_seats_left,
+    nextYearSeatsLeft: c.next_year_seats_left,
+  }));
+}
 
 export default async function SectionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ ok?: string; error?: string; duplicate?: string }>;
+  searchParams: Promise<{ ok?: string; error?: string }>;
 }) {
-  const { ok, error, duplicate } = await searchParams;
+  const { ok, error } = await searchParams;
+  const broadwayClasses = await fetchBroadwayClassOptions();
 
   return (
     <div className="space-y-6">
-      {duplicate && <DuplicateBlockedAlert message={duplicate} />}
       <div>
         <h1 className="font-display text-3xl font-semibold tracking-tight">Class sections &amp; capacity</h1>
         <p className="text-muted-foreground">
@@ -39,6 +48,16 @@ export default async function SectionsPage({
       {ok && <Alert variant="success">{ok}</Alert>}
       {error && <Alert variant="error">{error}</Alert>}
 
+      {broadwayClasses.length === 0 && (
+        <Alert variant="info">
+          No Broadway classes cached yet — sync them under{" "}
+          <a href="/admin/broadway" className="underline">
+            Admin → Broadway
+          </a>{" "}
+          before linking a section.
+        </Alert>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Add a section</CardTitle>
@@ -46,8 +65,9 @@ export default async function SectionsPage({
         </CardHeader>
         <CardContent>
           <form action={createSection} className="flex flex-wrap items-end gap-4">
-            <SectionErpFields
+            <SectionBroadwayFields
               variant="create"
+              broadwayClasses={broadwayClasses}
               between={
                 <div className="space-y-1.5">
                   <Label htmlFor="capacity">Capacity</Label>
@@ -61,7 +81,7 @@ export default async function SectionsPage({
       </Card>
 
       <Suspense fallback={<SectionsListSkeleton />}>
-        <SectionsList />
+        <SectionsList broadwayClasses={broadwayClasses} />
       </Suspense>
     </div>
   );
@@ -82,7 +102,7 @@ function SectionsListSkeleton() {
   );
 }
 
-async function SectionsList() {
+async function SectionsList({ broadwayClasses }: { broadwayClasses: BroadwayClassOption[] }) {
   const admin = createSupabaseAdminClient();
   const { data } = await admin
     .from("sections")
@@ -164,17 +184,11 @@ async function SectionsList() {
                     </div>
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    <span>
-                      ERP class:{" "}
-                      {s.erp_class_name ? (
-                        <span className="font-medium text-foreground">{s.erp_class_name}</span>
-                      ) : (
-                        <span className="text-warning">not mapped</span>
-                      )}
-                    </span>
-                    <Badge tone={ERP_SYNC_LABEL[s.erp_sync_status].tone}>
-                      {ERP_SYNC_LABEL[s.erp_sync_status].label}
-                    </Badge>
+                    {s.broadway_class_id ? (
+                      <Badge tone="success">Linked to Broadway {s.broadway_class_name ?? s.broadway_class_id}</Badge>
+                    ) : (
+                      <Badge tone="neutral">Not linked</Badge>
+                    )}
                     {s.class_timing && (
                       <span>
                         Timing: <span className="font-medium text-foreground">{s.class_timing}</span>
@@ -192,14 +206,15 @@ async function SectionsList() {
                     {/* Edit grade / section / capacity */}
                     <form action={updateSection} className="flex flex-wrap items-end gap-2">
                       <input type="hidden" name="section_id" value={s.id} />
-                      <SectionErpFields
+                      <SectionBroadwayFields
                         variant="edit"
                         idPrefix={s.id}
                         initialGrade={s.grade}
                         initialName={s.name}
                         initialBatch={s.batch ?? ""}
-                        initialErpClassName={s.erp_class_name ?? ""}
+                        initialBroadwayClassId={s.broadway_class_id ?? ""}
                         initialClassTiming={s.class_timing ?? ""}
+                        broadwayClasses={broadwayClasses}
                         between={
                           <div className="space-y-1">
                             <Label htmlFor={`cap-${s.id}`} className="text-xs">Capacity</Label>

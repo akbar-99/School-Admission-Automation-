@@ -4,18 +4,6 @@ import { useState, type ReactNode } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-// Derives the ERP's own class_name pattern (confirmed against the live ERP:
-// "KG 1-MA - DAHLIA 30" for grade "KG 1", section "MA", batch "DAHLIA 30") so
-// the field can default itself as the admin types instead of requiring them
-// to retype what the other three fields already say.
-function computeErpClassName(grade: string, name: string, batch: string): string {
-  const g = grade.trim().toUpperCase();
-  const n = name.trim().toUpperCase();
-  const b = batch.trim();
-  if (!g || !n) return "";
-  return b ? `${g}-${n} - ${b}` : `${g}-${n}`;
-}
-
 // Grouped by grade band so the dropdown shows a heading over each school's
 // set of timings, rather than one flat list mixing all of them together.
 const TIMING_GROUPS: { label: string; options: string[] }[] = [
@@ -97,43 +85,61 @@ function ClassTimingPicker({
   );
 }
 
-export function SectionErpFields({
+export interface BroadwayClassOption {
+  id: string;
+  name: string;
+  curriculum: string;
+  gradeLabel: string;
+  thisYearSeatsLeft: number | null;
+  nextYearSeatsLeft: number | null;
+}
+
+function classOptionLabel(c: BroadwayClassOption): string {
+  const thisYr = c.thisYearSeatsLeft === null ? "∞" : c.thisYearSeatsLeft;
+  const nextYr = c.nextYearSeatsLeft === null ? "∞" : c.nextYearSeatsLeft;
+  return `${c.name} — ${c.curriculum} ${c.gradeLabel} (${thisYr} left this yr, ${nextYr} next yr)`;
+}
+
+export function SectionBroadwayFields({
   idPrefix,
   initialGrade = "",
   initialName = "",
   initialBatch = "",
-  initialErpClassName = "",
+  initialBroadwayClassId = "",
   initialClassTiming = "",
   variant = "create",
+  broadwayClasses,
   between,
 }: {
   idPrefix?: string;
   initialGrade?: string;
   initialName?: string;
   initialBatch?: string;
-  initialErpClassName?: string;
+  initialBroadwayClassId?: string;
   initialClassTiming?: string;
   variant?: "create" | "edit";
-  // Rendered between Batch and ERP class name, so callers can keep the
-  // Capacity field in its original on-screen position.
+  broadwayClasses: BroadwayClassOption[];
+  // Rendered between Batch and the Broadway class picker, so callers can
+  // keep the Capacity field in its original on-screen position.
   between?: ReactNode;
 }) {
-  const [grade, setGrade] = useState(initialGrade);
-  const [name, setName] = useState(initialName);
-  const [batch, setBatch] = useState(initialBatch);
-  const [erpClassName, setErpClassName] = useState(initialErpClassName);
-  // Once the admin has a real value here (typed it, or it was already saved),
-  // stop overwriting it — autofill is only a default for an empty field.
-  const [erpTouched, setErpTouched] = useState(Boolean(initialErpClassName.trim()));
-
-  function recompute(g: string, n: string, b: string) {
-    if (!erpTouched) setErpClassName(computeErpClassName(g, n, b));
-  }
-
   const id = (base: string) => (idPrefix ? `${base}-${idPrefix}` : base);
   const isEdit = variant === "edit";
   const labelClass = isEdit ? "text-xs" : undefined;
   const heightClass = isEdit ? "h-9 " : "";
+
+  // The currently-linked class might no longer be in the cached list (e.g.
+  // renamed/removed in Broadway since this section was linked, or the cache
+  // just hasn't synced yet) — still offer it as a selectable option so
+  // saving the form again without changing this field doesn't silently
+  // unlink it.
+  const options =
+    initialBroadwayClassId && !broadwayClasses.some((c) => c.id === initialBroadwayClassId)
+      ? [
+          { id: initialBroadwayClassId, name: `${initialBroadwayClassId} (not in cache)`, curriculum: "", gradeLabel: "", thisYearSeatsLeft: null, nextYearSeatsLeft: null },
+          ...broadwayClasses,
+        ]
+      : broadwayClasses;
 
   return (
     <>
@@ -145,11 +151,7 @@ export function SectionErpFields({
           placeholder="KG 1 / G1"
           className={heightClass + (isEdit ? "w-44" : "w-28")}
           required
-          value={grade}
-          onChange={(e) => {
-            setGrade(e.target.value);
-            recompute(e.target.value, name, batch);
-          }}
+          defaultValue={initialGrade}
         />
       </div>
       <div className={isEdit ? "space-y-1" : "space-y-1.5"}>
@@ -160,11 +162,7 @@ export function SectionErpFields({
           placeholder="C"
           className={heightClass + (isEdit ? "w-16" : "w-24")}
           required
-          value={name}
-          onChange={(e) => {
-            setName(e.target.value);
-            recompute(grade, e.target.value, batch);
-          }}
+          defaultValue={initialName}
         />
       </div>
       <div className={isEdit ? "space-y-1" : "space-y-1.5"}>
@@ -176,27 +174,25 @@ export function SectionErpFields({
           name="batch"
           placeholder="DAHLIA"
           className={heightClass + (isEdit ? "w-28" : "w-32")}
-          value={batch}
-          onChange={(e) => {
-            setBatch(e.target.value);
-            recompute(grade, name, e.target.value);
-          }}
+          defaultValue={initialBatch}
         />
       </div>
       {between}
       <div className={isEdit ? "space-y-1" : "space-y-1.5"}>
-        <Label htmlFor={id("erp_class_name")} className={labelClass}>ERP class name</Label>
-        <Input
-          id={id("erp_class_name")}
-          name="erp_class_name"
-          placeholder="STAGE 5 A"
-          className={heightClass + (isEdit ? "w-36" : "w-40")}
-          value={erpClassName}
-          onChange={(e) => {
-            setErpClassName(e.target.value);
-            setErpTouched(true);
-          }}
-        />
+        <Label htmlFor={id("broadway_class_id")} className={labelClass}>Broadway class</Label>
+        <select
+          id={id("broadway_class_id")}
+          name="broadway_class_id"
+          defaultValue={initialBroadwayClassId}
+          className={`${heightClass}w-full min-w-56 rounded-md border border-input bg-card px-3 text-sm shadow-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
+        >
+          <option value="">Not linked</option>
+          {options.map((c) => (
+            <option key={c.id} value={c.id}>
+              {classOptionLabel(c)}
+            </option>
+          ))}
+        </select>
       </div>
       <ClassTimingPicker
         id={id("class_timing")}

@@ -82,6 +82,11 @@ function StudentRow({
               </option>
             ))}
           </select>
+          <input
+            name="reason"
+            placeholder="Reason (for Broadway, if already joined)"
+            className="h-9 min-w-56 flex-1 rounded-md border border-input bg-card px-2 text-sm"
+          />
           <SubmitButton size="sm" pendingText="Moving…">
             Move
           </SubmitButton>

@@ -4,7 +4,7 @@ import { config } from "@/lib/config";
 
 // ---------------------------------------------------------------------------
 // Google Sheets export via a service account (machine-to-machine, no user
-// OAuth flow) — same pattern as lib/zoom.ts / lib/erp.ts: server-only,
+// OAuth flow) — same pattern as lib/zoom.ts / lib/broadway.ts: server-only,
 // config-gated, boundary functions never throw. One spreadsheet, one tab per
 // class, so each class teacher can be pointed at just their own tab.
 // ---------------------------------------------------------------------------
@@ -310,7 +310,7 @@ export async function appendEnrollmentRow(row: EnrollmentSheetRow, tabName: stri
 // deletes it — used when an applicant is deleted, or transferred to a
 // different class (delete from the old tab, then appendEnrollmentRow puts a
 // fresh row on the new one). A missing tab or a row that's already gone both
-// count as success, same idempotent-delete contract as deactivateErpStudent.
+// count as success, same idempotent contract as cancelBroadwayAdmission.
 // Never throws.
 export async function removeEnrollmentRow(admissionNumber: string, tabName: string): Promise<OkOrError> {
   if (!config.googleSheets.enabled) return { ok: false, error: "Google Sheets integration not configured" };

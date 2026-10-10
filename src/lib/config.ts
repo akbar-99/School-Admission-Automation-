@@ -68,19 +68,16 @@ export const config = {
     },
   },
 
-  // School ERP admission-sync webhooks (already built and deployed on the
-  // ERP side; this app only calls them). The endpoint URLs are fixed and
-  // live in src/lib/erp.ts, not here — only the shared secrets are env vars.
-  // classWebhookSecret is a genuinely separate credential from secret (not a
-  // typo/duplicate) — the ERP side issued two distinct values.
-  erp: {
-    secret: process.env.ERP_ADMISSIONS_SECRET ?? "",
-    classWebhookSecret: process.env.ERP_CLASS_WEBHOOK_SECRET ?? "",
+  // Broadway platform — the school's own system of record for classes,
+  // students and families (replaces the old ERP). One API, one key; see
+  // docs/broadway-integration.md. apiUrl is the integrations base path
+  // (e.g. "https://<broadway address>/api/integrations"), not a fixed
+  // constant, since it points at the school's own Broadway deployment.
+  broadway: {
+    apiUrl: process.env.BROADWAY_API_URL ?? "",
+    apiKey: process.env.BROADWAY_API_KEY ?? "",
     get enabled() {
-      return Boolean(this.secret);
-    },
-    get classWebhookEnabled() {
-      return Boolean(this.classWebhookSecret);
+      return Boolean(this.apiUrl && this.apiKey);
     },
   },
 

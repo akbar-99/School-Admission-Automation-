@@ -66,7 +66,7 @@ export default async function TeamMemberDetailPage({
   let query = admin
     .from("applications")
     .select(
-      "id, status, grade_applying, created_by, erp_status, created_at, lead_student_name, lead_source, lead_source_other, external_contact_id, lead_message, preferred_curriculum, category, withdrawn_at, withdrawal_type, withdrawal_reason, students(full_name, curriculum), parents(full_name), payments(amount, status)",
+      "id, status, grade_applying, created_by, broadway_status, created_at, lead_student_name, lead_source, lead_source_other, external_contact_id, lead_message, preferred_curriculum, category, withdrawn_at, withdrawal_type, withdrawal_reason, students(full_name, curriculum), parents(full_name), payments(amount, status)",
     )
     .eq("created_by", id)
     .order("created_at", { ascending: false })

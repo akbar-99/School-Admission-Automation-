@@ -8,7 +8,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { notifyLeadCreated, notifyLeadClaimed, removeEnrollmentFromGoogleSheet } from "@/lib/workflow";
 import { sendInstagramMessage } from "@/lib/instagram";
 import { sendFacebookMessage } from "@/lib/facebook";
-import { deactivateErpStudent } from "@/lib/erp";
+import { cancelBroadwayAdmission } from "@/lib/broadway";
 import { logAudit } from "@/lib/audit";
 import { LEAD_SOURCES, type Application, type Parent } from "@/lib/types";
 
@@ -390,7 +390,7 @@ const MarkWithdrawnSchema = z.object({
 // A family that paid and enrolled can still back out later — this records
 // that without touching `status`, so the funnel keeps reflecting the real
 // history (they DID complete payment/admission) instead of retroactively
-// erasing it. pre_admission vs post_admission is derived from erp_status
+// erasing it. pre_admission vs post_admission is derived from broadway_status
 // right now, not asked of the rep, so it can't be misclassified.
 export async function markWithdrawn(formData: FormData) {
   const { profile } = await requireRole(["marketing", "admin", "coo"]);
@@ -406,14 +406,14 @@ export async function markWithdrawn(formData: FormData) {
   const admin = createSupabaseAdminClient();
   const { data: app } = await admin
     .from("applications")
-    .select("id, created_by, erp_status, erp_student_id, section_id, admission_number, grade_applying")
+    .select("id, created_by, broadway_status, broadway_student_id, section_id, admission_number, grade_applying")
     .eq("id", input.application_id)
     .maybeSingle();
   if (!app || (profile.role === "marketing" && app.created_by !== profile.id)) {
     redirect("/marketing?error=" + encodeURIComponent("Enquiry not found."));
   }
 
-  const withdrawalType = app!.erp_status === "synced" ? "post_admission" : "pre_admission";
+  const withdrawalType = app!.broadway_status === "synced" ? "post_admission" : "pre_admission";
   const { error } = await admin
     .from("applications")
     .update({
@@ -428,7 +428,7 @@ export async function markWithdrawn(formData: FormData) {
   }
 
   // They no longer occupy the seat, aren't on the real class roster, and
-  // shouldn't stay active in the ERP — section_id itself is deliberately
+  // shouldn't stay active in Broadway — section_id itself is deliberately
   // left in place as a historical record (see the roster query in
   // src/app/admin/sections/page.tsx, which excludes withdrawn applications
   // rather than relying on section_id being cleared). All three are
@@ -441,15 +441,21 @@ export async function markWithdrawn(formData: FormData) {
     }
   }
   await removeEnrollmentFromGoogleSheet(app!.id, app!.admission_number, app!.section_id, app!.grade_applying);
-  if (app!.erp_student_id) {
-    const result = await deactivateErpStudent(app!.erp_student_id);
+  if (app!.broadway_student_id) {
+    const result = await cancelBroadwayAdmission(app!.id, input.reason);
     if (!result.ok) {
+      // A 409 (already joined) is expected, not a failure — only the
+      // school can withdraw a joined student, directly in Broadway under
+      // Student records. Logged distinctly so Admin → Broadway can
+      // surface it as "needs manual withdrawal" rather than "sync failed".
       await logAudit({
-        action: "erp.deactivate_failed",
+        action: result.alreadyJoined ? "broadway.withdraw_needed" : "broadway.cancel_failed",
         entity: "application",
         entityId: app!.id,
-        details: { error: result.error, context: "withdrawal" },
+        details: result.alreadyJoined ? { context: "withdrawal" } : { error: result.error, context: "withdrawal" },
       });
+    } else {
+      await admin.from("applications").update({ broadway_status: "cancelled" }).eq("id", app!.id);
     }
   }
 
@@ -498,11 +504,11 @@ export async function restoreWithdrawn(formData: FormData) {
     redirect("/marketing?error=" + encodeURIComponent("Could not restore this enquiry."));
   }
 
-  // Give the seat back — the Google Sheets row and any ERP deactivation from
-  // markWithdrawn are NOT automatically redone here (re-adding those safely
-  // needs the full resync flow, not a blind reverse); use the existing ERP
-  // retry / resync actions afterward if this application had already gotten
-  // that far.
+  // Give the seat back — the Google Sheets row and any Broadway
+  // cancellation from markWithdrawn are NOT automatically redone here
+  // (re-adding those safely needs the full resync flow, not a blind
+  // reverse); use the existing Broadway retry action afterward if this
+  // application had already gotten that far.
   if (app!.section_id) {
     const { data: sec } = await admin.from("sections").select("filled").eq("id", app!.section_id).maybeSingle();
     if (sec) await admin.from("sections").update({ filled: sec.filled + 1 }).eq("id", app!.section_id);

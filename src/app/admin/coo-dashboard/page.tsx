@@ -139,7 +139,7 @@ async function CooDashboardData({ from, to }: { from?: string; to?: string }) {
   let query = admin
     .from("applications")
     .select(
-      "id, status, grade_applying, created_by, erp_status, created_at, lead_student_name, lead_source, lead_source_other, external_contact_id, preferred_curriculum, withdrawn_at, withdrawal_type, withdrawal_reason, students(full_name, curriculum), parents(full_name), payments(amount, status)",
+      "id, status, grade_applying, created_by, broadway_status, created_at, lead_student_name, lead_source, lead_source_other, external_contact_id, preferred_curriculum, withdrawn_at, withdrawal_type, withdrawal_reason, students(full_name, curriculum), parents(full_name), payments(amount, status)",
     )
     .not("created_by", "is", null);
   if (from) query = query.gte("created_at", `${from}T00:00:00`);

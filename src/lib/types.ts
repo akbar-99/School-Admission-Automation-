@@ -130,10 +130,12 @@ export interface Application {
   section_id: string | null;
   admission_number: string | null;
   study_material_paid: boolean;
-  erp_status: "pending" | "no_mapping" | "send_failed" | "synced";
-  erp_class_name: string | null;
-  erp_student_id: string | null;
-  erp_warning: string | null;
+  broadway_status: "pending" | "no_mapping" | "send_failed" | "synced" | "cancelled";
+  broadway_student_id: string | null;
+  broadway_admission_no: string | null;
+  broadway_class_id: string | null;
+  broadway_class_name: string | null;
+  broadway_warning: string | null;
   google_sheet_synced: boolean;
   access_token: string;
   token_expires_at: string;
@@ -151,7 +153,7 @@ export interface Application {
 // A withdrawal is layered on top of whatever funnel status the application
 // already reached — it never overwrites `status`, since the family DID reach
 // that milestone (payment, admission, added to course) before backing out.
-// Pre- vs post-admission is derived from erp_status at the moment of
+// Pre- vs post-admission is derived from broadway_status at the moment of
 // withdrawal (added to the class roster yet, or not), not chosen by the rep,
 // so there's no room to misclassify it.
 export type WithdrawalType = "pre_admission" | "post_admission";
@@ -166,9 +168,8 @@ export interface Section {
   name: string;
   batch: string | null;
   class_timing: string | null;
-  erp_class_name: string | null;
-  erp_sync_status: "pending" | "synced" | "conflict" | "failed";
-  erp_synced_at: string | null;
+  broadway_class_id: string | null;
+  broadway_class_name: string | null;
   capacity: number;
   filled: number;
   created_at: string;
