@@ -8,7 +8,13 @@ import { logAudit } from "@/lib/audit";
 import { formatINR, formatInZone, formatDate } from "@/lib/utils";
 import { generateResultPdf } from "@/lib/result-pdf";
 import { ensureZoomForApplication } from "@/lib/zoom";
-import { sendBroadwayAdmission, changeBroadwaySection } from "@/lib/broadway";
+import {
+  sendBroadwayAdmission,
+  changeBroadwaySection,
+  pushBroadwaySection,
+  pushBroadwaySections,
+  isNextYearAdmission,
+} from "@/lib/broadway";
 import { appendEnrollmentRow, removeEnrollmentRow, sanitizeTabName } from "@/lib/google-sheets";
 import { needsAssessment } from "@/lib/assessment";
 import { fetchSchoolLogo } from "@/lib/school-logo";
@@ -1980,6 +1986,143 @@ export async function changeBroadwaySectionAfterTransfer(
 }
 
 // ---------------------------------------------------------------------------
+// Push this app's own section (class/division/batch) into Broadway whenever
+// one is created or edited — a discrete call per edit, not a poll, per
+// Broadway's own instruction. Called from createSection/updateSection after
+// their own DB write succeeds; never throws — a section is fully usable in
+// this app regardless of whether the Broadway push succeeds, matching the
+// same "never block the primary action" precedent as Zoom/Google Sheets.
+// Skipped (not failed) when there's no Broadway class name to send yet —
+// that's a normal, expected state for a brand new section before the admin
+// fills it in, not an error.
+// ---------------------------------------------------------------------------
+export type SyncSectionToBroadwayStatus = "synced" | "failed" | "skipped";
+
+export async function syncSectionToBroadway(section: {
+  id: string;
+  grade: string;
+  name: string;
+  batch: string | null;
+  capacity: number;
+  broadwayInputName: string | null;
+  classTiming: string | null;
+}): Promise<SyncSectionToBroadwayStatus> {
+  if (!config.broadway.enabled || !section.broadwayInputName) return "skipped";
+  const admin = createSupabaseAdminClient();
+
+  const result = await pushBroadwaySection({
+    id: section.id,
+    grade: section.grade,
+    section: section.name,
+    batch: section.batch,
+    capacity: section.capacity,
+    erpClassName: section.broadwayInputName,
+    classTiming: section.classTiming,
+  });
+
+  if (result.ok) {
+    await admin
+      .from("sections")
+      .update({
+        broadway_sync_status: "synced",
+        broadway_class_id: result.classId,
+        broadway_class_name: result.name,
+        broadway_warning: result.warnings.join(" ") || null,
+        broadway_error: null,
+      })
+      .eq("id", section.id);
+    await logAudit({
+      action: "broadway.section_synced",
+      entity: "section",
+      entityId: section.id,
+      details: { linked_existing: !result.created, warnings: result.warnings },
+    });
+    if (result.warnings.length > 0) {
+      await dispatch(
+        fanToStaff(await staffContacts(["admin"]), {
+          event: "BROADWAY_SECTION_WARNING",
+          subject: "Broadway section warning",
+          body: `${section.grade}-${section.name}${section.batch ? ` (${section.batch})` : ""} synced to Broadway, but returned a warning: ${result.warnings.join(" ")}`,
+        }),
+      );
+    }
+    return "synced";
+  }
+
+  console.error("[broadway] section push failed", result.error);
+  await admin
+    .from("sections")
+    .update({ broadway_sync_status: "failed", broadway_error: result.error })
+    .eq("id", section.id);
+  await logAudit({
+    action: "broadway.section_send_failed",
+    entity: "section",
+    entityId: section.id,
+    details: { error: result.error },
+  });
+  await dispatch(
+    fanToStaff(await staffContacts(["admin"]), {
+      event: "BROADWAY_SECTION_FAILED",
+      subject: "Broadway class sync failed",
+      body: `${section.grade}-${section.name}${section.batch ? ` (${section.batch})` : ""} couldn't sync to Broadway: ${result.error}. Editing the section again will retry.`,
+    }),
+  );
+  return "failed";
+}
+
+// ---------------------------------------------------------------------------
+// "Send all sections to Broadway" — the first-connection action (and a
+// handy way to re-sync everything at once later). Sends every section that
+// has a Broadway class name set in one batch call; sections without one are
+// skipped the same way a single push would skip them. Never throws.
+// ---------------------------------------------------------------------------
+export async function pushAllSectionsToBroadway(): Promise<{ sent: number; synced: number; failed: number } | null> {
+  if (!config.broadway.enabled) return null;
+  const admin = createSupabaseAdminClient();
+  const { data: sectionRows } = await admin
+    .from("sections")
+    .select("id, grade, name, batch, capacity, broadway_input_name, class_timing")
+    .not("broadway_input_name", "is", null);
+  const sections = sectionRows ?? [];
+  if (sections.length === 0) return { sent: 0, synced: 0, failed: 0 };
+
+  const payloads = sections.map((s) => ({
+    id: s.id as string,
+    grade: s.grade as string,
+    section: s.name as string,
+    batch: s.batch as string | null,
+    capacity: s.capacity as number,
+    erpClassName: s.broadway_input_name as string,
+    classTiming: s.class_timing as string | null,
+  }));
+
+  const results = await pushBroadwaySections(payloads);
+  if (!results) return null;
+
+  let synced = 0;
+  let failed = 0;
+  for (const r of results) {
+    if (r.ok) {
+      synced += 1;
+      await admin
+        .from("sections")
+        .update({
+          broadway_sync_status: "synced",
+          broadway_class_id: r.classId,
+          broadway_class_name: r.name,
+          broadway_warning: r.warnings.join(" ") || null,
+          broadway_error: null,
+        })
+        .eq("id", r.id);
+    } else {
+      failed += 1;
+      await admin.from("sections").update({ broadway_sync_status: "failed", broadway_error: r.error }).eq("id", r.id);
+    }
+  }
+  return { sent: sections.length, synced, failed };
+}
+
+// ---------------------------------------------------------------------------
 // Payment completed -> enrollment (N-7, N-8) or NEEDS_ADMIN (N-9)
 // ---------------------------------------------------------------------------
 export async function handlePaymentCompleted(
@@ -1992,6 +2135,7 @@ export async function handlePaymentCompleted(
   const { data: result, error } = await admin.rpc("enroll_application", {
     p_application: appId,
     p_year: config.admission.year,
+    p_use_next_year: await isNextYearAdmission(),
   });
   if (error) {
     console.error("[workflow] enroll_application failed", error);

@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { syncBroadwayClasses, syncBroadwayStudents } from "@/lib/broadway";
-import { retryBroadwaySync } from "@/lib/workflow";
+import { retryBroadwaySync, pushAllSectionsToBroadway } from "@/lib/workflow";
 import { logAudit } from "@/lib/audit";
 
 function back(msg?: string, type: "error" | "ok" = "ok"): never {
@@ -57,4 +57,28 @@ export async function retryBroadwayAdmission(formData: FormData) {
 
   revalidatePath("/admin/broadway");
   back("Retry attempted — check the status below.");
+}
+
+// Admin-only: first-connection tool (or a one-off re-sync) — sends every
+// local section with a Broadway class name set, in one batch call.
+export async function sendAllSectionsToBroadway() {
+  const { profile } = await requireRole(["admin", "coo"]);
+  const result = await pushAllSectionsToBroadway();
+  if (result === null) back("Sending sections to Broadway failed — check the connection and try again.", "error");
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "broadway.bulk_section_push",
+    entity: "system",
+    details: result,
+  });
+
+  revalidatePath("/admin/broadway");
+  revalidatePath("/admin/sections");
+  back(
+    result.sent === 0
+      ? "No sections have a Broadway class name set yet — add one under Admin → Sections first."
+      : `Sent ${result.sent} section(s): ${result.synced} synced, ${result.failed} failed.`,
+  );
 }

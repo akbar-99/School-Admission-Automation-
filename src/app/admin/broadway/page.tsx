@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { formatDateTime } from "@/lib/utils";
-import { syncBroadwayNow, retryBroadwayAdmission } from "./actions";
+import { syncBroadwayNow, retryBroadwayAdmission, sendAllSectionsToBroadway } from "./actions";
 import { SubmitButton } from "@/components/submit-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
@@ -33,7 +33,7 @@ interface NeedsAttentionRow {
 }
 
 const STATUS_LABEL: Record<string, string> = {
-  no_mapping: "Section has no Broadway class linked",
+  no_mapping: "Section isn't linked to a Broadway class yet",
   send_failed: "Broadway send failed",
 };
 
@@ -86,12 +86,12 @@ export default async function BroadwayIntegrationPage({
       ) : (
         <>
           <Alert variant="info">
-            Which Broadway class each section corresponds to is set per-section under{" "}
+            Sections are created and edited under{" "}
             <Link href="/admin/sections" className="underline">
               Admin → Sections
             </Link>{" "}
-            — this app&apos;s own sections already decide which division a student lands in, so
-            Broadway just needs to know which of its own classes that division maps to.
+            — each one saved is pushed to Broadway automatically, and the Broadway class name
+            field there is what decides the curriculum Broadway reads it as.
           </Alert>
 
           <Suspense fallback={<BroadwayBodySkeleton />}>
@@ -282,11 +282,27 @@ async function BroadwayBody() {
     <>
       <Card>
         <CardHeader>
+          <CardTitle>Send all sections to Broadway</CardTitle>
+          <CardDescription>
+            First-connection tool — sends every section under Admin → Sections that has a Broadway
+            class name set, in one batch. Safe to run again any time (resending the same section
+            just updates it).
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={sendAllSectionsToBroadway}>
+            <SubmitButton pendingText="Sending…">Send all sections to Broadway</SubmitButton>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Cached Broadway classes ({classes.length})</CardTitle>
           <CardDescription>
-            Reference only — not used for local seat allocation (this app&apos;s own sections decide
-            that). Useful for picking the right Broadway class while linking a section under Admin →
-            Sections. Click a class name to see which students this app has mapped to it.
+            Reference only — this app&apos;s own sections decide which division a student lands in;
+            each is pushed to Broadway when saved under Admin → Sections. Click a class name to see
+            which students this app has mapped to it.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

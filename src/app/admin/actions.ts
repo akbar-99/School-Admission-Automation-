@@ -16,8 +16,9 @@ import {
   notifyTeacherSlotAssigned,
   removeEnrollmentFromGoogleSheet,
   syncEnrollmentToGoogleSheet,
+  syncSectionToBroadway,
 } from "@/lib/workflow";
-import { cancelBroadwayAdmission } from "@/lib/broadway";
+import { cancelBroadwayAdmission, removeBroadwaySection } from "@/lib/broadway";
 import { logAudit } from "@/lib/audit";
 import { config } from "@/lib/config";
 import { zonedTimeToUtcISO, toZonedInputValue } from "@/lib/utils";
@@ -716,29 +717,16 @@ export async function adjustCapacity(formData: FormData) {
   sectionsBack("Capacity updated.");
 }
 
-// Edit an existing section's grade, name and capacity.
+// Edit an existing section's grade, name, capacity and Broadway class name.
 const UpdateSectionSchema = z.object({
   section_id: z.string().uuid(),
   grade: z.string().trim().min(1),
   name: z.string().trim().min(1).max(4),
   batch: z.string().trim().max(60).optional().or(z.literal("")),
-  broadway_class_id: z.string().trim().max(120).optional().or(z.literal("")),
+  broadway_input_name: z.string().trim().max(120).optional().or(z.literal("")),
   class_timing: z.string().trim().max(200).optional().or(z.literal("")),
   capacity: z.coerce.number().int().positive().max(200),
 });
-
-// Looks up the cached display name for a chosen Broadway class id, so
-// sections can show "Linked to Broadway <name>" without a join everywhere
-// that reads sections. Null id (not linking, or clearing the link) ->
-// null name, not an error.
-async function resolveBroadwayClassName(
-  admin: ReturnType<typeof createSupabaseAdminClient>,
-  classId: string | null,
-): Promise<string | null> {
-  if (!classId) return null;
-  const { data } = await admin.from("broadway_classes").select("name").eq("id", classId).maybeSingle();
-  return data?.name ?? null;
-}
 
 export async function updateSection(formData: FormData) {
   const { profile } = await requireRole(["admin", "coo"]);
@@ -747,12 +735,12 @@ export async function updateSection(formData: FormData) {
     grade: formData.get("grade"),
     name: formData.get("name"),
     batch: formData.get("batch") ?? "",
-    broadway_class_id: formData.get("broadway_class_id") ?? "",
+    broadway_input_name: formData.get("broadway_input_name") ?? "",
     class_timing: formData.get("class_timing") ?? "",
     capacity: formData.get("capacity"),
   });
   if (!parsed.success) sectionsBack(parsed.error.issues[0].message, "error");
-  const { section_id, grade, name, batch, broadway_class_id, class_timing, capacity } = parsed.data!;
+  const { section_id, grade, name, batch, broadway_input_name, class_timing, capacity } = parsed.data!;
 
   const admin = createSupabaseAdminClient();
   const { data: section } = await admin
@@ -765,15 +753,15 @@ export async function updateSection(formData: FormData) {
     sectionsBack("Capacity cannot be below current enrolment.", "error");
   }
 
-  const broadwayClassName = await resolveBroadwayClassName(admin, broadway_class_id || null);
+  const gradeUpper = grade.toUpperCase();
+  const nameUpper = name.toUpperCase();
   const { error } = await admin
     .from("sections")
     .update({
-      grade: grade.toUpperCase(),
-      name: name.toUpperCase(),
+      grade: gradeUpper,
+      name: nameUpper,
       batch: batch || null,
-      broadway_class_id: broadway_class_id || null,
-      broadway_class_name: broadwayClassName,
+      broadway_input_name: broadway_input_name || null,
       class_timing: class_timing || null,
       capacity,
     })
@@ -790,20 +778,29 @@ export async function updateSection(formData: FormData) {
       grade,
       name,
       batch: batch || null,
-      broadway_class_id: broadway_class_id || null,
+      broadway_input_name: broadway_input_name || null,
       class_timing: class_timing || null,
       capacity,
     },
+  });
+  await syncSectionToBroadway({
+    id: section_id,
+    grade: gradeUpper,
+    name: nameUpper,
+    batch: batch || null,
+    capacity,
+    broadwayInputName: broadway_input_name || null,
+    classTiming: class_timing || null,
   });
   revalidatePath("/admin/sections");
   revalidatePath("/admin/broadway");
   sectionsBack("Section updated.");
 }
 
-// Delete a section. Blocked while any student is enrolled in it. No Broadway
-// call — sections are only ever created/removed in Broadway itself now
-// (Admin → Classes there); deleting the tracker's local section just drops
-// its link to whatever Broadway class it pointed at.
+// Delete a section. Blocked locally while any student is enrolled in it, and
+// blocked by Broadway (409) if it's still in use there for a reason this
+// app can't see locally — students planned for next year, a timetable, or
+// past records. 404 (Broadway never had this section) proceeds normally.
 export async function deleteSection(formData: FormData) {
   const { profile } = await requireRole(["admin", "coo"]);
   const section_id = String(formData.get("section_id") ?? "");
@@ -825,6 +822,16 @@ export async function deleteSection(formData: FormData) {
     .eq("section_id", section_id);
   if ((count ?? 0) > 0) {
     sectionsBack("Cannot delete: applications are still assigned to this section.", "error");
+  }
+
+  const removeResult = await removeBroadwaySection(section_id);
+  if (!removeResult.ok) {
+    sectionsBack(
+      removeResult.inUse
+        ? `Broadway still needs this section: ${removeResult.reason}`
+        : `Could not remove from Broadway: ${removeResult.error}. Try again.`,
+      "error",
+    );
   }
 
   const { error } = await admin.from("sections").delete().eq("id", section_id);
@@ -926,7 +933,7 @@ const SectionSchema = z.object({
   grade: z.string().trim().min(1),
   name: z.string().trim().min(1).max(4),
   batch: z.string().trim().max(60).optional().or(z.literal("")),
-  broadway_class_id: z.string().trim().max(120).optional().or(z.literal("")),
+  broadway_input_name: z.string().trim().max(120).optional().or(z.literal("")),
   class_timing: z.string().trim().max(200).optional().or(z.literal("")),
   capacity: z.coerce.number().int().positive().max(200).default(30),
 });
@@ -937,23 +944,23 @@ export async function createSection(formData: FormData) {
     grade: formData.get("grade"),
     name: formData.get("name"),
     batch: formData.get("batch") ?? "",
-    broadway_class_id: formData.get("broadway_class_id") ?? "",
+    broadway_input_name: formData.get("broadway_input_name") ?? "",
     class_timing: formData.get("class_timing") ?? "",
     capacity: formData.get("capacity") ?? 30,
   });
   if (!parsed.success) sectionsBack("Invalid section", "error");
-  const { grade, name, batch, broadway_class_id, class_timing, capacity } = parsed.data!;
+  const { grade, name, batch, broadway_input_name, class_timing, capacity } = parsed.data!;
 
   const admin = createSupabaseAdminClient();
-  const broadwayClassName = await resolveBroadwayClassName(admin, broadway_class_id || null);
+  const gradeUpper = grade.toUpperCase();
+  const nameUpper = name.toUpperCase();
   const { data: created, error } = await admin
     .from("sections")
     .insert({
-      grade: grade.toUpperCase(),
-      name: name.toUpperCase(),
+      grade: gradeUpper,
+      name: nameUpper,
       batch: batch || null,
-      broadway_class_id: broadway_class_id || null,
-      broadway_class_name: broadwayClassName,
+      broadway_input_name: broadway_input_name || null,
       class_timing: class_timing || null,
       capacity,
     })
@@ -971,13 +978,59 @@ export async function createSection(formData: FormData) {
       grade,
       name,
       batch: batch || null,
-      broadway_class_id: broadway_class_id || null,
+      broadway_input_name: broadway_input_name || null,
       class_timing: class_timing || null,
       capacity,
     },
+  });
+  await syncSectionToBroadway({
+    id: created!.id,
+    grade: gradeUpper,
+    name: nameUpper,
+    batch: batch || null,
+    capacity,
+    broadwayInputName: broadway_input_name || null,
+    classTiming: class_timing || null,
   });
 
   revalidatePath("/admin");
   revalidatePath("/admin/sections");
   sectionsBack("Section created.");
+}
+
+// Retry a failed Broadway push without re-submitting the whole edit form —
+// resending the same section id is always safe (it just updates the same
+// Broadway class again).
+export async function retrySectionBroadwaySync(formData: FormData) {
+  const { profile } = await requireRole(["admin", "coo"]);
+  const section_id = String(formData.get("section_id") ?? "");
+  if (!section_id) sectionsBack("Missing section.", "error");
+
+  const admin = createSupabaseAdminClient();
+  const { data: section } = await admin
+    .from("sections")
+    .select("id, grade, name, batch, capacity, broadway_input_name, class_timing")
+    .eq("id", section_id)
+    .maybeSingle();
+  if (!section) sectionsBack("Section not found", "error");
+
+  await syncSectionToBroadway({
+    id: section!.id,
+    grade: section!.grade,
+    name: section!.name,
+    batch: section!.batch,
+    capacity: section!.capacity,
+    broadwayInputName: section!.broadway_input_name,
+    classTiming: section!.class_timing,
+  });
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "admin.retry_section_broadway",
+    entity: "section",
+    entityId: section_id,
+  });
+  revalidatePath("/admin/sections");
+  sectionsBack("Retry attempted — check the status below.");
 }

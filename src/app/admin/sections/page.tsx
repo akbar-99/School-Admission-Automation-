@@ -1,32 +1,19 @@
 import { Suspense } from "react";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { adjustCapacity, createSection, updateSection, deleteSection } from "../actions";
+import { isNextYearAdmission } from "@/lib/broadway";
+import { adjustCapacity, createSection, updateSection, deleteSection, retrySectionBroadwaySync } from "../actions";
 import { SubmitButton } from "@/components/submit-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { SectionBroadwayFields, type BroadwayClassOption } from "@/components/admin/section-broadway-fields";
+import { SectionBroadwayFields } from "@/components/admin/section-broadway-fields";
 import { SectionStudentsToggle, type SectionStudentRow } from "@/components/admin/section-students-toggle";
 import type { AppStatus, Section } from "@/lib/types";
 
-async function fetchBroadwayClassOptions(): Promise<BroadwayClassOption[]> {
-  const admin = createSupabaseAdminClient();
-  const { data } = await admin
-    .from("broadway_classes")
-    .select("id, name, curriculum, grade_label, this_year_seats_left, next_year_seats_left")
-    .order("grade", { ascending: true })
-    .order("name", { ascending: true });
-  return (data ?? []).map((c) => ({
-    id: c.id,
-    name: c.name,
-    curriculum: c.curriculum,
-    gradeLabel: c.grade_label,
-    thisYearSeatsLeft: c.this_year_seats_left,
-    nextYearSeatsLeft: c.next_year_seats_left,
-  }));
-}
+const BROADWAY_HINT =
+  "Broadway class name: start with STD (CBSE) or STAGE (Cambridge); for KG include CBSE or Cambridge.";
 
 export default async function SectionsPage({
   searchParams,
@@ -34,40 +21,29 @@ export default async function SectionsPage({
   searchParams: Promise<{ ok?: string; error?: string }>;
 }) {
   const { ok, error } = await searchParams;
-  const broadwayClasses = await fetchBroadwayClassOptions();
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="font-display text-3xl font-semibold tracking-tight">Class sections &amp; capacity</h1>
         <p className="text-muted-foreground">
-          Seats fill A → B → C automatically. Add, edit or remove sections here.
+          Seats fill A → B → C automatically. Add, edit or remove sections here — each one saved is
+          sent to Broadway.
         </p>
       </div>
 
       {ok && <Alert variant="success">{ok}</Alert>}
       {error && <Alert variant="error">{error}</Alert>}
 
-      {broadwayClasses.length === 0 && (
-        <Alert variant="info">
-          No Broadway classes cached yet — sync them under{" "}
-          <a href="/admin/broadway" className="underline">
-            Admin → Broadway
-          </a>{" "}
-          before linking a section.
-        </Alert>
-      )}
-
       <Card>
         <CardHeader>
           <CardTitle>Add a section</CardTitle>
           <CardDescription>Create a new division for a grade.</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-1.5">
           <form action={createSection} className="flex flex-wrap items-end gap-4">
             <SectionBroadwayFields
               variant="create"
-              broadwayClasses={broadwayClasses}
               between={
                 <div className="space-y-1.5">
                   <Label htmlFor="capacity">Capacity</Label>
@@ -77,11 +53,12 @@ export default async function SectionsPage({
             />
             <SubmitButton pendingText="Creating…">Add section</SubmitButton>
           </form>
+          <p className="text-xs text-muted-foreground">{BROADWAY_HINT}</p>
         </CardContent>
       </Card>
 
       <Suspense fallback={<SectionsListSkeleton />}>
-        <SectionsList broadwayClasses={broadwayClasses} />
+        <SectionsList />
       </Suspense>
     </div>
   );
@@ -102,14 +79,37 @@ function SectionsListSkeleton() {
   );
 }
 
-async function SectionsList({ broadwayClasses }: { broadwayClasses: BroadwayClassOption[] }) {
+interface BroadwayCountsRow {
+  id: string;
+  this_year_students: number;
+  next_year_students: number;
+}
+
+async function SectionsList() {
   const admin = createSupabaseAdminClient();
-  const { data } = await admin
-    .from("sections")
-    .select("*")
-    .order("grade", { ascending: true })
-    .order("name", { ascending: true });
+  const [{ data }, useNextYear] = await Promise.all([
+    admin.from("sections").select("*").order("grade", { ascending: true }).order("name", { ascending: true }),
+    isNextYearAdmission(),
+  ]);
   const sections = (data ?? []) as Section[];
+
+  // Broadway's own student counts for every linked section — a section is
+  // treated as fuller than this app's own `filled` counter alone would
+  // show whenever Broadway's number (this year's or next year's, whichever
+  // admission cycle is running) is the bigger of the two. Broadway's count
+  // is the superset: it also includes students added directly in Broadway
+  // and, for next year, continuing/joining students this app has no other
+  // way to know about.
+  const classIds = sections.map((s) => s.broadway_class_id).filter((id): id is string => Boolean(id));
+  const { data: countsData } = classIds.length
+    ? await admin.from("broadway_classes").select("id, this_year_students, next_year_students").in("id", classIds)
+    : { data: [] };
+  const countsByClassId = new Map(
+    ((countsData ?? []) as BroadwayCountsRow[]).map((c) => [
+      c.id,
+      useNextYear ? c.next_year_students : c.this_year_students,
+    ]),
+  );
 
   const byGrade = sections.reduce<Record<string, Section[]>>((acc, s) => {
     (acc[s.grade] ??= []).push(s);
@@ -157,8 +157,10 @@ async function SectionsList({ broadwayClasses }: { broadwayClasses: BroadwayClas
           </CardHeader>
           <CardContent className="space-y-3">
             {list.map((s) => {
-              const pct = Math.min(100, Math.round((s.filled / s.capacity) * 100));
-              const full = s.filled >= s.capacity;
+              const broadwayCount = s.broadway_class_id ? countsByClassId.get(s.broadway_class_id) : undefined;
+              const effectiveFilled = Math.max(s.filled, broadwayCount ?? 0);
+              const pct = Math.min(100, Math.round((effectiveFilled / s.capacity) * 100));
+              const full = effectiveFilled >= s.capacity;
               return (
                 <div key={s.id} className="rounded-md border border-border p-3">
                   <div className="flex items-center justify-between">
@@ -180,14 +182,32 @@ async function SectionsList({ broadwayClasses }: { broadwayClasses: BroadwayClas
                       }))}
                     />
                     <div className="text-sm text-muted-foreground">
-                      {s.filled} / {s.capacity} seats {full && "· full"}
+                      {effectiveFilled} / {s.capacity} seats {full && "· full"}
+                      {broadwayCount !== undefined && broadwayCount > s.filled && (
+                        <span className="ml-1">(Broadway: {broadwayCount})</span>
+                      )}
                     </div>
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    {s.broadway_class_id ? (
-                      <Badge tone="success">Linked to Broadway {s.broadway_class_name ?? s.broadway_class_id}</Badge>
+                    {s.broadway_sync_status === "synced" ? (
+                      <Badge tone="success">In Broadway: {s.broadway_class_name ?? s.broadway_input_name}</Badge>
+                    ) : s.broadway_sync_status === "failed" ? (
+                      <>
+                        <Badge tone="danger">Not in Broadway: {s.broadway_error}</Badge>
+                        <form action={retrySectionBroadwaySync} className="inline-flex">
+                          <input type="hidden" name="section_id" value={s.id} />
+                          <SubmitButton size="sm" variant="ghost" pendingText="Retrying…">
+                            Retry
+                          </SubmitButton>
+                        </form>
+                      </>
+                    ) : s.broadway_input_name ? (
+                      <Badge tone="neutral">Not sent to Broadway yet</Badge>
                     ) : (
-                      <Badge tone="neutral">Not linked</Badge>
+                      <Badge tone="neutral">No Broadway class name set</Badge>
+                    )}
+                    {s.broadway_warning && (
+                      <span className="text-warning">⚠ {s.broadway_warning}</span>
                     )}
                     {s.class_timing && (
                       <span>
@@ -202,61 +222,63 @@ async function SectionsList({ broadwayClasses }: { broadwayClasses: BroadwayClas
                     />
                   </div>
 
-                  <div className="mt-3 flex flex-wrap items-end gap-3">
-                    {/* Edit grade / section / capacity */}
-                    <form action={updateSection} className="flex flex-wrap items-end gap-2">
-                      <input type="hidden" name="section_id" value={s.id} />
-                      <SectionBroadwayFields
-                        variant="edit"
-                        idPrefix={s.id}
-                        initialGrade={s.grade}
-                        initialName={s.name}
-                        initialBatch={s.batch ?? ""}
-                        initialBroadwayClassId={s.broadway_class_id ?? ""}
-                        initialClassTiming={s.class_timing ?? ""}
-                        broadwayClasses={broadwayClasses}
-                        between={
-                          <div className="space-y-1">
-                            <Label htmlFor={`cap-${s.id}`} className="text-xs">Capacity</Label>
-                            <Input
-                              id={`cap-${s.id}`}
-                              name="capacity"
-                              type="number"
-                              min={s.filled}
-                              defaultValue={s.capacity}
-                              className="h-9 w-24"
-                              required
-                            />
-                          </div>
-                        }
-                      />
-                      <SubmitButton size="sm" variant="outline" pendingText="Saving…">
-                        Save
-                      </SubmitButton>
-                    </form>
-
-                    {/* Quick +5 seats */}
-                    <form action={adjustCapacity}>
-                      <input type="hidden" name="section_id" value={s.id} />
-                      <input type="hidden" name="delta" value="5" />
-                      <SubmitButton size="sm" variant="outline" pendingText="Adding…">
-                        +5 seats
-                      </SubmitButton>
-                    </form>
-
-                    {/* Delete (only when empty) */}
-                    {s.filled === 0 ? (
-                      <form action={deleteSection}>
+                  <div className="mt-3 space-y-1.5">
+                    <div className="flex flex-wrap items-end gap-3">
+                      {/* Edit grade / section / capacity */}
+                      <form action={updateSection} className="flex flex-wrap items-end gap-2">
                         <input type="hidden" name="section_id" value={s.id} />
-                        <SubmitButton size="sm" variant="destructive" pendingText="Deleting…">
-                          Delete
+                        <SectionBroadwayFields
+                          variant="edit"
+                          idPrefix={s.id}
+                          initialGrade={s.grade}
+                          initialName={s.name}
+                          initialBatch={s.batch ?? ""}
+                          initialBroadwayInputName={s.broadway_input_name ?? ""}
+                          initialClassTiming={s.class_timing ?? ""}
+                          between={
+                            <div className="space-y-1">
+                              <Label htmlFor={`cap-${s.id}`} className="text-xs">Capacity</Label>
+                              <Input
+                                id={`cap-${s.id}`}
+                                name="capacity"
+                                type="number"
+                                min={s.filled}
+                                defaultValue={s.capacity}
+                                className="h-9 w-24"
+                                required
+                              />
+                            </div>
+                          }
+                        />
+                        <SubmitButton size="sm" variant="outline" pendingText="Saving…">
+                          Save
                         </SubmitButton>
                       </form>
-                    ) : (
-                      <span className="pb-1.5 text-xs text-muted-foreground">
-                        Empty before deleting
-                      </span>
-                    )}
+
+                      {/* Quick +5 seats */}
+                      <form action={adjustCapacity}>
+                        <input type="hidden" name="section_id" value={s.id} />
+                        <input type="hidden" name="delta" value="5" />
+                        <SubmitButton size="sm" variant="outline" pendingText="Adding…">
+                          +5 seats
+                        </SubmitButton>
+                      </form>
+
+                      {/* Delete (only when empty) */}
+                      {s.filled === 0 ? (
+                        <form action={deleteSection}>
+                          <input type="hidden" name="section_id" value={s.id} />
+                          <SubmitButton size="sm" variant="destructive" pendingText="Deleting…">
+                            Delete
+                          </SubmitButton>
+                        </form>
+                      ) : (
+                        <span className="pb-1.5 text-xs text-muted-foreground">
+                          Empty before deleting
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">{BROADWAY_HINT}</p>
                   </div>
                 </div>
               );

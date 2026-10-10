@@ -85,61 +85,31 @@ function ClassTimingPicker({
   );
 }
 
-export interface BroadwayClassOption {
-  id: string;
-  name: string;
-  curriculum: string;
-  gradeLabel: string;
-  thisYearSeatsLeft: number | null;
-  nextYearSeatsLeft: number | null;
-}
-
-function classOptionLabel(c: BroadwayClassOption): string {
-  const thisYr = c.thisYearSeatsLeft === null ? "∞" : c.thisYearSeatsLeft;
-  const nextYr = c.nextYearSeatsLeft === null ? "∞" : c.nextYearSeatsLeft;
-  return `${c.name} — ${c.curriculum} ${c.gradeLabel} (${thisYr} left this yr, ${nextYr} next yr)`;
-}
-
 export function SectionBroadwayFields({
   idPrefix,
   initialGrade = "",
   initialName = "",
   initialBatch = "",
-  initialBroadwayClassId = "",
+  initialBroadwayInputName = "",
   initialClassTiming = "",
   variant = "create",
-  broadwayClasses,
   between,
 }: {
   idPrefix?: string;
   initialGrade?: string;
   initialName?: string;
   initialBatch?: string;
-  initialBroadwayClassId?: string;
+  initialBroadwayInputName?: string;
   initialClassTiming?: string;
   variant?: "create" | "edit";
-  broadwayClasses: BroadwayClassOption[];
-  // Rendered between Batch and the Broadway class picker, so callers can
-  // keep the Capacity field in its original on-screen position.
+  // Rendered between Batch and the Broadway class name, so callers can keep
+  // the Capacity field in its original on-screen position.
   between?: ReactNode;
 }) {
   const id = (base: string) => (idPrefix ? `${base}-${idPrefix}` : base);
   const isEdit = variant === "edit";
   const labelClass = isEdit ? "text-xs" : undefined;
   const heightClass = isEdit ? "h-9 " : "";
-
-  // The currently-linked class might no longer be in the cached list (e.g.
-  // renamed/removed in Broadway since this section was linked, or the cache
-  // just hasn't synced yet) — still offer it as a selectable option so
-  // saving the form again without changing this field doesn't silently
-  // unlink it.
-  const options =
-    initialBroadwayClassId && !broadwayClasses.some((c) => c.id === initialBroadwayClassId)
-      ? [
-          { id: initialBroadwayClassId, name: `${initialBroadwayClassId} (not in cache)`, curriculum: "", gradeLabel: "", thisYearSeatsLeft: null, nextYearSeatsLeft: null },
-          ...broadwayClasses,
-        ]
-      : broadwayClasses;
 
   return (
     <>
@@ -179,20 +149,14 @@ export function SectionBroadwayFields({
       </div>
       {between}
       <div className={isEdit ? "space-y-1" : "space-y-1.5"}>
-        <Label htmlFor={id("broadway_class_id")} className={labelClass}>Broadway class</Label>
-        <select
-          id={id("broadway_class_id")}
-          name="broadway_class_id"
-          defaultValue={initialBroadwayClassId}
-          className={`${heightClass}w-full min-w-56 rounded-md border border-input bg-card px-3 text-sm shadow-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
-        >
-          <option value="">Not linked</option>
-          {options.map((c) => (
-            <option key={c.id} value={c.id}>
-              {classOptionLabel(c)}
-            </option>
-          ))}
-        </select>
+        <Label htmlFor={id("broadway_input_name")} className={labelClass}>Broadway class name</Label>
+        <Input
+          id={id("broadway_input_name")}
+          name="broadway_input_name"
+          placeholder="CBSE KG 1-A - ORCHID"
+          className={heightClass + (isEdit ? "w-44" : "w-56")}
+          defaultValue={initialBroadwayInputName}
+        />
       </div>
       <ClassTimingPicker
         id={id("class_timing")}

@@ -1,6 +1,6 @@
 # Admission tracker ↔ Broadway platform
 
-The admission tracker (broadwayadmissiontracker.in) runs admissions. The Broadway platform is the school's system: it owns the classes (sections), the students and the families. The old ERP (Supabase project `lxnwnkgyjywoolnqsrjy`) is no longer used. The tracker now talks to Broadway directly.
+The admission tracker (broadwayadmissiontracker.in) runs admissions and makes the sections (Admin → Sections). The Broadway platform is the school's system for the students, families, timetables and records. The old ERP (Supabase project `lxnwnkgyjywoolnqsrjy`) is no longer used. The tracker now talks to Broadway directly, and every section it saves is sent to Broadway.
 
 ## The rule for next year's admissions
 
@@ -38,8 +38,62 @@ A student admitted for the **current** year is enrolled at once.
   - `500` for anything else.
 - Academic years are written `2027-28`; `2027-2028` and `2027` are read too. The year starts on 1 April.
 - Curriculum is `CBSE` or `Cambridge`.
-- Grade may be `KG` (or `LKG`/`UKG`), `1`–`8`, `STD 1`, `Stage 1`, `Grade 1` or a Roman numeral.
+- Grade may be:
+  - `KG 1` (or `KG1`, `LKG`) or `KG 2` (or `KG2`, `UKG`). The school has two KG years, so a bare `KG` is refused;
+  - `1`–`8`, `G1`, `STD 1`, `Stage 1`, `Grade 1`, or a Roman numeral.
+- KG 1 moves up to KG 2, and KG 2 to STD 1 / Stage 1.
 - Dates are `YYYY-MM-DD` or `DD/MM/YYYY`.
+
+## `POST /classes`: send a section when it is saved
+
+Send one section, or `{ "classes": [ … ] }` with up to 200. Send them all once, when connecting.
+
+```json
+{ "id": "sec-orchid", "grade": "KG 1", "section": "A", "batch": "ORCHID", "capacity": 8, "erpClassName": "CBSE KG 1-A - ORCHID", "classTiming": "Monday to Friday" }
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `id` | yes | the tracker's own section id. Sending the same id again changes that section |
+| `grade` | yes | `KG 1`, `KG 2`, `G1`…`G8` |
+| `section` | for grades 1–8 | the division (`A`, `B`…). Optional for KG |
+| `batch` | for KG | the KG batch name (`ORCHID`) |
+| `erpClassName` | yes | gives the **curriculum**: `STD …` is CBSE and `STAGE …` is Cambridge. A KG name must say `CBSE` or `Cambridge`, such as `CBSE KG 1-A - ORCHID` |
+| `curriculum` | no | `CBSE` or `Cambridge`; when sent, it is used instead of the name |
+| `capacity` | no | seats. Blank or `null` means no limit |
+| `classTiming` | no | the timing as the tracker shows it (`Monday to Friday`, `Monday - Friday, 9:30 AM - 1:55 PM IST`) or a timing id from `GET /classes`. `No timing set` or blank clears it |
+
+The answer has one result for each section sent:
+
+```json
+{ "results": [{ "id": "sec-orchid", "ok": true, "classId": "c-cb-KG1-orchid-a", "name": "KG 1 A · ORCHID", "curriculum": "CBSE", "grade": "KG1", "created": true, "warnings": [] }] }
+```
+
+- `classId` is the section's id in Broadway. Keep it, and send it with admissions.
+- `created: false` means an existing section was changed or linked. A section Broadway already had under the same curriculum, grade, division and batch is linked to the tracker's id, not added twice.
+- A failure is `{ "ok": false, "code": 400, "error": "…" }`. Show the error next to the section; this is where the old "Not yet pushed" badge went. Common errors:
+  - a KG name without `CBSE` or `Cambridge`;
+  - a grade that can't be read;
+  - the same section twice.
+- `warnings`:
+  - a timing Broadway doesn't have, or one that is for other grades, so the timing was not set;
+  - more students than seats.
+- Once a section has students, a timetable or planned new students, its grade and curriculum can't change (`409`). Add a new section instead.
+- In Broadway, a section from the tracker is changed or removed only in the tracker. Its coordinator and class teacher are still chosen in Broadway.
+
+## `POST /classes/remove`: a section was deleted in the tracker
+
+```json
+{ "id": "sec-orchid" }
+```
+
+- The section is removed from Broadway only while nothing uses it. It returns `409` with the reason when:
+  - it has students;
+  - new students are planned for it next year;
+  - it has a timetable or past records;
+  - it is its grade's last section.
+- An unknown id returns `404`.
+- Delete a section in the tracker only after this call succeeds, or keep the tracker's "Empty before deleting" rule.
 
 ## `GET /classes`: sections, seats and next year's numbers
 
@@ -63,6 +117,7 @@ Use this to offer only sections that have room. It replaces the capacity sync.
       "timingId": null,
       "timing": null,
       "seats": 25,
+      "trackerId": "sec-std1a",
       "thisYear": { "students": 10, "seatsLeft": 15 },
       "nextYear": { "continuing": 10, "joining": 0, "students": 10, "seatsLeft": 15 }
     }
@@ -80,7 +135,7 @@ Use this to offer only sections that have room. It replaces the capacity sync.
 - `nextYear.seatsLeft` is `seats − students`, never below 0. For a next-year application, offer the sections where it is above 0 (or `null`). For a current-year application, use `thisYear.seatsLeft`.
 - `notPlaced` counts incoming students who have no section yet. They will take seats in their grade too.
 
-Sections are created and changed only in Broadway (**Admin → Classes**). Keep each section's `id`, and send it as `classId` with admissions.
+`trackerId` is the tracker's section id for the sections it sent, and `null` for sections made only in Broadway.
 
 ## `GET /students`: find a student or an admission
 
@@ -131,7 +186,7 @@ Send one admission, or `{ "admissions": [ … ] }` with up to 200.
 | `academicYear` | yes | next year (the student becomes incoming) or the current year (enrolled at once) |
 | `studentName`, `curriculum`, `grade` | yes | |
 | `parentName`, `parentEmail` | yes | the parent email becomes the parent's sign-in. An existing family with that email gets the child added |
-| `classId` | no | the Broadway section, from `GET /classes`. This is preferred |
+| `classId` | no | the Broadway section: the `classId` returned when the section was sent, or from `GET /classes`. This is preferred |
 | `section`, `classTiming` | no | instead of `classId`: the division or KG batch name. Add the timing label when two sections share a name |
 | `admissionNo` | no | blank means Broadway gives the next number |
 | `dob`, `gender`, `parentPhone`, `country`, `enrolledOn` | no | |
@@ -153,7 +208,7 @@ The answer has one result for each admission sent, in the same order:
       "className": "STD 1A",
       "warnings": []
     },
-    { "id": "APP-2027-0160", "ok": false, "code": 400, "error": "Grade \"X\" should be KG or 1 to 8" }
+    { "id": "APP-2027-0160", "ok": false, "code": 400, "error": "Grade \"X\" should be KG 1, KG 2 or 1 to 8" }
   ]
 }
 ```
@@ -193,7 +248,7 @@ The tracker can change or cancel only students it sent itself. Any other student
 |---|---|
 | Capacity sync (cron `/api/cron/erp-capacity-sync` → `erp_classes`) | The same cron calls `GET /classes` and caches the result |
 | Student roster sync (`erp_students`) | The same cron pages through `GET /students?limit=500&offset=…` |
-| Section push (`syncClassToErp`) | **Gone.** Sections are made in Broadway. The tracker's sections link to a Broadway `classId` instead of `erp_class_name` |
+| Section push (`syncClassToErp`) | `POST /classes` when a section is saved. Store the returned `classId` on the section |
 | Admission push (`syncEnrollmentToErp`) | `POST /admissions` with `classId`. A missing link, or a "no section" warning, still raises the `no_mapping` alert |
-| Deactivation | Deleting a section in the tracker: **no call**. Withdrawing an application: `POST /admissions/cancel` (`409` once joined) |
+| Deactivation | Deleting a section: `POST /classes/remove` (`409` while it is used). Withdrawing an application: `POST /admissions/cancel` (`409` once joined) |
 | Transfer | `POST /admissions/section` with a `reason` |

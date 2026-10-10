@@ -74,6 +74,7 @@ export interface BroadwayClassEntry {
   timingId: string | null;
   timing: string | null;
   seats: number | null;
+  trackerId: string | null;
   thisYear: { students: number; seatsLeft: number | null };
   nextYear: { continuing: number; joining: number; students: number; seatsLeft: number | null };
 }
@@ -98,6 +99,132 @@ export async function fetchBroadwayClasses(): Promise<BroadwayClassesResponse | 
     return null;
   }
   return result.json as BroadwayClassesResponse;
+}
+
+// Reads the academic year labels cached by the last successful
+// syncBroadwayClasses (duplicated onto every broadway_classes row — simplest
+// way to carry one global value alongside a cache table). Returns null if
+// nothing has synced yet.
+export async function getBroadwayAcademicYear(): Promise<{ current: string; next: string } | null> {
+  const admin = createSupabaseAdminClient();
+  const { data } = await admin
+    .from("broadway_classes")
+    .select("academic_year_current, academic_year_next")
+    .limit(1)
+    .maybeSingle();
+  if (!data?.academic_year_current || !data?.academic_year_next) return null;
+  return { current: data.academic_year_current, next: data.academic_year_next };
+}
+
+// Whether ADMISSION_YEAR (a plain integer) is Broadway's *next* academic
+// year rather than its current one — resolved once per enrollment batch
+// (not per application), by comparing against the cached academicYear from
+// the last classes sync. Defaults to false (current-year behavior,
+// unchanged from before Broadway's incoming/active distinction existed) if
+// nothing has synced yet, since that's the far more common steady state.
+export async function isNextYearAdmission(): Promise<boolean> {
+  const academicYear = await getBroadwayAcademicYear();
+  if (!academicYear) return false;
+  const nextStartYear = parseInt(academicYear.next.slice(0, 4), 10);
+  return nextStartYear === config.admission.year;
+}
+
+// ---------------------------------------------------------------------------
+// POST /classes — send a section when it's saved (create or edit). Sending
+// the same `id` (this app's own section id) again changes that section;
+// safe to call again on retry. Used for both the single-section push on
+// create/updateSection and the bulk "send all sections" first-connection
+// action below.
+// ---------------------------------------------------------------------------
+export interface BroadwaySectionPayload {
+  id: string;
+  grade: string;
+  section?: string | null;
+  batch?: string | null;
+  capacity?: number | null;
+  erpClassName: string;
+  classTiming?: string | null;
+}
+
+export interface BroadwaySectionResultOk {
+  id: string;
+  ok: true;
+  classId: string;
+  name: string;
+  curriculum: string;
+  grade: string;
+  created: boolean;
+  warnings: string[];
+}
+export interface BroadwaySectionResultFail {
+  id: string;
+  ok: false;
+  code: number;
+  error: string;
+}
+export type BroadwaySectionResult = BroadwaySectionResultOk | BroadwaySectionResultFail;
+
+export async function pushBroadwaySection(payload: BroadwaySectionPayload): Promise<BroadwaySectionResult> {
+  if (!config.broadway.enabled) {
+    return { id: payload.id, ok: false, code: 0, error: "Broadway integration not configured" };
+  }
+  const result = await broadwayFetch("/classes", { method: "POST", body: payload });
+  if ("error" in result) {
+    console.error(`[broadway] section push threw for ${payload.id}`, result.error);
+    return { id: payload.id, ok: false, code: 0, error: result.error };
+  }
+  if (!result.ok) {
+    console.error(`[broadway] section push failed for ${payload.id} (${result.status}): ${result.text}`);
+    return { id: payload.id, ok: false, code: result.status, error: errorMessage(result) };
+  }
+  const body = result.json as { results?: BroadwaySectionResult[] } | null;
+  const first = body?.results?.[0];
+  if (!first) {
+    return { id: payload.id, ok: false, code: result.status, error: `Unexpected response: ${result.text}` };
+  }
+  return first;
+}
+
+// Bulk "send all sections to Broadway" — the first-connection action. Up to
+// 200 per the doc; callers with more should chunk.
+export async function pushBroadwaySections(
+  payloads: BroadwaySectionPayload[],
+): Promise<BroadwaySectionResult[] | null> {
+  if (!config.broadway.enabled || payloads.length === 0) return null;
+  const result = await broadwayFetch("/classes", { method: "POST", body: { classes: payloads } });
+  if ("error" in result) {
+    console.error("[broadway] bulk section push threw", result.error);
+    return null;
+  }
+  if (!result.ok) {
+    console.error(`[broadway] bulk section push failed (${result.status}): ${result.text}`);
+    return null;
+  }
+  const body = result.json as { results?: BroadwaySectionResult[] } | null;
+  return body?.results ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// POST /classes/remove — a section was deleted in the tracker. A 409 means
+// Broadway is still using it (students, planned joiners, a timetable/past
+// records, or it's the grade's last section) — reported distinctly so the
+// section isn't deleted locally out from under a class Broadway still
+// needs. 404 (Broadway never had this id) counts as success — nothing left
+// to remove.
+// ---------------------------------------------------------------------------
+export type RemoveSectionResult =
+  | { ok: true }
+  | { ok: false; inUse: true; reason: string }
+  | { ok: false; inUse: false; error: string };
+
+export async function removeBroadwaySection(sectionId: string): Promise<RemoveSectionResult> {
+  if (!config.broadway.enabled) return { ok: true };
+  const result = await broadwayFetch("/classes/remove", { method: "POST", body: { id: sectionId } });
+  if ("error" in result) return { ok: false, inUse: false, error: result.error };
+  if (result.status === 404) return { ok: true };
+  if (result.status === 409) return { ok: false, inUse: true, reason: errorMessage(result) };
+  if (!result.ok) return { ok: false, inUse: false, error: errorMessage(result) };
+  return { ok: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -300,6 +427,7 @@ export async function syncBroadwayClasses(): Promise<number | null> {
   if (!data) return null;
 
   const admin = createSupabaseAdminClient();
+  const syncedAt = new Date().toISOString();
   const rows = data.classes.map((c) => ({
     id: c.id,
     name: c.name,
@@ -312,14 +440,17 @@ export async function syncBroadwayClasses(): Promise<number | null> {
     timing_id: c.timingId,
     timing: c.timing,
     seats: c.seats,
+    tracker_id: c.trackerId,
+    academic_year_current: data.academicYear.current,
+    academic_year_next: data.academicYear.next,
     this_year_students: c.thisYear.students,
     this_year_seats_left: c.thisYear.seatsLeft,
     next_year_continuing: c.nextYear.continuing,
     next_year_joining: c.nextYear.joining,
     next_year_students: c.nextYear.students,
     next_year_seats_left: c.nextYear.seatsLeft,
-    synced_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    synced_at: syncedAt,
+    updated_at: syncedAt,
   }));
 
   const { error: upsertErr } = await admin.from("broadway_classes").upsert(rows, { onConflict: "id" });

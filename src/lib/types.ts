@@ -168,8 +168,16 @@ export interface Section {
   name: string;
   batch: string | null;
   class_timing: string | null;
+  // The admin-typed name sent to Broadway as `erpClassName` (the field that
+  // encodes curriculum). Separate from broadway_class_name (Broadway's own
+  // returned, prettified name) since the two can differ in format and only
+  // this one is safe to resend.
+  broadway_input_name: string | null;
   broadway_class_id: string | null;
   broadway_class_name: string | null;
+  broadway_sync_status: "pending" | "synced" | "failed";
+  broadway_warning: string | null;
+  broadway_error: string | null;
   capacity: number;
   filled: number;
   created_at: string;
