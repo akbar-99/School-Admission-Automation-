@@ -480,35 +480,54 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
           {scheduled.length === 0 ? (
             <p className="text-sm text-muted-foreground">No scheduled assessments yet.</p>
           ) : (
-            scheduled.map((s) => (
-              <div
-                key={s.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border px-3 py-2 text-sm"
-              >
-                <div>
-                  <span className="font-medium">
-                    {s.applications?.students?.full_name ?? s.applications?.lead_student_name ?? "Applicant"}
-                  </span>
-                  <span className="text-muted-foreground">
-                    {" "}· Grade {s.applications?.grade_applying ?? "—"} · {s.users?.full_name ?? "Unassigned"}
-                  </span>
+            scheduled.map((s) => {
+              const missed =
+                s.applications?.status === "ASSESSMENT_SCHEDULED" &&
+                new Date(s.starts_at).getTime() < Date.now();
+              return (
+                <div
+                  key={s.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border px-3 py-2 text-sm"
+                >
+                  <div>
+                    <span className="font-medium">
+                      {s.applications?.students?.full_name ?? s.applications?.lead_student_name ?? "Applicant"}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {" "}· Grade {s.applications?.grade_applying ?? "—"} · {s.users?.full_name ?? "Unassigned"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-muted-foreground">
+                      {formatInZone(s.starts_at, schoolTz)} {schoolLabel}
+                    </span>
+                    {missed ? (
+                      <Badge tone="danger">Missed</Badge>
+                    ) : (
+                      <StatusBadge status={(s.applications?.status ?? "ASSESSMENT_SCHEDULED") as AppStatus} />
+                    )}
+                    {missed ? (
+                      <form action={rescheduleMissedAssessment}>
+                        <input type="hidden" name="application_id" value={s.application_id!} />
+                        <SubmitButton size="sm" variant="outline" pendingText="Releasing…">
+                          Reschedule
+                        </SubmitButton>
+                      </form>
+                    ) : (
+                      !s.zoom_join_url &&
+                      s.applications?.status !== "ASSESSMENT_COMPLETED" && (
+                        <form action={generateZoomLink}>
+                          <input type="hidden" name="application_id" value={s.application_id!} />
+                          <SubmitButton size="sm" variant="outline" pendingText="Creating…">
+                            Generate Zoom link
+                          </SubmitButton>
+                        </form>
+                      )
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-xs text-muted-foreground">
-                    {formatInZone(s.starts_at, schoolTz)} {schoolLabel}
-                  </span>
-                  <StatusBadge status={(s.applications?.status ?? "ASSESSMENT_SCHEDULED") as AppStatus} />
-                  {!s.zoom_join_url && s.applications?.status !== "ASSESSMENT_COMPLETED" && (
-                    <form action={generateZoomLink}>
-                      <input type="hidden" name="application_id" value={s.application_id!} />
-                      <SubmitButton size="sm" variant="outline" pendingText="Creating…">
-                        Generate Zoom link
-                      </SubmitButton>
-                    </form>
-                  )}
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
         </CardContent>
       </Card>
