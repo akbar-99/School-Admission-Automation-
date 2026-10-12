@@ -1140,6 +1140,48 @@ export async function notifySlotReleased(
   await dispatch(messages);
 }
 
+// Admin resolved a no-show (the parent missed their scheduled assessment —
+// its own start time has passed with no result recorded) by releasing the
+// slot via admin_release_missed_slot. Tells the parent directly, since
+// they're the one who needs to act next — the opposite audience from
+// notifySlotReleased above, which is for the parent-initiated release and
+// tells staff/the old teacher instead (the parent already knows, since they
+// just did it themselves).
+export async function notifyMissedAssessment(appId: string, missedSlot: { starts_at: string }) {
+  const admin = createSupabaseAdminClient();
+  const { data: appRow } = await admin.from("applications").select("*").eq("id", appId).maybeSingle();
+  if (!appRow) return;
+  const app = appRow as Application;
+  const { data: parentRow } = await admin.from("parents").select("*").eq("id", app.parent_id).maybeSingle();
+  const parent = parentRow as Parent | null;
+  if (!parent) return;
+
+  const when = `${formatInZone(missedSlot.starts_at, config.school.timezone)} ${config.school.timezoneLabel}`;
+  const contact = await leadCreatorContact(app);
+  const link = applyUrl(app.access_token);
+  const context = staffContextLine(await studentLabel(app), parent.full_name);
+
+  await dispatch([
+    ...multiChannel(
+      {
+        applicationId: app.id,
+        event: "ASSESSMENT_MISSED",
+        subject: "Please pick a new assessment time",
+        body:
+          `Hello ${parent.full_name},\n\nWe noticed your child's assessment scheduled for ${when} wasn't attended.\n\n` +
+          `Please pick a new time here:\n${link}\n\nQuestions? Contact ${contact.name} at ${contact.phone}.`,
+      },
+      parent,
+    ),
+    ...(await notifyLeadCreator(app, {
+      applicationId: app.id,
+      event: "ASSESSMENT_MISSED",
+      subject: "Assessment marked as missed",
+      body: `${context}Missed assessment (${when}) — slot released, parent asked to pick a new time.`,
+    })),
+  ]);
+}
+
 // ---------------------------------------------------------------------------
 // Admin assigned a new slot to a teacher — let the teacher know.
 // ---------------------------------------------------------------------------

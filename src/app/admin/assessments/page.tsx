@@ -3,7 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { config } from "@/lib/config";
 import { formatInZone, formatInZoneWithDay, toZonedInputValue } from "@/lib/utils";
 import { needsAssessment } from "@/lib/assessment";
-import { createAssessmentSlot, reassignSlotTeacher, generateZoomLink } from "../actions";
+import { createAssessmentSlot, reassignSlotTeacher, generateZoomLink, rescheduleMissedAssessment } from "../actions";
 import { AssignAssessmentRow } from "@/components/admin/assign-assessment-row";
 import { AdminUnavailableAlerts } from "@/components/admin/unavailable-alerts";
 import { SubmitButton } from "@/components/submit-button";
@@ -671,8 +671,13 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
                   const booked = !!s.application_id;
                   const unclaimed = !s.teacher_id && !booked;
                   const past = new Date(s.starts_at).getTime() < Date.now();
-                  const tone = booked ? "success" : past ? "neutral" : unclaimed ? "warning" : "info";
-                  const label = booked ? "Booked" : past ? "Expired" : unclaimed ? "In teacher pool" : "Open";
+                  // Booked, time's passed, and no result was ever recorded
+                  // (status would have moved off ASSESSMENT_SCHEDULED the
+                  // moment a teacher submitted one) — a genuine no-show,
+                  // distinct from a slot that's simply booked for later.
+                  const missed = booked && past && s.applications?.status === "ASSESSMENT_SCHEDULED";
+                  const tone = missed ? "danger" : booked ? "success" : past ? "neutral" : unclaimed ? "warning" : "info";
+                  const label = missed ? "Missed" : booked ? "Booked" : past ? "Expired" : unclaimed ? "In teacher pool" : "Open";
                   const assignedVia = unclaimed ? "—" : s.claimed_by_teacher ? "Self-claimed" : "Admin-assigned";
                   return (
                     <TR key={s.id}>
@@ -716,7 +721,14 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
                         )}
                       </TD>
                       <TD>
-                        {s.teacher_id && !past ? (
+                        {missed ? (
+                          <form action={rescheduleMissedAssessment}>
+                            <input type="hidden" name="application_id" value={s.application_id!} />
+                            <SubmitButton size="sm" variant="outline" pendingText="Releasing…">
+                              Reschedule
+                            </SubmitButton>
+                          </form>
+                        ) : s.teacher_id && !past ? (
                           <form action={reassignSlotTeacher} className="flex items-center gap-1.5">
                             <input type="hidden" name="slot_id" value={s.id} />
                             <Select name="teacher_id" required defaultValue="" className="h-9 w-36">

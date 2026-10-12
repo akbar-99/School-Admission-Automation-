@@ -11,6 +11,7 @@ import {
   changeBroadwaySectionAfterTransfer,
   handlePaymentCompleted,
   handleSlotBooked,
+  notifyMissedAssessment,
   notifyOpenSlotAvailable,
   notifySlotReassigned,
   notifyTeacherSlotAssigned,
@@ -333,6 +334,56 @@ export async function reassignSlotTeacher(formData: FormData) {
   revalidatePath("/admin/assessments");
   revalidatePath("/teacher");
   redirect("/admin/assessments?ok=" + encodeURIComponent("Slot reassigned and everyone notified."));
+}
+
+// Resolve a no-show: the parent booked and confirmed, but the slot's own
+// start time has passed with no result ever recorded. Releases the slot
+// (same reset as the parent's own "Need to reschedule?", but without the
+// TOO_LATE guard that only makes sense for a parent backing out at/after
+// their own slot time) and sends the parent a fresh link to pick a new one.
+const RescheduleMissedSchema = z.object({ application_id: z.string().uuid() });
+
+export async function rescheduleMissedAssessment(formData: FormData) {
+  const { profile } = await requireRole(["admin", "coo"]);
+  const parsed = RescheduleMissedSchema.safeParse({ application_id: formData.get("application_id") });
+  if (!parsed.success) {
+    redirect("/admin/assessments?error=" + encodeURIComponent("Invalid request."));
+  }
+  const { application_id } = parsed.data!;
+
+  const admin = createSupabaseAdminClient();
+  const { data: result, error } = await admin.rpc("admin_release_missed_slot", {
+    p_application: application_id,
+  });
+  if (error) {
+    redirect("/admin/assessments?error=" + encodeURIComponent(error.message));
+  }
+  const r = result as { status: string; slot_id?: string; teacher_id?: string | null; starts_at?: string };
+  if (r.status === "NOT_FOUND") {
+    redirect("/admin/assessments?error=" + encodeURIComponent("No booked slot found for this applicant."));
+  }
+  if (r.status === "NOT_SCHEDULED") {
+    redirect(
+      "/admin/assessments?error=" +
+        encodeURIComponent("This applicant's assessment already has an outcome recorded — nothing to release."),
+    );
+  }
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "admin.reschedule_missed_assessment",
+    entity: "application",
+    entityId: application_id,
+    details: { slot_id: r.slot_id, starts_at: r.starts_at },
+  });
+
+  await notifyMissedAssessment(application_id, { starts_at: r.starts_at! });
+
+  revalidatePath("/admin/assessments");
+  revalidatePath(`/admin/applications/${application_id}`);
+  revalidatePath("/teacher");
+  redirect("/admin/assessments?ok=" + encodeURIComponent("Slot released — the parent's been sent a new link to pick a time."));
 }
 
 // Backfill a Zoom meeting for a booked assessment that doesn't have one yet
