@@ -130,6 +130,30 @@ export async function GET(request: Request) {
     }
   }
 
+  // Remove slots that passed their start time without ever being booked —
+  // an admin-published or teacher-claimed slot nobody booked has no
+  // historical value once it's in the past, and these otherwise pile up
+  // forever on Admin -> Assessments with nothing useful to show ("Expired",
+  // applicant "—"). Booked slots (application_id set) are never touched
+  // here regardless of outcome — attended, no-show, or anything else keeps
+  // its full history. application_id is null and is_open = true always go
+  // together (see book_assessment_slot/release_assessment_slot) — both
+  // checked to match the existing idx_slots_open(is_open, starts_at) index.
+  const { data: deletedSlots, error: deleteError } = await admin
+    .from("assessment_slots")
+    .delete()
+    .is("application_id", null)
+    .eq("is_open", true)
+    .lt("starts_at", now.toISOString())
+    .select("id");
+
+  let expiredRemoved = 0;
+  if (deleteError) {
+    console.error("[cron/assessment-reminders] expired slot cleanup failed", deleteError);
+  } else {
+    expiredRemoved = deletedSlots?.length ?? 0;
+  }
+
   return NextResponse.json({
     ok: true,
     checked: claimed?.length ?? 0,
@@ -138,5 +162,6 @@ export async function GET(request: Request) {
     reminded2h: sent2h,
     checkedEscalation: claimedEscalations?.length ?? 0,
     escalated,
+    expiredRemoved,
   });
 }
