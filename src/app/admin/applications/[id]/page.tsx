@@ -12,9 +12,11 @@ import { CopyButton } from "@/components/copy-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import { Alert } from "@/components/ui/alert";
-import { deleteApplication, rotateAccessToken } from "../../actions";
+import { deleteApplication, rotateAccessToken, updateApplicationGrade } from "../../actions";
 import { needsAssessment } from "@/lib/assessment";
+import { getClassOptions } from "@/lib/classes";
 import { leadSourceLabel, outcomeLabel, type Application, type Student, type Parent, type Payment, type SubjectResult, type AssessmentOutcome } from "@/lib/types";
 
 const DOC_LABEL: Record<string, string> = {
@@ -106,6 +108,9 @@ export default async function ApplicationDetailPage({
   const isGrade = needsAssessment(app.grade_applying ?? "");
   const schoolTz = config.school.timezone;
   const schoolLabel = config.school.timezoneLabel;
+  // Grade is only safe to correct before a section is assigned — once
+  // sectioned, grade and section can drift apart (use Transfer instead).
+  const classOptions = app.section_id ? [] : await getClassOptions();
 
   return (
     <div className="space-y-6">
@@ -146,7 +151,34 @@ export default async function ApplicationDetailPage({
 
       <Section title="Application">
         <Field label="Category" value={app.category ?? "—"} />
-        <Field label="Class / grade" value={app.grade_applying ?? "—"} />
+        {app.section_id ? (
+          <Field label="Class / grade" value={app.grade_applying ?? "—"} />
+        ) : (
+          <div className="print:hidden">
+            <Label htmlFor="grade_applying" className="text-xs uppercase tracking-wide text-muted-foreground">
+              Class / grade
+            </Label>
+            <form action={updateApplicationGrade} className="mt-1 flex items-center gap-2">
+              <input type="hidden" name="application_id" value={app.id} />
+              <Select
+                id="grade_applying"
+                name="grade_applying"
+                defaultValue={app.grade_applying ?? ""}
+                className="h-9 py-1 text-sm"
+              >
+                {!app.grade_applying && <option value="">—</option>}
+                {classOptions.map((g) => (
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
+                ))}
+              </Select>
+              <SubmitButton size="sm" variant="outline" pendingText="Saving…">
+                Save
+              </SubmitButton>
+            </form>
+          </div>
+        )}
         <Field
           label="Preferred class timing"
           value={app.preferred_class_timing ?? section?.class_timing ?? "No preference"}

@@ -386,6 +386,72 @@ export async function rescheduleMissedAssessment(formData: FormData) {
   redirect("/admin/assessments?ok=" + encodeURIComponent("Slot released — the parent's been sent a new link to pick a time."));
 }
 
+// Corrects a parent's mis-picked class before the application has been
+// assigned a section — e.g. an assessment was conducted against the wrong
+// grade and no result is recorded yet. Once a section is assigned, the
+// grade and section can drift apart, so this is blocked from that point on;
+// use Sections → Transfer to move an already-sectioned applicant instead.
+const UpdateGradeSchema = z.object({
+  application_id: z.string().uuid(),
+  grade_applying: z.string().trim().min(1, "Pick a class."),
+});
+
+export async function updateApplicationGrade(formData: FormData) {
+  const { profile } = await requireRole(["admin", "coo"]);
+  const applicationId = String(formData.get("application_id") ?? "");
+  const parsed = UpdateGradeSchema.safeParse({
+    application_id: applicationId,
+    grade_applying: formData.get("grade_applying"),
+  });
+  if (!parsed.success) {
+    redirect(
+      `/admin/applications/${applicationId}?error=` + encodeURIComponent(parsed.error.issues[0].message),
+    );
+  }
+  const { application_id, grade_applying } = parsed.data!;
+
+  const admin = createSupabaseAdminClient();
+  const { data: appRow } = await admin
+    .from("applications")
+    .select("grade_applying, section_id")
+    .eq("id", application_id)
+    .maybeSingle();
+  if (!appRow) {
+    redirect(`/admin/applications/${application_id}?error=` + encodeURIComponent("Application not found."));
+  }
+  if (appRow!.section_id) {
+    redirect(
+      `/admin/applications/${application_id}?error=` +
+        encodeURIComponent("This applicant is already assigned to a section — use Sections → Transfer instead."),
+    );
+  }
+  if (appRow!.grade_applying === grade_applying) {
+    redirect(`/admin/applications/${application_id}?ok=` + encodeURIComponent("No change."));
+  }
+
+  const { error } = await admin
+    .from("applications")
+    .update({ grade_applying })
+    .eq("id", application_id);
+  if (error) {
+    redirect(`/admin/applications/${application_id}?error=` + encodeURIComponent(error.message));
+  }
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "admin.update_application_grade",
+    entity: "application",
+    entityId: application_id,
+    details: { from: appRow!.grade_applying, to: grade_applying },
+  });
+
+  revalidatePath(`/admin/applications/${application_id}`);
+  revalidatePath("/admin");
+  revalidatePath("/admin/assessments");
+  redirect(`/admin/applications/${application_id}?ok=` + encodeURIComponent("Class updated."));
+}
+
 // Backfill a Zoom meeting for a booked assessment that doesn't have one yet
 // (e.g. it was booked before Zoom was configured). Idempotent, notifies the
 // parent + teacher once the link is ready.
