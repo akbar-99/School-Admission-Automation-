@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Alert } from "@/components/ui/alert";
-import { deleteApplication, rotateAccessToken, updateApplicationGrade } from "../../actions";
+import { deleteApplication, retryEnrollment, rotateAccessToken, updateApplicationGrade } from "../../actions";
 import { needsAssessment } from "@/lib/assessment";
 import { getClassOptions } from "@/lib/classes";
 import { leadSourceLabel, outcomeLabel, type Application, type Student, type Parent, type Payment, type SubjectResult, type AssessmentOutcome } from "@/lib/types";
@@ -146,6 +146,22 @@ export default async function ApplicationDetailPage({
       {ok && (
         <Alert variant="success" className="print:hidden">
           {ok}
+        </Alert>
+      )}
+
+      {(app.status === "PAYMENT_COMPLETED" || app.status === "NEEDS_ADMIN") && (
+        <Alert variant="warning" className="print:hidden flex flex-wrap items-center justify-between gap-3">
+          <span>
+            {app.status === "NEEDS_ADMIN"
+              ? "Payment received, but no open section was found for this grade — needs a manual seat allocation."
+              : "Payment received but enrollment hasn't completed yet — this applicant has no section or admission number."}
+          </span>
+          <form action={retryEnrollment}>
+            <input type="hidden" name="application_id" value={app.id} />
+            <SubmitButton size="sm" variant="outline" pendingText="Enrolling…">
+              Retry enrollment
+            </SubmitButton>
+          </form>
         </Alert>
       )}
 

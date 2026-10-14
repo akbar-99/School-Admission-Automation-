@@ -452,6 +452,69 @@ export async function updateApplicationGrade(formData: FormData) {
   redirect(`/admin/applications/${application_id}?ok=` + encodeURIComponent("Class updated."));
 }
 
+// Payment completion normally enrolls the applicant automatically
+// (handlePaymentCompleted -> enroll_application), but that call can fail
+// silently (e.g. a transient DB/network blip) and nothing retries it on its
+// own — the application is left stuck at PAYMENT_COMPLETED with no section
+// or admission number even though the parent already paid. Safe to re-run:
+// enroll_application checks for an existing admission_number first and is a
+// no-op if one's already set, so this can never double-enroll.
+const RetryEnrollmentSchema = z.object({ application_id: z.string().uuid() });
+
+export async function retryEnrollment(formData: FormData) {
+  const { profile } = await requireRole(["admin", "coo"]);
+  const applicationId = String(formData.get("application_id") ?? "");
+  const parsed = RetryEnrollmentSchema.safeParse({ application_id: applicationId });
+  if (!parsed.success) {
+    redirect(`/admin/applications/${applicationId}?error=` + encodeURIComponent("Invalid request."));
+  }
+  const { application_id } = parsed.data!;
+
+  const admin = createSupabaseAdminClient();
+  const { data: appRow } = await admin
+    .from("applications")
+    .select("status")
+    .eq("id", application_id)
+    .maybeSingle();
+  if (!appRow) {
+    redirect(`/admin/applications/${application_id}?error=` + encodeURIComponent("Application not found."));
+  }
+  if (!["PAYMENT_COMPLETED", "NEEDS_ADMIN"].includes(appRow!.status)) {
+    redirect(
+      `/admin/applications/${application_id}?error=` +
+        encodeURIComponent(`Not awaiting enrollment (current status: ${appRow!.status}).`),
+    );
+  }
+
+  const result = await handlePaymentCompleted(application_id);
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "admin.retry_enrollment",
+    entity: "application",
+    entityId: application_id,
+    details: { result },
+  });
+
+  revalidatePath(`/admin/applications/${application_id}`);
+  revalidatePath("/admin");
+
+  if (result.status === "ERROR") {
+    redirect(
+      `/admin/applications/${application_id}?error=` +
+        encodeURIComponent("Enrollment failed again — check server logs for the underlying error."),
+    );
+  }
+  if (result.status === "NEEDS_ADMIN") {
+    redirect(
+      `/admin/applications/${application_id}?error=` +
+        encodeURIComponent("No open section for this grade — needs a manual seat allocation."),
+    );
+  }
+  redirect(`/admin/applications/${application_id}?ok=` + encodeURIComponent("Enrolled."));
+}
+
 // Backfill a Zoom meeting for a booked assessment that doesn't have one yet
 // (e.g. it was booked before Zoom was configured). Idempotent, notifies the
 // parent + teacher once the link is ready.
