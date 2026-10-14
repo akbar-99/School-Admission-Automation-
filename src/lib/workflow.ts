@@ -2299,7 +2299,7 @@ export async function handlePaymentCompleted(
         event: "N-8",
         subject: "Welcome — admission confirmed",
         body:
-          `Hello ${parent.full_name},\n\nWelcome! Admission is confirmed.\nAdmission number: ${res.admission_number}\nClass & section: ${res.section}\n\n` +
+          `Hello ${parent.full_name},\n\nWelcome! Admission is confirmed.\nAdmission number: ${res.admission_number ?? "—"}\nClass & section: ${res.section ?? "—"}\n\n` +
           onboardingLine +
           `Questions? Contact ${contact.name} at ${contact.phone}.`,
         whatsappTemplate: isCbse
@@ -2333,13 +2333,13 @@ export async function handlePaymentCompleted(
       applicationId: app.id,
       event: "N-8",
       subject: "New student assigned",
-      body: `${context}A new student has been enrolled and assigned to ${res.section} (admission no. ${res.admission_number}).`,
+      body: `${context}A new student has been enrolled and assigned to ${res.section ?? "—"} (admission no. ${res.admission_number ?? "—"}).`,
     }),
     ...(await notifyLeadCreator(app, {
       applicationId: app.id,
       event: "N-8",
       subject: "Your lead enrolled!",
-      body: `${context}Payment complete and admission confirmed — admission no. ${res.admission_number}, ${res.section}.`,
+      body: `${context}Payment complete and admission confirmed — admission no. ${res.admission_number ?? "—"}, ${res.section ?? "—"}.`,
     })),
   ];
 
