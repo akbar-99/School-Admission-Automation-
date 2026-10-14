@@ -13,7 +13,7 @@ import { SectionStudentsToggle, type SectionStudentRow } from "@/components/admi
 import type { AppStatus, Section } from "@/lib/types";
 
 const BROADWAY_HINT =
-  "Broadway class name: start with STD (CBSE) or STAGE (Cambridge); for KG include CBSE or Cambridge.";
+  "Broadway class name: auto-filled from Grade, Section and Batch (KG also needs a Curriculum pick) — edit it directly to override.";
 
 export default async function SectionsPage({
   searchParams,
