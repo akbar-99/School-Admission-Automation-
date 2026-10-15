@@ -137,7 +137,10 @@ async function OverviewStatsSection() {
   // in 0038_admin_overview_rpc.sql. Cross-region latency to the database
   // makes every extra round-trip here directly add to page-load time.
   const { data } = await admin.rpc("admin_overview_data", { p_limit: 300, p_chart_limit: 2000 });
-  const result = data as { overview_rows: unknown[]; chart_rows: { status: AppStatus; created_at: string }[] } | null;
+  const result = data as {
+    overview_rows: unknown[];
+    chart_rows: { status: AppStatus; created_at: string; withdrawn_at: string | null; withdrawal_type: WithdrawalType | null }[];
+  } | null;
   const allRows = (result?.overview_rows ?? []) as unknown as Row[];
   const chartRows = result?.chart_rows ?? [];
 

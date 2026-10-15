@@ -1,5 +1,5 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import type { AppStatus } from "@/lib/types";
+import type { AppStatus, WithdrawalType } from "@/lib/types";
 
 // Lightweight, dependency-free analytics for the admin overview. Charts are
 // pure server-rendered SVG themed to the brand palette (teal / sage / amber /
@@ -8,23 +8,33 @@ import type { AppStatus } from "@/lib/types";
 interface ChartRow {
   status: AppStatus;
   created_at: string;
+  withdrawn_at: string | null;
+  withdrawal_type: WithdrawalType | null;
 }
 
 // Funnel buckets shown in the donut, in display order. Each maps several raw
-// statuses into one human-friendly stage.
+// statuses into one human-friendly stage. A withdrawn application keeps its
+// underlying status (ENROLLED, by design — see markWithdrawn) forever, so it
+// has to be routed here by withdrawn_at/withdrawal_type BEFORE status, or it
+// would silently keep showing as a normal "Enrolled" row in both charts.
 const BUCKETS = [
   { key: "lead", label: "New leads", color: "#94ac9f" },
   { key: "assessment", label: "In assessment", color: "#1b7e9a" },
   { key: "payment", label: "Awaiting payment", color: "#c08a2d" },
   { key: "enrolled", label: "Enrolled", color: "#2f8f6b" },
+  { key: "withdrawn_pre", label: "Pre-admission withdrawal", color: "#d97706" },
+  { key: "withdrawn_post", label: "Post-admission withdrawal", color: "#9f1239" },
   { key: "lost", label: "Rejected / lost", color: "#c0392b" },
   { key: "admin", label: "Needs admin", color: "#475569" },
 ] as const;
 
 type BucketKey = (typeof BUCKETS)[number]["key"];
 
-function bucketOf(status: AppStatus): BucketKey {
-  switch (status) {
+function bucketOf(row: ChartRow): BucketKey {
+  if (row.withdrawn_at) {
+    return row.withdrawal_type === "post_admission" ? "withdrawn_post" : "withdrawn_pre";
+  }
+  switch (row.status) {
     case "LEAD_CREATED":
       return "lead";
     case "FORM_SUBMITTED":
@@ -64,7 +74,7 @@ export function AdmissionsCharts({ rows }: { rows: ChartRow[] }) {
   // ---- Status donut data ----
   const counts = new Map<BucketKey, number>();
   for (const r of rows) {
-    const b = bucketOf(r.status);
+    const b = bucketOf(r);
     counts.set(b, (counts.get(b) ?? 0) + 1);
   }
   const total = rows.length;
@@ -85,6 +95,7 @@ export function AdmissionsCharts({ rows }: { rows: ChartRow[] }) {
       label: MONTHS_SHORT[d.getMonth()],
       total: 0,
       enrolled: 0,
+      withdrawn: 0,
     };
   });
   const monthIndex = new Map(months.map((m, i) => [m.key, i]));
@@ -94,9 +105,12 @@ export function AdmissionsCharts({ rows }: { rows: ChartRow[] }) {
     const i = monthIndex.get(key);
     if (i === undefined) continue;
     months[i].total += 1;
-    if (bucketOf(r.status) === "enrolled") months[i].enrolled += 1;
+    const b = bucketOf(r);
+    if (b === "enrolled") months[i].enrolled += 1;
+    else if (b === "withdrawn_pre" || b === "withdrawn_post") months[i].withdrawn += 1;
   }
   const totalEnrolled = months.reduce((a, m) => a + m.enrolled, 0);
+  const totalWithdrawn = months.reduce((a, m) => a + m.withdrawn, 0);
 
   return (
     <div className="grid gap-4 lg:grid-cols-3">
@@ -114,7 +128,8 @@ export function AdmissionsCharts({ rows }: { rows: ChartRow[] }) {
         <CardHeader>
           <CardTitle>Admissions trend</CardTitle>
           <CardDescription>
-            New applications per month over the last year · {totalEnrolled} enrolled.
+            New applications per month over the last year · {totalEnrolled} enrolled
+            {totalWithdrawn > 0 ? `, ${totalWithdrawn} withdrawn` : ""}.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -216,7 +231,7 @@ function StatusDonut({
 function GrowthBars({
   months,
 }: {
-  months: { label: string; month: number; year: number; total: number; enrolled: number }[];
+  months: { label: string; month: number; year: number; total: number; enrolled: number; withdrawn: number }[];
 }) {
   const W = 680;
   const H = 260;
@@ -235,6 +250,7 @@ function GrowthBars({
   const ticks = [0, 1, 2, 3, 4].map((t) => (niceMax * t) / 4);
 
   const ENROLLED = "#2f8f6b";
+  const WITHDRAWN = "#b45309";
   const OTHER = "#eab308";
 
   return (
@@ -267,18 +283,22 @@ function GrowthBars({
         {months.map((m, i) => {
           const cx = padL + i * colW + colW / 2;
           const x = cx - barW / 2;
-          const remaining = m.total - m.enrolled;
+          const remaining = m.total - m.enrolled - m.withdrawn;
           const enrolledH = (m.enrolled / niceMax) * plotH;
+          const withdrawnH = (m.withdrawn / niceMax) * plotH;
           const remainingH = (remaining / niceMax) * plotH;
           const base = padT + plotH;
           const showYear = i === 0 || m.month === 0;
           return (
             <g key={m.year + "-" + m.month} className="transition-opacity hover:opacity-80">
-              <title>{`${m.label} ${m.year} — ${m.total} application${m.total === 1 ? "" : "s"}, ${m.enrolled} enrolled`}</title>
+              <title>{`${m.label} ${m.year} — ${m.total} application${m.total === 1 ? "" : "s"}, ${m.enrolled} enrolled${m.withdrawn > 0 ? `, ${m.withdrawn} withdrawn` : ""}`}</title>
               {/* invisible full-height hover target so empty months are hoverable */}
               <rect x={x} y={padT} width={barW} height={plotH} fill="transparent" />
               {remaining > 0 && (
-                <rect x={x} y={base - enrolledH - remainingH} width={barW} height={remainingH} rx={3} fill={OTHER} />
+                <rect x={x} y={base - enrolledH - withdrawnH - remainingH} width={barW} height={remainingH} rx={3} fill={OTHER} />
+              )}
+              {m.withdrawn > 0 && (
+                <rect x={x} y={base - enrolledH - withdrawnH} width={barW} height={withdrawnH} rx={3} fill={WITHDRAWN} />
               )}
               {m.enrolled > 0 && (
                 <rect x={x} y={base - enrolledH} width={barW} height={enrolledH} rx={3} fill={ENROLLED} />
@@ -304,6 +324,10 @@ function GrowthBars({
         <span className="flex items-center gap-1.5">
           <span className="size-2.5 rounded-full" style={{ background: ENROLLED }} aria-hidden />
           Enrolled
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="size-2.5 rounded-full" style={{ background: WITHDRAWN }} aria-hidden />
+          Withdrawn
         </span>
       </div>
     </div>
