@@ -432,7 +432,7 @@ async function Content({
         </InfoCard>
       )}
 
-      {status === "ENROLLED" && !app.study_material_paid && studyMaterialFeePaise > 0 && (
+      {status === "ENROLLED" && !app.withdrawn_at && !app.study_material_paid && studyMaterialFeePaise > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>Study material payment</CardTitle>
@@ -455,7 +455,16 @@ async function Content({
         </Card>
       )}
 
-      {status === "ENROLLED" && <Onboarding appId={app.id} sectionId={app.section_id} admissionNumber={app.admission_number} />}
+      {status === "ENROLLED" && app.withdrawn_at && (
+        <InfoCard title="Admission withdrawn" tone="warning">
+          This admission was withdrawn{app.withdrawal_reason ? ` — ${app.withdrawal_reason}` : ""}. If this doesn&apos;t
+          look right, please contact the school.
+        </InfoCard>
+      )}
+
+      {status === "ENROLLED" && !app.withdrawn_at && (
+        <Onboarding appId={app.id} sectionId={app.section_id} admissionNumber={app.admission_number} />
+      )}
     </div>
   );
 

@@ -107,6 +107,9 @@ export async function ensureStudyMaterialOnlyOrder(
   if (app.status !== "ENROLLED") {
     throw new Error("Study material payment is only available after enrollment");
   }
+  if (app.withdrawn_at) {
+    throw new Error("This admission has been withdrawn");
+  }
   if (app.study_material_paid) {
     throw new Error("Study material fee has already been paid");
   }

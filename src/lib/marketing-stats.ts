@@ -44,6 +44,7 @@ export interface MarketingStatsRow {
   status: AppStatus;
   created_by: string;
   payments: { amount: number; status: string }[] | null;
+  withdrawn_at?: string | null;
 }
 
 // Aggregate raw application rows into per-creator funnel stats. Shared by the
@@ -68,7 +69,7 @@ export function computeMarketingStatsByCreator(
     if (row.status !== "LEAD_CREATED") s.formSubmitted += 1;
     if (REACHED_AGREEMENT.has(row.status)) s.agreementSent += 1;
     if (REACHED_PAYMENT.has(row.status)) s.paymentCompleted += 1;
-    if (row.status === "ENROLLED") s.enrolled += 1;
+    if (row.status === "ENROLLED" && !row.withdrawn_at) s.enrolled += 1;
     for (const p of row.payments ?? []) {
       if (p.status === "completed") s.revenuePaise += p.amount;
     }
@@ -213,11 +214,18 @@ export function computeCooStatsByCreator(rows: CooStatsRow[]): Map<string, CooCr
       e.stats.waitingPayment += 1;
       e.rows.waitingPayment.push(row);
     }
-    if (REACHED_PAYMENT.has(row.status)) {
+    // Unlike the funnel milestones above (which deliberately stay true
+    // forever once reached — markWithdrawn leaves `status` untouched so the
+    // funnel keeps reflecting real history), these two represent a live
+    // headcount an operator reads as "how many kids are actually enrolled
+    // right now" — a withdrawn-and-refunded application must not inflate
+    // that, even though it genuinely did reach PAYMENT_COMPLETED/ENROLLED
+    // and genuinely was synced to Broadway at some point.
+    if (REACHED_PAYMENT.has(row.status) && !row.withdrawn_at) {
       e.stats.admissionCompleted += 1;
       e.rows.admissionCompleted.push(row);
     }
-    if (row.broadway_status === "synced") {
+    if (row.broadway_status === "synced" && !row.withdrawn_at) {
       e.stats.addedToCourse += 1;
       e.rows.addedToCourse.push(row);
     }
@@ -263,12 +271,12 @@ export function computeSourceBreakdown(
 // hide them here. Falls back to the application's preferred_curriculum only
 // if the student record itself has no curriculum set yet.
 export function computeCurriculumBreakdown(
-  rows: Pick<CooStatsRow, "status" | "students" | "preferred_curriculum">[],
+  rows: Pick<CooStatsRow, "status" | "students" | "preferred_curriculum" | "withdrawn_at">[],
 ): { curriculum: string; count: number }[] {
   const counts = new Map<string, number>(CURRICULUM_OPTIONS.map((c) => [c, 0]));
   let other = 0;
   for (const row of rows) {
-    if (row.status !== "ENROLLED") continue;
+    if (row.status !== "ENROLLED" || row.withdrawn_at) continue;
     const value = row.students?.curriculum ?? row.preferred_curriculum ?? null;
     if (value && counts.has(value)) {
       counts.set(value, (counts.get(value) ?? 0) + 1);

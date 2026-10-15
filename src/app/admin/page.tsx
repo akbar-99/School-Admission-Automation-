@@ -144,7 +144,7 @@ async function OverviewStatsSection() {
   const stat = (pred: (r: Row) => boolean) => allRows.filter(pred).length;
   const stats = [
     { label: "Total applications", value: allRows.length },
-    { label: "Enrolled", value: stat((r) => r.status === "ENROLLED") },
+    { label: "Enrolled", value: stat((r) => r.status === "ENROLLED" && !r.withdrawn_at) },
     { label: "Awaiting payment", value: stat((r) => r.status === "AGREEMENT_SENT" || r.status === "PAYMENT_PENDING") },
     { label: "Needs admin", value: stat((r) => r.status === "NEEDS_ADMIN") },
   ];

@@ -123,7 +123,7 @@ async function PerformanceBody({ from, to }: { from?: string; to?: string }) {
   // same as the leads page and the admin-wide performance report.
   let query = admin
     .from("applications")
-    .select("id, status, created_at, payments(amount, status)")
+    .select("id, status, created_at, withdrawn_at, payments(amount, status)")
     .eq("created_by", profile.id);
   if (from) query = query.gte("created_at", `${from}T00:00:00`);
   if (to) query = query.lte("created_at", `${to}T23:59:59`);
@@ -134,6 +134,7 @@ async function PerformanceBody({ from, to }: { from?: string; to?: string }) {
   const rows = ((appsData ?? []) as unknown as {
     status: AppStatus;
     created_at: string;
+    withdrawn_at: string | null;
     payments: { amount: number; status: string }[] | null;
   }[]).map((r) => ({ ...r, created_by: profile.id }));
 
