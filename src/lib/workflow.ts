@@ -1829,19 +1829,30 @@ export async function syncEnrollmentToBroadway(app: Application, parent: Parent,
 // never throws — a failure here is logged for admins to notice in the audit
 // log, not surfaced to the parent or retried automatically (unlike ERP sync,
 // this doesn't block anything the school depends on operationally).
+//
+// KG sections share a grade+section name across different batches (e.g. KG
+// 1-A/ORCHID and KG 1-A/TULIP are two different physical classes) — without
+// batch in the tab name, both collapsed onto the same "KG 1-A" tab with no
+// way to tell which student belongs to which. Shared by both the add (here)
+// and remove (removeEnrollmentFromGoogleSheet) paths so a section transfer's
+// delete-then-re-add always targets matching tab names.
 // ---------------------------------------------------------------------------
+function sheetTabName(grade: string, name: string, batch: string | null): string {
+  return sanitizeTabName(`${grade}-${name}${batch ? ` - ${batch}` : ""}`);
+}
+
 export async function syncEnrollmentToGoogleSheet(app: Application, parent: Parent, admissionNumber: string) {
   if (!config.googleSheets.enabled) return;
   const admin = createSupabaseAdminClient();
 
   try {
     const [{ data: section }, { data: studentRow }] = await Promise.all([
-      admin.from("sections").select("grade, name, class_timing").eq("id", app.section_id).maybeSingle(),
+      admin.from("sections").select("grade, name, batch, class_timing").eq("id", app.section_id).maybeSingle(),
       admin.from("students").select("*").eq("id", app.student_id).maybeSingle(),
     ]);
     const student = studentRow as Student | null;
     const tabName = section
-      ? sanitizeTabName(`${section.grade}-${section.name}`)
+      ? sheetTabName(section.grade, section.name, section.batch)
       : sanitizeTabName(app.grade_applying ?? "Unassigned");
 
     // 10-year signed URLs so the links stay valid for the sheet's whole
@@ -1871,6 +1882,7 @@ export async function syncEnrollmentToGoogleSheet(app: Application, parent: Pare
         gender: student?.gender ?? null,
         grade: section?.grade ?? app.grade_applying,
         sectionName: section?.name ?? null,
+        batch: section?.batch ?? null,
         classTiming: section?.class_timing ?? null,
         parentName: parent.full_name,
         parentPhone: parent.phone ?? "",
@@ -1933,10 +1945,10 @@ export async function removeEnrollmentFromGoogleSheet(
 
   try {
     const { data: section } = sectionId
-      ? await admin.from("sections").select("grade, name").eq("id", sectionId).maybeSingle()
+      ? await admin.from("sections").select("grade, name, batch").eq("id", sectionId).maybeSingle()
       : { data: null };
     const tabName = section
-      ? sanitizeTabName(`${section.grade}-${section.name}`)
+      ? sheetTabName(section.grade, section.name, section.batch)
       : sanitizeTabName(gradeApplying ?? "Unassigned");
 
     const result = await removeEnrollmentRow(admissionNumber, tabName);

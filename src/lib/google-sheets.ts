@@ -81,6 +81,7 @@ const HEADERS = [
   "Gender",
   "Grade",
   "Section",
+  "Batch",
   "Class Timing",
   "Parent/Guardian",
   "Parent's Phone",
@@ -102,7 +103,7 @@ const HEADERS = [
 // Index (0-based) of the first document-link column — everything from here
 // on is filled in by a separate USER_ENTERED pass (see appendEnrollmentRow),
 // never by the main RAW row write.
-const DOC_LINK_START_COLUMN = 19;
+const DOC_LINK_START_COLUMN = 20;
 
 export interface EnrollmentSheetRow {
   admissionNumber: string;
@@ -111,6 +112,9 @@ export interface EnrollmentSheetRow {
   gender: string | null;
   grade: string | null;
   sectionName: string | null;
+  // KG sections only — non-KG classes don't use a batch, so this is blank
+  // for them (see "Batch (KG only)" on the admin Sections form).
+  batch: string | null;
   classTiming: string | null;
   parentName: string;
   parentPhone: string;
@@ -142,6 +146,7 @@ function rowValues(r: EnrollmentSheetRow): string[] {
     r.gender ?? "",
     r.grade ?? "",
     r.sectionName ?? "",
+    r.batch ?? "",
     r.classTiming ?? "",
     r.parentName,
     r.parentPhone,
