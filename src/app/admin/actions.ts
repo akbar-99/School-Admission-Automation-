@@ -547,6 +547,76 @@ export async function updateApplicationGrade(formData: FormData) {
   );
 }
 
+// Reassigns which staff member a lead is attributed to (applications.created_by)
+// — every marketing stat (Team dashboard, performance report, conversion
+// rate) is grouped by this field, so a lead logged under the wrong person
+// (e.g. two staff sharing the same display name, or a lead entered on
+// someone else's behalf) throws off both people's numbers until corrected.
+const ReassignLeadOwnerSchema = z.object({
+  application_id: z.string().uuid(),
+  created_by: z.string().uuid(),
+});
+
+export async function reassignLeadOwner(formData: FormData) {
+  const { profile } = await requireRole(["admin", "coo"]);
+  const applicationId = String(formData.get("application_id") ?? "");
+  const parsed = ReassignLeadOwnerSchema.safeParse({
+    application_id: applicationId,
+    created_by: formData.get("created_by"),
+  });
+  if (!parsed.success) {
+    redirect(
+      `/admin/applications/${applicationId}?error=` + encodeURIComponent(parsed.error.issues[0].message),
+    );
+  }
+  const { application_id, created_by } = parsed.data!;
+
+  const admin = createSupabaseAdminClient();
+  const { data: appRow } = await admin
+    .from("applications")
+    .select("created_by")
+    .eq("id", application_id)
+    .maybeSingle();
+  if (!appRow) {
+    redirect(`/admin/applications/${application_id}?error=` + encodeURIComponent("Application not found."));
+  }
+  if (appRow!.created_by === created_by) {
+    redirect(`/admin/applications/${application_id}?ok=` + encodeURIComponent("No change."));
+  }
+
+  const { data: newOwner } = await admin
+    .from("users")
+    .select("id, disabled")
+    .eq("id", created_by)
+    .maybeSingle();
+  if (!newOwner || newOwner.disabled) {
+    redirect(
+      `/admin/applications/${application_id}?error=` +
+        encodeURIComponent("That staff member isn't available — check Staff for an active account."),
+    );
+  }
+
+  const { error } = await admin.from("applications").update({ created_by }).eq("id", application_id);
+  if (error) {
+    redirect(`/admin/applications/${application_id}?error=` + encodeURIComponent(error.message));
+  }
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "admin.reassign_lead_owner",
+    entity: "application",
+    entityId: application_id,
+    details: { from: appRow!.created_by, to: created_by },
+  });
+
+  revalidatePath(`/admin/applications/${application_id}`);
+  revalidatePath("/admin/team");
+  revalidatePath(`/admin/team/${created_by}`);
+  if (appRow!.created_by) revalidatePath(`/admin/team/${appRow!.created_by}`);
+  redirect(`/admin/applications/${application_id}?ok=` + encodeURIComponent("Lead owner updated."));
+}
+
 // Payment completion normally enrolls the applicant automatically
 // (handlePaymentCompleted -> enroll_application), but that call can fail
 // silently (e.g. a transient DB/network blip) and nothing retries it on its

@@ -14,7 +14,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Alert } from "@/components/ui/alert";
-import { deleteApplication, retryEnrollment, rotateAccessToken, updateApplicationGrade } from "../../actions";
+import {
+  deleteApplication,
+  reassignLeadOwner,
+  retryEnrollment,
+  rotateAccessToken,
+  updateApplicationGrade,
+} from "../../actions";
 import { needsAssessment } from "@/lib/assessment";
 import { getClassOptions } from "@/lib/classes";
 import { leadSourceLabel, outcomeLabel, type Application, type Student, type Parent, type Payment, type SubjectResult, type AssessmentOutcome } from "@/lib/types";
@@ -112,6 +118,17 @@ export default async function ApplicationDetailPage({
   // sectioned, grade and section can drift apart (use Transfer instead).
   const classOptions = app.section_id ? [] : await getClassOptions();
 
+  // Every lead-attribution stat (Team dashboard, performance report) groups
+  // by created_by — this list lets an admin reassign it directly, e.g. when
+  // two staff share the same display name and a lead got logged under the
+  // wrong one of the two.
+  const { data: leadOwnerCandidates } = await admin
+    .from("users")
+    .select("id, full_name, email, role")
+    .in("role", ["marketing", "admin", "coo"])
+    .eq("disabled", false)
+    .order("full_name", { ascending: true });
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
@@ -200,6 +217,26 @@ export default async function ApplicationDetailPage({
           value={app.preferred_class_timing ?? section?.class_timing ?? "No preference"}
         />
         <Field label="Source of enquiry" value={leadSourceLabel(app.lead_source, app.lead_source_other)} />
+        <div className="print:hidden">
+          <Label htmlFor="lead_owner" className="text-xs uppercase tracking-wide text-muted-foreground">
+            Lead owner
+          </Label>
+          <form action={reassignLeadOwner} className="mt-1 flex items-center gap-2">
+            <input type="hidden" name="application_id" value={app.id} />
+            <Select id="lead_owner" name="created_by" defaultValue={app.created_by ?? ""} className="h-9 py-1 text-sm">
+              {!app.created_by && <option value="">—</option>}
+              {(leadOwnerCandidates ?? []).map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.full_name ?? u.email} ({u.role}
+                  {u.email ? ` · ${u.email}` : ""})
+                </option>
+              ))}
+            </Select>
+            <SubmitButton size="sm" variant="outline" pendingText="Saving…">
+              Save
+            </SubmitButton>
+          </form>
+        </div>
         <Field label="Admission number" value={app.admission_number ?? "—"} mono />
         <Field
           label="Section"
