@@ -11,6 +11,7 @@ import {
   changeBroadwaySectionAfterTransfer,
   handlePaymentCompleted,
   handleSlotBooked,
+  notifyGradeNeedsAssessment,
   notifyMissedAssessment,
   notifyOpenSlotAvailable,
   notifySlotReassigned,
@@ -413,7 +414,7 @@ export async function updateApplicationGrade(formData: FormData) {
   const admin = createSupabaseAdminClient();
   const { data: appRow } = await admin
     .from("applications")
-    .select("grade_applying, section_id")
+    .select("grade_applying, section_id, status")
     .eq("id", application_id)
     .maybeSingle();
   if (!appRow) {
@@ -429,12 +430,58 @@ export async function updateApplicationGrade(formData: FormData) {
     redirect(`/admin/applications/${application_id}?ok=` + encodeURIComponent("No change."));
   }
 
-  const { error } = await admin
-    .from("applications")
-    .update({ grade_applying })
-    .eq("id", application_id);
-  if (error) {
-    redirect(`/admin/applications/${application_id}?error=` + encodeURIComponent(error.message));
+  // The new grade can require an assessment the old one didn't (e.g. "KG 1"
+  // -> "KG 2" — only KG 1 is exempt). The parent's own slot-booking UI and
+  // the admin assignAssessment action both hard-require status ===
+  // "FORM_SUBMITTED", so an application that already moved past that stage
+  // (DETAILS_PENDING, AGREEMENT_SENT) needs to be rolled back to it here, or
+  // the parent would be stuck with no way to ever book an assessment. Once
+  // a payment attempt has actually started, rolling status back is too risky
+  // to do silently (it would desync from real payment/order history), so
+  // that case is blocked with a clear message instead of handled
+  // automatically.
+  const wasAssessmentNeeded = needsAssessment(appRow!.grade_applying ?? "");
+  const nowAssessmentNeeded = needsAssessment(grade_applying);
+  const newlyNeedsAssessment = !wasAssessmentNeeded && nowAssessmentNeeded;
+  const PAYMENT_TOUCHED_STATUSES = ["PAYMENT_PENDING", "PAYMENT_COMPLETED", "PAYMENT_FAILED", "ABANDONED", "NEEDS_ADMIN"];
+  if (newlyNeedsAssessment && PAYMENT_TOUCHED_STATUSES.includes(appRow!.status)) {
+    redirect(
+      `/admin/applications/${application_id}?error=` +
+        encodeURIComponent(
+          "This class now requires an assessment, but the applicant already has payment activity on file — this needs manual handling rather than an automatic class change.",
+        ),
+    );
+  }
+  const needsStatusReset = newlyNeedsAssessment && appRow!.status !== "FORM_SUBMITTED";
+
+  if (needsStatusReset) {
+    // Rolling status back to FORM_SUBMITTED is a backward move the normal
+    // forward-only status-transition trigger rejects outright — this RPC
+    // carries the same bypass escape hatch enroll_application and
+    // admin_release_missed_slot already use for their own legitimate
+    // out-of-order transitions (see 0071).
+    const { data: result, error } = await admin.rpc("admin_correct_grade_needs_assessment", {
+      p_application: application_id,
+      p_grade: grade_applying,
+    });
+    if (error) {
+      redirect(`/admin/applications/${application_id}?error=` + encodeURIComponent(error.message));
+    }
+    const r = result as { status: string };
+    if (r.status !== "OK") {
+      redirect(
+        `/admin/applications/${application_id}?error=` +
+          encodeURIComponent("Could not update class — the applicant's state changed, please refresh and retry."),
+      );
+    }
+  } else {
+    const { error } = await admin
+      .from("applications")
+      .update({ grade_applying })
+      .eq("id", application_id);
+    if (error) {
+      redirect(`/admin/applications/${application_id}?error=` + encodeURIComponent(error.message));
+    }
   }
 
   await logAudit({
@@ -443,13 +490,28 @@ export async function updateApplicationGrade(formData: FormData) {
     action: "admin.update_application_grade",
     entity: "application",
     entityId: application_id,
-    details: { from: appRow!.grade_applying, to: grade_applying },
+    details: {
+      from: appRow!.grade_applying,
+      to: grade_applying,
+      status_reset_to_form_submitted: needsStatusReset,
+    },
   });
+
+  if (needsStatusReset) {
+    await notifyGradeNeedsAssessment(application_id, grade_applying);
+  }
 
   revalidatePath(`/admin/applications/${application_id}`);
   revalidatePath("/admin");
   revalidatePath("/admin/assessments");
-  redirect(`/admin/applications/${application_id}?ok=` + encodeURIComponent("Class updated."));
+  redirect(
+    `/admin/applications/${application_id}?ok=` +
+      encodeURIComponent(
+        needsStatusReset
+          ? "Class updated — this now requires an assessment, so the applicant was moved back to awaiting assessment scheduling."
+          : "Class updated.",
+      ),
+  );
 }
 
 // Payment completion normally enrolls the applicant automatically

@@ -658,6 +658,30 @@ export async function handleFormSubmitted(appId: string) {
   }
 }
 
+// An admin corrected an applicant's grade (e.g. "KG 1" -> "KG 2") after the
+// form was already submitted and the application had moved on to a stage
+// past FORM_SUBMITTED — the new grade requires an assessment the old one
+// didn't. Nothing re-runs handleFormSubmitted just because a field changed,
+// so this re-sends the same staff alert its own "needs assessment" branch
+// sends on a fresh submission (updateApplicationGrade in admin/actions.ts
+// is also the one that resets status back to FORM_SUBMITTED so the parent's
+// own SlotPicker UI — gated on that exact status — reappears).
+export async function notifyGradeNeedsAssessment(appId: string, newGrade: string) {
+  const admin = createSupabaseAdminClient();
+  const { data: appRow } = await admin.from("applications").select("*").eq("id", appId).maybeSingle();
+  if (!appRow) return;
+  const app = appRow as Application;
+  const context = await applicationContext(app);
+  await dispatch([
+    ...fanToStaff(await staffContacts(["admin"]), {
+      applicationId: app.id,
+      event: "N-2",
+      subject: "Grade corrected — schedule assessment",
+      body: `${context}This applicant's class was corrected to ${newGrade}, which requires an assessment. Please create and assign a slot.`,
+    }),
+  ]);
+}
+
 // ---------------------------------------------------------------------------
 // N-4 Slot booked — parent, the assigned teacher, admin
 // ---------------------------------------------------------------------------
