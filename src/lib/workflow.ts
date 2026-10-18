@@ -682,6 +682,21 @@ export async function notifyGradeNeedsAssessment(appId: string, newGrade: string
   ]);
 }
 
+// Mirror of notifyGradeNeedsAssessment, for the opposite correction: grade
+// changed to "KG 1" (no assessment needed), releasing any booked slot and
+// unlocking the remaining-details form — reuses the exact same message a
+// fresh KG 1 submission gets (notifyDetailsPending), since it's the same
+// real-world event for the parent either way.
+export async function notifyGradeNoLongerNeedsAssessment(appId: string) {
+  const admin = createSupabaseAdminClient();
+  const { data: appRow } = await admin.from("applications").select("*").eq("id", appId).maybeSingle();
+  if (!appRow) return;
+  const app = appRow as Application;
+  const { data: parentRow } = await admin.from("parents").select("*").eq("id", app.parent_id).maybeSingle();
+  if (!parentRow) return;
+  await notifyDetailsPending(app, parentRow as Parent);
+}
+
 // ---------------------------------------------------------------------------
 // N-4 Slot booked — parent, the assigned teacher, admin
 // ---------------------------------------------------------------------------

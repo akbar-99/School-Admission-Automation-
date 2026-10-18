@@ -12,6 +12,7 @@ import {
   handlePaymentCompleted,
   handleSlotBooked,
   notifyGradeNeedsAssessment,
+  notifyGradeNoLongerNeedsAssessment,
   notifyMissedAssessment,
   notifyOpenSlotAvailable,
   notifySlotReassigned,
@@ -443,6 +444,7 @@ export async function updateApplicationGrade(formData: FormData) {
   const wasAssessmentNeeded = needsAssessment(appRow!.grade_applying ?? "");
   const nowAssessmentNeeded = needsAssessment(grade_applying);
   const newlyNeedsAssessment = !wasAssessmentNeeded && nowAssessmentNeeded;
+  const newlyExemptFromAssessment = wasAssessmentNeeded && !nowAssessmentNeeded;
   const PAYMENT_TOUCHED_STATUSES = ["PAYMENT_PENDING", "PAYMENT_COMPLETED", "PAYMENT_FAILED", "ABANDONED", "NEEDS_ADMIN"];
   if (newlyNeedsAssessment && PAYMENT_TOUCHED_STATUSES.includes(appRow!.status)) {
     redirect(
@@ -453,6 +455,12 @@ export async function updateApplicationGrade(formData: FormData) {
     );
   }
   const needsStatusReset = newlyNeedsAssessment && appRow!.status !== "FORM_SUBMITTED";
+  // Only these two statuses mean "stuck waiting on an assessment that no
+  // longer applies" — anything later either already has a real recorded
+  // result (ASSESSMENT_COMPLETED onward) or has already moved forward on
+  // its own, so there's nothing to release/unstick.
+  const needsAssessmentRelease =
+    newlyExemptFromAssessment && ["FORM_SUBMITTED", "ASSESSMENT_SCHEDULED"].includes(appRow!.status);
 
   if (needsStatusReset) {
     // Rolling status back to FORM_SUBMITTED is a backward move the normal
@@ -461,6 +469,25 @@ export async function updateApplicationGrade(formData: FormData) {
     // admin_release_missed_slot already use for their own legitimate
     // out-of-order transitions (see 0071).
     const { data: result, error } = await admin.rpc("admin_correct_grade_needs_assessment", {
+      p_application: application_id,
+      p_grade: grade_applying,
+    });
+    if (error) {
+      redirect(`/admin/applications/${application_id}?error=` + encodeURIComponent(error.message));
+    }
+    const r = result as { status: string };
+    if (r.status !== "OK") {
+      redirect(
+        `/admin/applications/${application_id}?error=` +
+          encodeURIComponent("Could not update class — the applicant's state changed, please refresh and retry."),
+      );
+    }
+  } else if (needsAssessmentRelease) {
+    // Releases any booked slot (so it stops showing as a stale "Missed"/
+    // upcoming row for an assessment this applicant no longer needs) and
+    // moves status to DETAILS_PENDING, same destination a fresh KG 1
+    // submission reaches immediately (see 0072).
+    const { data: result, error } = await admin.rpc("admin_correct_grade_no_longer_needs_assessment", {
       p_application: application_id,
       p_grade: grade_applying,
     });
@@ -494,11 +521,15 @@ export async function updateApplicationGrade(formData: FormData) {
       from: appRow!.grade_applying,
       to: grade_applying,
       status_reset_to_form_submitted: needsStatusReset,
+      assessment_slot_released: needsAssessmentRelease,
     },
   });
 
   if (needsStatusReset) {
     await notifyGradeNeedsAssessment(application_id, grade_applying);
+  }
+  if (needsAssessmentRelease) {
+    await notifyGradeNoLongerNeedsAssessment(application_id);
   }
 
   revalidatePath(`/admin/applications/${application_id}`);
@@ -509,7 +540,9 @@ export async function updateApplicationGrade(formData: FormData) {
       encodeURIComponent(
         needsStatusReset
           ? "Class updated — this now requires an assessment, so the applicant was moved back to awaiting assessment scheduling."
-          : "Class updated.",
+          : needsAssessmentRelease
+            ? "Class updated — this no longer requires an assessment, so any booked slot was released and the applicant can continue with their remaining details."
+            : "Class updated.",
       ),
   );
 }
