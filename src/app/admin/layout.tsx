@@ -15,7 +15,13 @@ export default async function AdminLayout({
       nav={[
         { href: "/admin", label: "Overview" },
         ...(profile.role === "coo" ? [{ href: "/admin/coo-dashboard", label: "Team dashboard" }] : []),
-        { href: "/marketing", label: "Leads" },
+        // Deliberately no "Leads" link to /marketing's new-lead form here —
+        // createLead attributes the lead to whoever is logged in, so an
+        // admin using it on a marketing person's behalf files it under the
+        // admin's own account instead, throwing off that person's stats
+        // (confirmed happening live; fixed via reassignLeadOwner, but best
+        // not left easy to repeat). Admins still see every lead on this
+        // Overview page and the Team dashboard — just can't create one here.
         { href: "/admin/payments", label: "Payments" },
         { href: "/admin/assessments", label: "Assessments" },
         { href: "/admin/sections", label: "Sections" },
