@@ -38,6 +38,11 @@ const PhoneSchema = z.object({
   phone: z.string().trim().min(7, "Enter a valid phone number").or(z.literal("")),
 });
 
+const NameSchema = z.object({
+  user_id: z.string().uuid(),
+  full_name: z.string().trim().min(2, "Full name is required"),
+});
+
 const NotifyBroadcastsSchema = z.object({
   user_id: z.string().uuid(),
   notify_broadcasts: z.boolean(),
@@ -222,6 +227,37 @@ export async function setStaffPhone(formData: FormData) {
 
   revalidatePath("/admin/staff");
   back(phone ? "Phone number updated." : "Phone number cleared.");
+}
+
+// Admin-only: rename a staff member — e.g. to tell two accounts with the
+// same real name apart (different roles/emails show up as identical
+// "Firstname Lastname" everywhere a lead's creator is attributed).
+export async function setStaffName(formData: FormData) {
+  const { profile } = await requireRole(["admin", "coo"]);
+
+  const parsed = NameSchema.safeParse({
+    user_id: formData.get("user_id"),
+    full_name: (formData.get("full_name") ?? "").toString().trim(),
+  });
+  if (!parsed.success) back(parsed.error.issues[0].message, "error");
+  const { user_id, full_name } = parsed.data!;
+
+  const admin = createSupabaseAdminClient();
+  const { data: before } = await admin.from("users").select("full_name").eq("id", user_id).maybeSingle();
+  const { error } = await admin.from("users").update({ full_name }).eq("id", user_id);
+  if (error) back(error.message, "error");
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "staff.name_set",
+    entity: "user",
+    entityId: user_id,
+    details: { from: before?.full_name ?? null, to: full_name },
+  });
+
+  revalidatePath("/admin/staff");
+  back("Name updated.");
 }
 
 // Admin-only: turn role-broadcast alerts (fanToStaff) on/off for one staff

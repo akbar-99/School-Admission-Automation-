@@ -5,6 +5,7 @@ import { formatDateTime } from "@/lib/utils";
 import {
   inviteStaff,
   setZoomEmail,
+  setStaffName,
   setStaffPhone,
   setNotifyBroadcasts,
   removeStaff,
@@ -172,7 +173,26 @@ async function StaffTable() {
               <TBody>
                 {staff.map((s) => (
                   <TR key={s.id} className={s.disabled ? "opacity-60" : undefined}>
-                    <TD className="whitespace-nowrap font-medium">{s.full_name ?? "—"}</TD>
+                    <TD className="whitespace-nowrap">
+                      <form action={setStaffName} className="flex items-center gap-1.5">
+                        <input type="hidden" name="user_id" value={s.id} />
+                        <Input
+                          name="full_name"
+                          defaultValue={s.full_name ?? ""}
+                          placeholder="Full name"
+                          className="h-9 w-36 font-medium"
+                          disabled={s.disabled}
+                        />
+                        <SubmitButton
+                          size="sm"
+                          variant="outline"
+                          pendingText="…"
+                          disabled={s.disabled || undefined}
+                        >
+                          Save
+                        </SubmitButton>
+                      </form>
+                    </TD>
                     <TD className="whitespace-nowrap text-muted-foreground">{s.email ?? "—"}</TD>
                     <TD className="whitespace-nowrap">
                       <div className="flex flex-wrap items-center gap-1.5">
