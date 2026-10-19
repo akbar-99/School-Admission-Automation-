@@ -697,6 +697,47 @@ export async function notifyGradeNoLongerNeedsAssessment(appId: string) {
   await notifyDetailsPending(app, parentRow as Parent);
 }
 
+// Unlike a brand-new or corrected-grade submission (where the parent is
+// still right there on the apply page, or never left the funnel), a
+// rejected applicant has no reason to ever check their portal again — this
+// is the one case that needs an explicit, direct invitation back, not just
+// a staff alert that a slot needs creating.
+export async function notifyRetestGranted(appId: string) {
+  const admin = createSupabaseAdminClient();
+  const { data: appRow } = await admin.from("applications").select("*").eq("id", appId).maybeSingle();
+  if (!appRow) return;
+  const app = appRow as Application;
+  const { data: parentRow } = await admin.from("parents").select("*").eq("id", app.parent_id).maybeSingle();
+  const parent = parentRow as Parent | null;
+  const context = await applicationContext(app);
+  const contact = await leadCreatorContact(app);
+
+  const messages = [
+    ...fanToStaff(await staffContacts(["admin"]), {
+      applicationId: app.id,
+      event: "N-2",
+      subject: "Retest granted — schedule assessment",
+      body: `${context}A retest was granted for this applicant. Please create and assign a new slot.`,
+    }),
+  ];
+  if (parent) {
+    messages.push(
+      ...multiChannel(
+        {
+          applicationId: app.id,
+          event: "N-2",
+          subject: "You're invited to retake the assessment",
+          body:
+            `Hello ${parent.full_name},\n\nWe'd like to give your child another opportunity to take the admission assessment. ` +
+            `Please pick a new time here:\n${applyUrl(app.access_token)}\n\nQuestions? Contact ${contact.name} at ${contact.phone}.`,
+        },
+        parent,
+      ),
+    );
+  }
+  await dispatch(messages);
+}
+
 // ---------------------------------------------------------------------------
 // N-4 Slot booked — parent, the assigned teacher, admin
 // ---------------------------------------------------------------------------

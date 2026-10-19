@@ -16,6 +16,7 @@ import { Select } from "@/components/ui/select";
 import { Alert } from "@/components/ui/alert";
 import {
   deleteApplication,
+  grantRetest,
   reassignLeadOwner,
   retryEnrollment,
   rotateAccessToken,
@@ -163,6 +164,22 @@ export default async function ApplicationDetailPage({
       {ok && (
         <Alert variant="success" className="print:hidden">
           {ok}
+        </Alert>
+      )}
+
+      {app.status === "REJECTED" && result?.outcome === "FAIL" && (
+        <Alert variant="warning" className="print:hidden flex flex-wrap items-center justify-between gap-3">
+          <span>
+            Rejected after a failed assessment
+            {result.remarks ? ` — teacher's remark: "${result.remarks}"` : ""}. If this warrants another chance,
+            you can reopen it for a retest.
+          </span>
+          <form action={grantRetest}>
+            <input type="hidden" name="application_id" value={app.id} />
+            <SubmitButton size="sm" variant="outline" pendingText="Granting…">
+              Grant retest
+            </SubmitButton>
+          </form>
         </Alert>
       )}
 

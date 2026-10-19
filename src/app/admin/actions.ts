@@ -15,6 +15,7 @@ import {
   notifyGradeNoLongerNeedsAssessment,
   notifyMissedAssessment,
   notifyOpenSlotAvailable,
+  notifyRetestGranted,
   notifySlotReassigned,
   notifyTeacherSlotAssigned,
   removeEnrollmentFromGoogleSheet,
@@ -615,6 +616,63 @@ export async function reassignLeadOwner(formData: FormData) {
   revalidatePath(`/admin/team/${created_by}`);
   if (appRow!.created_by) revalidatePath(`/admin/team/${appRow!.created_by}`);
   redirect(`/admin/applications/${application_id}?ok=` + encodeURIComponent("Lead owner updated."));
+}
+
+// A failed assessment always rejects an applicant outright (no path from a
+// teacher's "please retest" remark to an actual retest) — this reopens a
+// REJECTED applicant for a fresh assessment. See 0073 for why this needs a
+// bypass RPC rather than a plain status update.
+const GrantRetestSchema = z.object({ application_id: z.string().uuid() });
+
+export async function grantRetest(formData: FormData) {
+  const { profile } = await requireRole(["admin", "coo"]);
+  const applicationId = String(formData.get("application_id") ?? "");
+  const parsed = GrantRetestSchema.safeParse({ application_id: applicationId });
+  if (!parsed.success) {
+    redirect(`/admin/applications/${applicationId}?error=` + encodeURIComponent("Invalid request."));
+  }
+  const { application_id } = parsed.data!;
+
+  const admin = createSupabaseAdminClient();
+  const { data: result, error } = await admin.rpc("admin_grant_retest", { p_application: application_id });
+  if (error) {
+    redirect(`/admin/applications/${application_id}?error=` + encodeURIComponent(error.message));
+  }
+  const r = result as { status: string; previous_outcome?: string; previous_remarks?: string | null };
+  if (r.status === "NOT_FOUND") {
+    redirect(`/admin/applications/${application_id}?error=` + encodeURIComponent("Application not found."));
+  }
+  if (r.status === "INVALID_STATUS") {
+    redirect(
+      `/admin/applications/${application_id}?error=` +
+        encodeURIComponent("This applicant isn't currently rejected — nothing to retest."),
+    );
+  }
+  if (r.status === "ALREADY_SECTIONED") {
+    redirect(
+      `/admin/applications/${application_id}?error=` +
+        encodeURIComponent("This applicant is already assigned to a section."),
+    );
+  }
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "admin.grant_retest",
+    entity: "application",
+    entityId: application_id,
+    details: { previous_outcome: r.previous_outcome, previous_remarks: r.previous_remarks },
+  });
+
+  await notifyRetestGranted(application_id);
+
+  revalidatePath(`/admin/applications/${application_id}`);
+  revalidatePath("/admin");
+  revalidatePath("/admin/assessments");
+  redirect(
+    `/admin/applications/${application_id}?ok=` +
+      encodeURIComponent("Retest granted — the parent's been invited to pick a new assessment time."),
+  );
 }
 
 // Payment completion normally enrolls the applicant automatically
