@@ -719,6 +719,12 @@ export async function notifyRetestGranted(appId: string) {
       subject: "Retest granted — schedule assessment",
       body: `${context}A retest was granted for this applicant. Please create and assign a new slot.`,
     }),
+    ...(await notifyLeadCreator(app, {
+      applicationId: app.id,
+      event: "N-2",
+      subject: "Retest granted for your lead",
+      body: `${context}A retest was granted for this applicant — they'll be asked to pick a new assessment time.`,
+    })),
   ];
   if (parent) {
     messages.push(
