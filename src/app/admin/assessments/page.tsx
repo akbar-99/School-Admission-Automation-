@@ -3,7 +3,13 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { config } from "@/lib/config";
 import { formatInZone, formatInZoneWithDay, toZonedInputValue } from "@/lib/utils";
 import { needsAssessment } from "@/lib/assessment";
-import { createAssessmentSlot, reassignSlotTeacher, generateZoomLink, rescheduleMissedAssessment } from "../actions";
+import {
+  createAssessmentSlot,
+  grantRetest,
+  reassignSlotTeacher,
+  generateZoomLink,
+  rescheduleMissedAssessment,
+} from "../actions";
 import { AssignAssessmentRow } from "@/components/admin/assign-assessment-row";
 import { AdminUnavailableAlerts } from "@/components/admin/unavailable-alerts";
 import { SubmitButton } from "@/components/submit-button";
@@ -513,6 +519,13 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
                           Reschedule
                         </SubmitButton>
                       </form>
+                    ) : s.applications?.status === "REJECTED" ? (
+                      <form action={grantRetest}>
+                        <input type="hidden" name="application_id" value={s.application_id!} />
+                        <SubmitButton size="sm" variant="outline" pendingText="Granting…">
+                          Grant retest
+                        </SubmitButton>
+                      </form>
                     ) : (
                       !s.zoom_join_url &&
                       s.applications?.status !== "ASSESSMENT_COMPLETED" && (
@@ -745,6 +758,13 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
                             <input type="hidden" name="application_id" value={s.application_id!} />
                             <SubmitButton size="sm" variant="outline" pendingText="Releasing…">
                               Reschedule
+                            </SubmitButton>
+                          </form>
+                        ) : s.applications?.status === "REJECTED" ? (
+                          <form action={grantRetest}>
+                            <input type="hidden" name="application_id" value={s.application_id!} />
+                            <SubmitButton size="sm" variant="outline" pendingText="Granting…">
+                              Grant retest
                             </SubmitButton>
                           </form>
                         ) : s.teacher_id && !past ? (
