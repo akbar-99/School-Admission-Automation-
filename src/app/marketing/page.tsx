@@ -6,6 +6,8 @@ import { applyUrl } from "@/lib/parent";
 import { formatDateTime, cn } from "@/lib/utils";
 import { createLead, claimLead, dismissLead, addContactInfo, markWithdrawn, restoreWithdrawn } from "./actions";
 import { LeadSourceSelect } from "@/components/marketing/lead-source-select";
+import { CurriculumClassFields } from "@/components/marketing/curriculum-class-fields";
+import { getClassOptions } from "@/lib/classes";
 import { LiveSearchField } from "@/components/marketing/live-search-field";
 import { describeFilters, parseAdmissionsFilters } from "@/lib/admissions-report";
 import { StatusBadge } from "@/components/status-badge";
@@ -90,6 +92,8 @@ export default async function MarketingPage({
       student_name?: string;
       lead_source: string;
       lead_source_other?: string;
+      preferred_curriculum?: string;
+      grade_applying?: string;
     };
     matches: {
       id: string;
@@ -110,6 +114,7 @@ export default async function MarketingPage({
     }
   }
   const hasFilters = Boolean(status || from || to || q);
+  const classOptions = await getClassOptions();
 
   return (
     <div className="space-y-6">
@@ -170,6 +175,8 @@ export default async function MarketingPage({
               <input type="hidden" name="student_name" value={duplicateInfo.input.student_name ?? ""} />
               <input type="hidden" name="lead_source" value={duplicateInfo.input.lead_source} />
               <input type="hidden" name="lead_source_other" value={duplicateInfo.input.lead_source_other ?? ""} />
+              <input type="hidden" name="preferred_curriculum" value={duplicateInfo.input.preferred_curriculum ?? ""} />
+              <input type="hidden" name="grade_applying" value={duplicateInfo.input.grade_applying ?? ""} />
               <input type="hidden" name="confirm_duplicate" value="on" />
               <SubmitButton pendingText="Creating…" variant="outline">
                 It&apos;s a different family — create anyway
@@ -211,6 +218,7 @@ export default async function MarketingPage({
               <Label htmlFor="student_name">Student&apos;s name (optional)</Label>
               <Input id="student_name" name="student_name" />
             </div>
+            <CurriculumClassFields classOptions={classOptions} />
             <div className="space-y-1.5">
               <Label htmlFor="lead_source">Source of enquiry *</Label>
               <LeadSourceSelect name="lead_source" />

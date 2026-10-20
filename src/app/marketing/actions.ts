@@ -10,6 +10,8 @@ import { sendInstagramMessage } from "@/lib/instagram";
 import { sendFacebookMessage } from "@/lib/facebook";
 import { cancelBroadwayAdmission } from "@/lib/broadway";
 import { logAudit } from "@/lib/audit";
+import { classCategory } from "@/lib/assessment";
+import { CURRICULUM_OPTIONS } from "@/lib/config";
 import { LEAD_SOURCES, type Application, type Parent } from "@/lib/types";
 
 // The two DM channels this app can chat through — keyed by lead_source, so
@@ -28,6 +30,10 @@ const LeadSchema = z
     student_name: z.string().trim().optional(),
     lead_source: z.enum(LEAD_SOURCES, { error: "Select where this lead came from" }),
     lead_source_other: z.string().trim().max(120).optional(),
+    // Both optional — marketing staff entering a lead often doesn't know
+    // the class yet, same as student_name above.
+    preferred_curriculum: z.enum(CURRICULUM_OPTIONS).optional().or(z.literal("")),
+    grade_applying: z.string().trim().optional(),
   })
   .refine((v) => v.lead_source !== "other" || Boolean(v.lead_source_other), {
     message: "Type what the source is",
@@ -147,6 +153,8 @@ export async function createLead(formData: FormData) {
     student_name: formData.get("student_name") ?? "",
     lead_source: formData.get("lead_source") ?? "",
     lead_source_other: formData.get("lead_source_other") ?? "",
+    preferred_curriculum: formData.get("preferred_curriculum") ?? "",
+    grade_applying: formData.get("grade_applying") ?? "",
   });
   if (!parsed.success) {
     redirect("/marketing?error=" + encodeURIComponent(parsed.error.issues[0].message));
@@ -190,6 +198,9 @@ export async function createLead(formData: FormData) {
       lead_student_name: input.student_name || null,
       lead_source: input.lead_source,
       lead_source_other: input.lead_source === "other" ? input.lead_source_other : null,
+      preferred_curriculum: input.preferred_curriculum || null,
+      grade_applying: input.grade_applying || null,
+      category: input.grade_applying ? classCategory(input.grade_applying) : null,
       created_by: profile.id,
     })
     .select("*")
