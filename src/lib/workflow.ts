@@ -671,15 +671,41 @@ export async function notifyGradeNeedsAssessment(appId: string, newGrade: string
   const { data: appRow } = await admin.from("applications").select("*").eq("id", appId).maybeSingle();
   if (!appRow) return;
   const app = appRow as Application;
+  const { data: parentRow } = await admin.from("parents").select("*").eq("id", app.parent_id).maybeSingle();
+  const parent = parentRow as Parent | null;
   const context = await applicationContext(app);
-  await dispatch([
+  const contact = await leadCreatorContact(app);
+
+  const messages = [
     ...fanToStaff(await staffContacts(["admin"]), {
       applicationId: app.id,
       event: "N-2",
       subject: "Grade corrected — schedule assessment",
       body: `${context}This applicant's class was corrected to ${newGrade}, which requires an assessment. Please create and assign a slot.`,
     }),
-  ]);
+    ...(await notifyLeadCreator(app, {
+      applicationId: app.id,
+      event: "N-2",
+      subject: "Your lead's class was corrected",
+      body: `${context}Their class was corrected to ${newGrade}, which requires an assessment — they'll be asked to pick a time.`,
+    })),
+  ];
+  if (parent) {
+    messages.push(
+      ...multiChannel(
+        {
+          applicationId: app.id,
+          event: "N-2",
+          subject: "Please pick an assessment time",
+          body:
+            `Hello ${parent.full_name},\n\nYour child's class has been updated to ${newGrade}, which requires an admission assessment. ` +
+            `Please pick a time here:\n${applyUrl(app.access_token)}\n\nQuestions? Contact ${contact.name} at ${contact.phone}.`,
+        },
+        parent,
+      ),
+    );
+  }
+  await dispatch(messages);
 }
 
 // Mirror of notifyGradeNeedsAssessment, for the opposite correction: grade
@@ -693,8 +719,18 @@ export async function notifyGradeNoLongerNeedsAssessment(appId: string) {
   if (!appRow) return;
   const app = appRow as Application;
   const { data: parentRow } = await admin.from("parents").select("*").eq("id", app.parent_id).maybeSingle();
-  if (!parentRow) return;
-  await notifyDetailsPending(app, parentRow as Parent);
+  if (parentRow) {
+    await notifyDetailsPending(app, parentRow as Parent);
+  }
+  const context = await applicationContext(app);
+  await dispatch(
+    await notifyLeadCreator(app, {
+      applicationId: app.id,
+      event: "N-2b",
+      subject: "Your lead's class was corrected",
+      body: `${context}Their class was corrected to ${app.grade_applying}, which no longer requires an assessment — they can continue with their remaining details.`,
+    }),
+  );
 }
 
 // Unlike a brand-new or corrected-grade submission (where the parent is
