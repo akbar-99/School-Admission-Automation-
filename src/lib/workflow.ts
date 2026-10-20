@@ -1666,6 +1666,12 @@ export async function notifySlotTimeChanged(input: {
           body:
             `Hello ${parent.full_name},\n\nYour child's assessment has been moved from ${oldWhen} to ${newWhen}. ` +
             `Please make a note of the new time.\n\nQuestions? Contact ${contact.name} at ${contact.phone}.`,
+          // assessment_time_changed_v1 — confirmed APPROVED + still UTILITY
+          // via the Graph API directly, not just the dashboard badge.
+          whatsappTemplate: {
+            name: "assessment_time_changed_v1",
+            params: [parent.full_name, newWhen, contact.name, contact.phone],
+          },
         },
         parent,
       ),
