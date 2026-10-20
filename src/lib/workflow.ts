@@ -736,6 +736,13 @@ export async function notifyRetestGranted(appId: string) {
           body:
             `Hello ${parent.full_name},\n\nWe'd like to give your child another opportunity to take the admission assessment. ` +
             `Please pick a new time here:\n${applyUrl(app.access_token)}\n\nQuestions? Contact ${contact.name} at ${contact.phone}.`,
+          // assessment_retest_v2 — confirmed APPROVED + still UTILITY via the
+          // Graph API (not just the dashboard badge; see the assessment_retest_v1
+          // reclassification this exact wording was rewritten to avoid).
+          whatsappTemplate: {
+            name: "assessment_retest_v2",
+            params: [parent.full_name, applyUrl(app.access_token), contact.name, contact.phone],
+          },
         },
         parent,
       ),
