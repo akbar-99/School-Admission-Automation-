@@ -9,6 +9,7 @@ import {
   reassignSlotTeacher,
   generateZoomLink,
   rescheduleMissedAssessment,
+  rescheduleSlotTime,
 } from "../actions";
 import { AssignAssessmentRow } from "@/components/admin/assign-assessment-row";
 import { AdminUnavailableAlerts } from "@/components/admin/unavailable-alerts";
@@ -294,12 +295,10 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
           </CardHeader>
           <CardContent className="space-y-2">
             {unavailableSlots.map((s) => (
-              <form
+              <div
                 key={s.id}
-                action={reassignSlotTeacher}
                 className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-sm"
               >
-                <input type="hidden" name="slot_id" value={s.id} />
                 <div>
                   <span className="font-medium">
                     {formatInZoneWithDay(s.starts_at, schoolTz)} {schoolLabel}
@@ -311,23 +310,39 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
                       ` · ${s.applications?.students?.full_name ?? s.applications?.lead_student_name}`}
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Select name="teacher_id" required defaultValue="" className="h-9 w-48">
-                    <option value="" disabled>
-                      New teacher…
-                    </option>
-                    {teachers.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.full_name ?? t.email}
-                        {t.id === s.teacher_id ? " (available again)" : ""}
+                <div className="flex flex-wrap items-center gap-2">
+                  <form action={rescheduleSlotTime} className="flex items-center gap-2">
+                    <input type="hidden" name="slot_id" value={s.id} />
+                    <Input
+                      name="starts_at"
+                      type="datetime-local"
+                      required
+                      defaultValue={toZonedInputValue(s.starts_at, schoolTz)}
+                      className="h-9"
+                    />
+                    <SubmitButton size="sm" variant="outline" pendingText="Saving…">
+                      Update time
+                    </SubmitButton>
+                  </form>
+                  <form action={reassignSlotTeacher} className="flex items-center gap-2">
+                    <input type="hidden" name="slot_id" value={s.id} />
+                    <Select name="teacher_id" required defaultValue="" className="h-9 w-48">
+                      <option value="" disabled>
+                        New teacher…
                       </option>
-                    ))}
-                  </Select>
-                  <SubmitButton size="sm" pendingText="Reassigning…">
-                    Reassign
-                  </SubmitButton>
+                      {teachers.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.full_name ?? t.email}
+                          {t.id === s.teacher_id ? " (available again)" : ""}
+                        </option>
+                      ))}
+                    </Select>
+                    <SubmitButton size="sm" pendingText="Reassigning…">
+                      Reassign
+                    </SubmitButton>
+                  </form>
                 </div>
-              </form>
+              </div>
             ))}
           </CardContent>
         </Card>

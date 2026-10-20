@@ -17,6 +17,7 @@ import {
   notifyOpenSlotAvailable,
   notifyRetestGranted,
   notifySlotReassigned,
+  notifySlotTimeChanged,
   notifyTeacherSlotAssigned,
   removeEnrollmentFromGoogleSheet,
   syncEnrollmentToGoogleSheet,
@@ -272,6 +273,82 @@ const ReassignSchema = z.object({
   slot_id: z.string().uuid(),
   teacher_id: z.string().uuid("Select a teacher"),
 });
+
+const RescheduleSlotTimeSchema = z.object({
+  slot_id: z.string().uuid(),
+  starts_at: z.string().min(1, "Pick a time"),
+});
+
+// Moves an already-created slot's own time — distinct from assignAssessment
+// (which creates a brand-new slot) and rescheduleMissedAssessment (which
+// releases a slot back to the open pool entirely). Keeps the slot's original
+// duration rather than asking for it again. A parent's earlier confirmation
+// and any reminders already sent were for the old time, so both get cleared
+// here — the usual reminder cron picks the slot back up fresh for whenever
+// the new time is.
+export async function rescheduleSlotTime(formData: FormData) {
+  const { profile } = await requireRole(["admin", "coo"]);
+  const parsed = RescheduleSlotTimeSchema.safeParse({
+    slot_id: formData.get("slot_id"),
+    starts_at: formData.get("starts_at"),
+  });
+  if (!parsed.success) {
+    redirect("/admin/assessments?error=" + encodeURIComponent(parsed.error.issues[0].message));
+  }
+  const { slot_id, starts_at } = parsed.data!;
+
+  const admin = createSupabaseAdminClient();
+  const { data: slot } = await admin
+    .from("assessment_slots")
+    .select("id, starts_at, ends_at, teacher_id, application_id")
+    .eq("id", slot_id)
+    .maybeSingle();
+  if (!slot) {
+    redirect("/admin/assessments?error=" + encodeURIComponent("Slot not found."));
+  }
+
+  const newStart = new Date(zonedTimeToUtcISO(starts_at, config.school.timezone));
+  if (Number.isNaN(newStart.getTime()) || newStart.getTime() < Date.now()) {
+    redirect("/admin/assessments?error=" + encodeURIComponent("Choose a future time."));
+  }
+  const durationMs = new Date(slot!.ends_at).getTime() - new Date(slot!.starts_at).getTime();
+  const newEnd = new Date(newStart.getTime() + durationMs);
+  const oldStartsAt = slot!.starts_at;
+
+  const { error } = await admin
+    .from("assessment_slots")
+    .update({
+      starts_at: newStart.toISOString(),
+      ends_at: newEnd.toISOString(),
+      confirmed_at: null,
+      reminder_sent: false,
+      reminder_2h_sent: false,
+    })
+    .eq("id", slot_id);
+  if (error) {
+    redirect("/admin/assessments?error=" + encodeURIComponent(error.message));
+  }
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "assessment.slot_time_changed",
+    entity: "assessment_slot",
+    entityId: slot_id,
+    details: { from: oldStartsAt, to: newStart.toISOString() },
+  });
+
+  await notifySlotTimeChanged({
+    teacherId: slot!.teacher_id,
+    applicationId: slot!.application_id,
+    oldStartsAt,
+    newStartsAt: newStart.toISOString(),
+  });
+
+  revalidatePath("/admin/assessments");
+  revalidatePath("/teacher");
+  redirect("/admin/assessments?ok=" + encodeURIComponent("Assessment time updated and everyone notified."));
+}
 
 export async function reassignSlotTeacher(formData: FormData) {
   const { profile } = await requireRole(["admin", "coo"]);

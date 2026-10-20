@@ -1540,6 +1540,86 @@ export async function notifySlotReassigned(input: {
   await dispatch(messages);
 }
 
+// Mirrors notifySlotReassigned's shape, for the other kind of change an
+// admin can make to an already-booked slot — the time itself, teacher
+// unchanged. The caller (rescheduleSlotTime) already clears the parent's
+// earlier confirmation and sent-reminder flags before this runs, since
+// those were for the old time.
+export async function notifySlotTimeChanged(input: {
+  teacherId: string | null;
+  applicationId: string | null;
+  oldStartsAt: string;
+  newStartsAt: string;
+}) {
+  const admin = createSupabaseAdminClient();
+  const oldWhen = `${formatInZone(input.oldStartsAt, config.school.timezone)} ${config.school.timezoneLabel}`;
+  const newWhen = `${formatInZone(input.newStartsAt, config.school.timezone)} ${config.school.timezoneLabel}`;
+
+  let app: Application | null = null;
+  let parent: Parent | null = null;
+  if (input.applicationId) {
+    const { data: appRow } = await admin.from("applications").select("*").eq("id", input.applicationId).maybeSingle();
+    app = appRow as Application | null;
+    if (app) {
+      const { data: parentRow } = await admin.from("parents").select("*").eq("id", app.parent_id).maybeSingle();
+      parent = parentRow as Parent | null;
+    }
+  }
+  const context = app && parent ? staffContextLine(await studentLabel(app), parent.full_name) : "";
+
+  const messages: OutboundMessage[] = [];
+
+  if (input.teacherId) {
+    const { data: teacher } = await admin
+      .from("users")
+      .select("full_name, email, phone")
+      .eq("id", input.teacherId)
+      .maybeSingle();
+    if (teacher) {
+      messages.push(
+        ...toStaffMember(
+          { email: teacher.email, phone: teacher.phone },
+          {
+            event: "SLOT_TIME_CHANGED",
+            subject: "Assessment time changed",
+            body: `${context}Your assessment on ${oldWhen} has been moved to ${newWhen}. Check your dashboard for details.`,
+          },
+        ),
+      );
+    }
+  }
+
+  if (app) {
+    messages.push(
+      ...(await notifyLeadCreator(app, {
+        applicationId: app.id,
+        event: "SLOT_TIME_CHANGED",
+        subject: "Your lead's assessment time has changed",
+        body: `${context}The assessment on ${oldWhen} has been moved to ${newWhen}.`,
+      })),
+    );
+  }
+
+  if (app && parent) {
+    const contact = await leadCreatorContact(app);
+    messages.push(
+      ...multiChannel(
+        {
+          applicationId: app.id,
+          event: "SLOT_TIME_CHANGED",
+          subject: "Your assessment time has changed",
+          body:
+            `Hello ${parent.full_name},\n\nYour child's assessment has been moved from ${oldWhen} to ${newWhen}. ` +
+            `Please make a note of the new time.\n\nQuestions? Contact ${contact.name} at ${contact.phone}.`,
+        },
+        parent,
+      ),
+    );
+  }
+
+  await dispatch(messages);
+}
+
 // ---------------------------------------------------------------------------
 // N-5 Assessment result; N-10 on fail. Pass -> agreement (N-6).
 // ---------------------------------------------------------------------------
