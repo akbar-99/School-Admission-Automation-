@@ -18,6 +18,7 @@ import {
   deleteApplication,
   grantRetest,
   reassignLeadOwner,
+  recordManualPayment,
   retryEnrollment,
   rotateAccessToken,
   updateApplicationGrade,
@@ -198,6 +199,27 @@ export default async function ApplicationDetailPage({
           </form>
         </Alert>
       )}
+
+      {["AGREEMENT_SENT", "PAYMENT_PENDING", "PAYMENT_FAILED", "ABANDONED"].includes(app.status) &&
+        !app.section_id && (
+          <Alert variant="info" className="print:hidden space-y-2">
+            <div>Paid outside the portal (e.g. a direct bank transfer)? Record it here to enroll this applicant.</div>
+            <form action={recordManualPayment} className="flex flex-wrap items-end gap-2">
+              <input type="hidden" name="application_id" value={app.id} />
+              <div className="space-y-1">
+                <Label htmlFor="amount_rupees" className="text-xs">Amount received (₹)</Label>
+                <Input id="amount_rupees" name="amount_rupees" type="number" min="1" step="1" required className="h-9 w-32" />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="reference" className="text-xs">Reference (bank ref., UTR, receipt no.)</Label>
+                <Input id="reference" name="reference" required className="h-9 w-64" />
+              </div>
+              <SubmitButton size="sm" variant="outline" pendingText="Recording…">
+                Record payment
+              </SubmitButton>
+            </form>
+          </Alert>
+        )}
 
       <Section title="Application">
         <Field label="Category" value={app.category ?? "—"} />

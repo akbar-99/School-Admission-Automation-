@@ -774,6 +774,77 @@ export async function grantRetest(formData: FormData) {
   );
 }
 
+// Records an admission fee paid outside Razorpay entirely (e.g. a direct
+// bank transfer) and runs it through the exact same enrollment pipeline a
+// real online payment triggers. See 0074 for why this needs a bypass RPC.
+const RecordManualPaymentSchema = z.object({
+  application_id: z.string().uuid(),
+  amount_rupees: z.coerce.number().positive("Enter the amount received."),
+  reference: z.string().trim().min(1, "Add a reference (bank ref., UTR, receipt no., etc.)."),
+});
+
+export async function recordManualPayment(formData: FormData) {
+  const { profile } = await requireRole(["admin", "coo"]);
+  const applicationId = String(formData.get("application_id") ?? "");
+  const parsed = RecordManualPaymentSchema.safeParse({
+    application_id: applicationId,
+    amount_rupees: formData.get("amount_rupees"),
+    reference: formData.get("reference"),
+  });
+  if (!parsed.success) {
+    redirect(`/admin/applications/${applicationId}?error=` + encodeURIComponent(parsed.error.issues[0].message));
+  }
+  const { application_id, amount_rupees, reference } = parsed.data!;
+  const amountPaise = Math.round(amount_rupees * 100);
+
+  const admin = createSupabaseAdminClient();
+  const { data: result, error } = await admin.rpc("admin_record_manual_payment", {
+    p_application: application_id,
+    p_amount_paise: amountPaise,
+    p_reference: reference,
+  });
+  if (error) {
+    redirect(`/admin/applications/${application_id}?error=` + encodeURIComponent(error.message));
+  }
+  const r = result as { status: string; payment_id?: string };
+  if (r.status === "NOT_FOUND") {
+    redirect(`/admin/applications/${application_id}?error=` + encodeURIComponent("Application not found."));
+  }
+  if (r.status === "INVALID_STATUS") {
+    redirect(
+      `/admin/applications/${application_id}?error=` +
+        encodeURIComponent("This applicant isn't awaiting payment — check their current status."),
+    );
+  }
+  if (r.status === "ALREADY_SECTIONED") {
+    redirect(
+      `/admin/applications/${application_id}?error=` +
+        encodeURIComponent("This applicant is already enrolled."),
+    );
+  }
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "admin.record_manual_payment",
+    entity: "application",
+    entityId: application_id,
+    details: { amount_paise: amountPaise, reference, payment_id: r.payment_id },
+  });
+
+  // Same pipeline a real Razorpay payment triggers — enrollment, admission
+  // number, receipt/welcome notifications, Broadway and Sheets sync.
+  await handlePaymentCompleted(application_id);
+
+  revalidatePath(`/admin/applications/${application_id}`);
+  revalidatePath("/admin");
+  revalidatePath("/admin/payments");
+  redirect(
+    `/admin/applications/${application_id}?ok=` +
+      encodeURIComponent("Payment recorded — enrollment is underway."),
+  );
+}
+
 // Payment completion normally enrolls the applicant automatically
 // (handlePaymentCompleted -> enroll_application), but that call can fail
 // silently (e.g. a transient DB/network blip) and nothing retries it on its
