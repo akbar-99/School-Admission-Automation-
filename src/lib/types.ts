@@ -265,7 +265,7 @@ export const STATUS_LABEL: Record<AppStatus, string> = {
   ABANDONED: "Payment abandoned",
   ENROLLED: "Enrolled",
   NEEDS_ADMIN: "Needs admin",
-  REJECTED: "Rejected",
+  REJECTED: "Not eligible",
 };
 
 export const LEAD_SOURCES = ["instagram", "facebook", "whatsapp", "google", "referral", "other"] as const;

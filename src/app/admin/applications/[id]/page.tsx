@@ -171,7 +171,7 @@ export default async function ApplicationDetailPage({
       {app.status === "REJECTED" && result?.outcome === "FAIL" && (
         <Alert variant="warning" className="print:hidden flex flex-wrap items-center justify-between gap-3">
           <span>
-            Rejected after a failed assessment
+            Not eligible after a failed assessment
             {result.remarks ? ` — teacher's remark: "${result.remarks}"` : ""}. If this warrants another chance,
             you can reopen it for a retest.
           </span>

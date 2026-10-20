@@ -744,7 +744,7 @@ export async function grantRetest(formData: FormData) {
   if (r.status === "INVALID_STATUS") {
     redirect(
       `/admin/applications/${application_id}?error=` +
-        encodeURIComponent("This applicant isn't currently rejected — nothing to retest."),
+        encodeURIComponent("This applicant isn't currently marked not eligible — nothing to retest."),
     );
   }
   if (r.status === "ALREADY_SECTIONED") {

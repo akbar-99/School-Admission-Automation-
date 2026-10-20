@@ -24,7 +24,7 @@ const BUCKETS = [
   { key: "enrolled", label: "Enrolled", color: "#2f8f6b" },
   { key: "withdrawn_pre", label: "Pre-admission withdrawal", color: "#d97706" },
   { key: "withdrawn_post", label: "Post-admission withdrawal", color: "#9f1239" },
-  { key: "lost", label: "Rejected / lost", color: "#c0392b" },
+  { key: "lost", label: "Not eligible / lost", color: "#c0392b" },
   { key: "admin", label: "Needs admin", color: "#475569" },
 ] as const;
 
