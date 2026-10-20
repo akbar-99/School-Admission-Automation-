@@ -700,6 +700,12 @@ export async function notifyGradeNeedsAssessment(appId: string, newGrade: string
           body:
             `Hello ${parent.full_name},\n\nYour child's class has been updated to ${newGrade}, which requires an admission assessment. ` +
             `Please pick a time here:\n${applyUrl(app.access_token)}\n\nQuestions? Contact ${contact.name} at ${contact.phone}.`,
+          // grade_needs_assessment_v1 — confirmed APPROVED + still UTILITY via
+          // the Graph API directly, not just the dashboard badge.
+          whatsappTemplate: {
+            name: "grade_needs_assessment_v1",
+            params: [parent.full_name, newGrade, applyUrl(app.access_token), contact.name, contact.phone],
+          },
         },
         parent,
       ),
