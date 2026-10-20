@@ -576,7 +576,7 @@ export async function bookSlot(formData: FormData) {
     entityId: app.id,
     details: { slot_id: slotId },
   });
-  await handleSlotBooked(app.id, slot);
+  await handleSlotBooked(app.id, { ...slot, id: slotId });
   redirect(`/apply/${token}`);
 }
 

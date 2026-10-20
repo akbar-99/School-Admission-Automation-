@@ -303,7 +303,7 @@ async function TeacherBody() {
                       <ZoomLinkGate
                         startsAt={s.starts_at}
                         endsAt={s.ends_at}
-                        href={s.zoom_start_url}
+                        href={`/api/zoom/start/${s.id}`}
                         label="Start Zoom (host)"
                         initialActive={isZoomLinkActive(s.starts_at, s.ends_at)}
                       />

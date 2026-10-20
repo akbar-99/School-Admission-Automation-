@@ -42,6 +42,37 @@ async function getAccessToken(): Promise<string> {
   return json.access_token;
 }
 
+// A meeting's own `start_url` (returned at creation time, stored on the
+// slot) embeds a ZAK — a host-auth token that's only valid for ~2 hours
+// from the moment it was minted, not 2 hours before the meeting's own
+// scheduled time. Slots are routinely created days ahead of the actual
+// assessment, so by the time a teacher clicks "Start," that token has
+// almost always already expired — Zoom then falls back to resolving the
+// link by whichever account is currently signed in locally, producing
+// "hosted by another user" even though nothing about the booking itself is
+// wrong. Minting a fresh ZAK right when the teacher clicks (see
+// /api/zoom/start/[slotId]) sidesteps the whole problem — never throws,
+// boundary function like the rest of this file; the caller falls back to
+// the stored start_url if this returns null.
+export async function getFreshZak(hostEmail: string): Promise<string | null> {
+  try {
+    const token = await getAccessToken();
+    const res = await fetch(
+      `https://api.zoom.us/v2/users/${encodeURIComponent(hostEmail)}/token?type=zak`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!res.ok) {
+      console.error(`[zoom] zak fetch failed for ${hostEmail} (${res.status}): ${await res.text()}`);
+      return null;
+    }
+    const json = (await res.json()) as { token?: string };
+    return json.token ?? null;
+  } catch (err) {
+    console.error(`[zoom] zak fetch threw for ${hostEmail}`, err);
+    return null;
+  }
+}
+
 export interface ZoomMeeting {
   id: string;
   joinUrl: string; // student/parent

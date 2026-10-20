@@ -756,7 +756,7 @@ export async function notifyRetestGranted(appId: string) {
 // ---------------------------------------------------------------------------
 export async function handleSlotBooked(
   appId: string,
-  slotInfo: { starts_at: string; teacher_id?: string | null },
+  slotInfo: { id: string; starts_at: string; teacher_id?: string | null },
 ) {
   const admin = createSupabaseAdminClient();
   const { data: appRow } = await admin.from("applications").select("*").eq("id", appId).single();
@@ -774,8 +774,13 @@ export async function handleSlotBooked(
         meeting.passcode ? `\nPasscode: ${meeting.passcode}` : ""
       }`
     : "";
+  // A stored start_url's embedded host token expires ~2h after creation —
+  // long gone by the time the teacher actually clicks this, since it's
+  // texted right at booking time, routinely days before the assessment
+  // itself. This stable link mints a fresh one on click instead (see
+  // src/app/api/zoom/start/[slotId]).
   const hostLine = meeting
-    ? `\n\nStart the meeting as host (do not share this link):\n${meeting.startUrl}`
+    ? `\n\nStart the meeting as host (do not share this link):\n${config.appUrl}/api/zoom/start/${slotInfo.id}`
     : "";
 
   const context = staffContextLine(await studentLabel(app), parent.full_name);
@@ -890,7 +895,7 @@ export async function backfillZoomLink(appId: string): Promise<boolean> {
   const admin = createSupabaseAdminClient();
   const { data: slot } = await admin
     .from("assessment_slots")
-    .select("starts_at, teacher_id")
+    .select("id, starts_at, teacher_id")
     .eq("application_id", appId)
     .maybeSingle();
   if (!slot) return false;
@@ -932,7 +937,7 @@ export async function backfillZoomLink(appId: string): Promise<boolean> {
             applicationId: app.id,
             event: "ZOOM_LINK_READY",
             subject: "Zoom link ready for your assessment",
-            body: `${context}The Zoom meeting for your assessment on ${when} (Grade ${app.grade_applying}) is ready.\n\nStart as host:\n${meeting.startUrl}`,
+            body: `${context}The Zoom meeting for your assessment on ${when} (Grade ${app.grade_applying}) is ready.\n\nStart as host:\n${config.appUrl}/api/zoom/start/${slot.id}`,
           },
         ),
       );
@@ -952,6 +957,7 @@ export async function backfillZoomLink(appId: string): Promise<boolean> {
 // to generate a real link before this, its last scheduled message, goes out.
 // ---------------------------------------------------------------------------
 export async function notifyAssessmentReminder(slot: {
+  id: string;
   application_id: string;
   teacher_id: string | null;
   starts_at: string;
@@ -1032,7 +1038,7 @@ export async function notifyAssessmentReminder(slot: {
       .eq("id", slot.teacher_id)
       .maybeSingle();
     if (t) {
-      const hostLine = zoomStartUrl ? `\n\nStart as host:\n${zoomStartUrl}` : "";
+      const hostLine = zoomStartUrl ? `\n\nStart as host:\n${config.appUrl}/api/zoom/start/${slot.id}` : "";
       messages.push(
         ...toStaffMember(
           { email: t.email, phone: t.phone },

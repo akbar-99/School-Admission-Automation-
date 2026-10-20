@@ -231,15 +231,19 @@ export async function assignAssessment(formData: FormData) {
   }
 
   // Create the slot already booked to this applicant (unique per application).
-  const { error: slotErr } = await admin.from("assessment_slots").insert({
-    teacher_id,
-    starts_at: start.toISOString(),
-    ends_at: end.toISOString(),
-    is_open: false,
-    application_id,
-  });
-  if (slotErr) {
-    redirect("/admin/assessments?error=" + encodeURIComponent(slotErr.message));
+  const { data: newSlot, error: slotErr } = await admin
+    .from("assessment_slots")
+    .insert({
+      teacher_id,
+      starts_at: start.toISOString(),
+      ends_at: end.toISOString(),
+      is_open: false,
+      application_id,
+    })
+    .select("id")
+    .single();
+  if (slotErr || !newSlot) {
+    redirect("/admin/assessments?error=" + encodeURIComponent(slotErr?.message ?? "Could not create the slot."));
   }
 
   // FORM_SUBMITTED -> ASSESSMENT_SCHEDULED (valid transition)
@@ -258,7 +262,7 @@ export async function assignAssessment(formData: FormData) {
     details: { teacher_id, starts_at: start.toISOString() },
   });
   // Confirm to parent + assigned teacher + admin.
-  await handleSlotBooked(application_id, { starts_at: start.toISOString(), teacher_id });
+  await handleSlotBooked(application_id, { id: newSlot!.id, starts_at: start.toISOString(), teacher_id });
   revalidatePath("/admin/assessments");
   redirect(
     "/admin/assessments?ok=" + encodeURIComponent("Assessment scheduled and everyone notified."),
