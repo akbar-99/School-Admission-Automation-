@@ -316,13 +316,12 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
                     <option value="" disabled>
                       New teacher…
                     </option>
-                    {teachers
-                      .filter((t) => t.id !== s.teacher_id)
-                      .map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.full_name ?? t.email}
-                        </option>
-                      ))}
+                    {teachers.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.full_name ?? t.email}
+                        {t.id === s.teacher_id ? " (available again)" : ""}
+                      </option>
+                    ))}
                   </Select>
                   <SubmitButton size="sm" pendingText="Reassigning…">
                     Reassign

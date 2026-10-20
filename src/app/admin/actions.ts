@@ -293,8 +293,30 @@ export async function reassignSlotTeacher(formData: FormData) {
   if (!slot) {
     redirect("/admin/assessments?error=" + encodeURIComponent("Slot not found."));
   }
+  // The teacher who reported "can't attend" became available again after
+  // all — picking them back out of the same dropdown (see
+  // src/app/admin/assessments/page.tsx's "(available again)" option) just
+  // clears the unavailable flags and leaves everything else untouched: the
+  // teacher was never actually removed from the slot, so there's no new
+  // host to notify and no Zoom meeting to regenerate.
   if (slot!.teacher_id === newTeacherId) {
-    redirect("/admin/assessments?error=" + encodeURIComponent("Already assigned to that teacher."));
+    await admin
+      .from("assessment_slots")
+      .update({ unavailable_reported: false, unavailable_reported_at: null, unavailable_escalated: false })
+      .eq("id", slot_id);
+
+    await logAudit({
+      actorId: profile.id,
+      actorRole: profile.role,
+      action: "assessment.slot_reassignment_resolved",
+      entity: "assessment_slot",
+      entityId: slot_id,
+      details: { teacher_id: newTeacherId },
+    });
+
+    revalidatePath("/admin/assessments");
+    revalidatePath("/teacher");
+    redirect("/admin/assessments?ok=" + encodeURIComponent("Kept on the same teacher — marked available again."));
   }
 
   await admin
