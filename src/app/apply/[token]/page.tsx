@@ -280,6 +280,7 @@ async function Content({
               token={token}
               gradeOptions={filterClassOptionsByCurriculum(classOptions, app.preferred_curriculum)}
               defaultStudentName={app.lead_student_name}
+              defaultGrade={app.grade_applying}
             />
           </CardContent>
         </Card>

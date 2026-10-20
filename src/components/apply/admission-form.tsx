@@ -38,12 +38,18 @@ export function MinimalAdmissionForm({
   token,
   gradeOptions,
   defaultStudentName,
+  defaultGrade,
 }: {
   token: string;
   gradeOptions: readonly string[];
   defaultStudentName?: string | null;
+  // Pre-selected when marketing already picked a class at lead-creation
+  // time — only honored if it's still one of the currently offered classes
+  // (sections can change between then and now), otherwise the parent just
+  // sees the normal blank "Select…" prompt.
+  defaultGrade?: string | null;
 }) {
-  const [grade, setGrade] = useState("");
+  const [grade, setGrade] = useState(defaultGrade && gradeOptions.includes(defaultGrade) ? defaultGrade : "");
 
   return (
     <form action={submitMinimalForm} className="space-y-6">
