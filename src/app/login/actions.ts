@@ -5,12 +5,27 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getSessionUser, ROLE_HOME } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 
+// Only a plain same-site path is ever honored (must start with a single
+// "/", never "//" or "/\" — both are protocol-relative and would send the
+// browser to an attacker-controlled host, the classic open-redirect bug).
+// Anything else silently falls back to the role's normal home page.
+function safeRedirect(raw: FormDataEntryValue | null): string | null {
+  const value = typeof raw === "string" ? raw : "";
+  if (!value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) return null;
+  return value;
+}
+
 export async function signIn(formData: FormData) {
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
+  const redirectTo = safeRedirect(formData.get("redirect"));
 
   if (!email || !password) {
-    redirect("/login?error=" + encodeURIComponent("Email and password are required."));
+    redirect(
+      "/login?error=" +
+        encodeURIComponent("Email and password are required.") +
+        (redirectTo ? "&redirect=" + encodeURIComponent(redirectTo) : ""),
+    );
   }
 
   const supabase = await createSupabaseServerClient();
@@ -22,7 +37,11 @@ export async function signIn(formData: FormData) {
       entity: "auth",
       details: { email, outcome: error.message },
     });
-    redirect("/login?error=" + encodeURIComponent(error.message));
+    redirect(
+      "/login?error=" +
+        encodeURIComponent(error.message) +
+        (redirectTo ? "&redirect=" + encodeURIComponent(redirectTo) : ""),
+    );
   }
 
   const session = await getSessionUser();
@@ -33,7 +52,11 @@ export async function signIn(formData: FormData) {
       entity: "auth",
       details: { email, outcome: "no staff profile linked" },
     });
-    redirect("/login?error=" + encodeURIComponent("No staff profile is linked to this account."));
+    redirect(
+      "/login?error=" +
+        encodeURIComponent("No staff profile is linked to this account.") +
+        (redirectTo ? "&redirect=" + encodeURIComponent(redirectTo) : ""),
+    );
   }
 
   await logAudit({
@@ -43,7 +66,7 @@ export async function signIn(formData: FormData) {
     entity: "auth",
     details: { email },
   });
-  redirect(ROLE_HOME[session.profile.role] ?? "/");
+  redirect(redirectTo ?? ROLE_HOME[session.profile.role] ?? "/");
 }
 
 export async function signOut() {

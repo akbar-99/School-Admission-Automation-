@@ -17,7 +17,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ slot
 
   const session = await getSessionUser();
   if (!session?.profile) {
-    return new NextResponse("Please sign in first.", { status: 401 });
+    // A teacher most often reaches this link straight from a WhatsApp/SMS
+    // notification, possibly on a browser/device they aren't currently
+    // signed into this app on — bouncing them to a dead end here would mean
+    // the whole fix still fails in the one place it matters most. Sends
+    // them to log in first, then straight back to this exact URL.
+    const loginUrl = new URL("/login", request.url);
+    loginUrl.searchParams.set("redirect", `/api/zoom/start/${slotId}`);
+    return NextResponse.redirect(loginUrl);
   }
   const { profile } = session;
   if (!["teacher", "admin", "coo"].includes(profile.role)) {

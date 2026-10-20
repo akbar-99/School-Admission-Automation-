@@ -11,9 +11,9 @@ import { LogoFull } from "@/components/logo";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; redirect?: string }>;
 }) {
-  const { error } = await searchParams;
+  const { error, redirect } = await searchParams;
 
   return (
     <main className="flex flex-1 items-center justify-center px-6 py-12">
@@ -36,6 +36,7 @@ export default async function LoginPage({
               </Alert>
             )}
             <form action={signIn} className="space-y-4">
+              {redirect && <input type="hidden" name="redirect" value={redirect} />}
               <div className="space-y-1.5">
                 <Label htmlFor="email">Email</Label>
                 <Input id="email" name="email" type="email" autoComplete="email" required />
