@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getFreshZak } from "@/lib/zoom";
+import { config } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slot
     // signed into this app on — bouncing them to a dead end here would mean
     // the whole fix still fails in the one place it matters most. Sends
     // them to log in first, then straight back to this exact URL.
-    const loginUrl = new URL("/login", request.url);
+    const loginUrl = new URL("/login", config.appUrl);
     loginUrl.searchParams.set("redirect", `/api/zoom/start/${slotId}`);
     return NextResponse.redirect(loginUrl);
   }
