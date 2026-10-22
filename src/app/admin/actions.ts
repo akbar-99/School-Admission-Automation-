@@ -231,6 +231,14 @@ export async function assignAssessment(formData: FormData) {
     );
   }
 
+  // application_id is unique per slot for all time, not just "currently
+  // active" — a retest grant (admin_grant_retest) deletes the old FAIL
+  // result but deliberately leaves its slot row alone as a historical
+  // record, which means the slot's application_id link is still live and
+  // would collide here. Detach it (keep the row itself, teacher/time/zoom
+  // fields intact, just unlinked) so this applicant can get a new slot.
+  await admin.from("assessment_slots").update({ application_id: null }).eq("application_id", application_id);
+
   // Create the slot already booked to this applicant (unique per application).
   const { data: newSlot, error: slotErr } = await admin
     .from("assessment_slots")
@@ -314,6 +322,11 @@ export async function logExternalAssessment(formData: FormData) {
         encodeURIComponent("This applicant is no longer awaiting scheduling."),
     );
   }
+
+  // See the matching comment in assignAssessment above — a retest grant
+  // leaves its old slot's application_id link live, which would collide
+  // with the unique-per-application index. Detach it first.
+  await admin.from("assessment_slots").update({ application_id: null }).eq("application_id", application_id);
 
   // Create the slot already booked to this applicant, same as assignAssessment —
   // but no zoom_* fields (no meeting was ever created in-app), and reminders
