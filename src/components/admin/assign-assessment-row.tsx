@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { assignAssessment } from "@/app/admin/actions";
+import { assignAssessment, logExternalAssessment } from "@/app/admin/actions";
 import { SubmitButton } from "@/components/submit-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -43,6 +43,7 @@ export function AssignAssessmentRow({
   teachers,
 }: AssignAssessmentRowProps) {
   const [value, setValue] = useState("");
+  const [showExternal, setShowExternal] = useState(false);
 
   return (
     <div className="space-y-2 rounded-md border border-border p-3">
@@ -138,6 +139,63 @@ export function AssignAssessmentRow({
             Schedule directly
           </SubmitButton>
         </form>
+      )}
+
+      {teachers.length > 0 && (
+        <div className="border-t border-border/60 pt-2">
+          {!showExternal ? (
+            <button
+              type="button"
+              onClick={() => setShowExternal(true)}
+              className="text-xs text-muted-foreground underline-offset-2 hover:text-primary hover:underline"
+            >
+              Already assessed outside the app?
+            </button>
+          ) : (
+            <form
+              action={logExternalAssessment}
+              className="flex flex-wrap items-end gap-2"
+            >
+              <input type="hidden" name="application_id" value={applicationId} />
+              <div className="space-y-1">
+                <Label htmlFor={`ext-time-${applicationId}`} className="text-xs">
+                  When it happened (school time)
+                </Label>
+                <Input
+                  id={`ext-time-${applicationId}`}
+                  name="starts_at"
+                  type="datetime-local"
+                  required
+                  className="h-9"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor={`ext-teach-${applicationId}`} className="text-xs">
+                  Teacher who conducted it
+                </Label>
+                <Select
+                  id={`ext-teach-${applicationId}`}
+                  name="teacher_id"
+                  required
+                  defaultValue=""
+                  className="h-9 min-w-36"
+                >
+                  <option value="" disabled>
+                    Select…
+                  </option>
+                  {teachers.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.label}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <SubmitButton size="sm" variant="secondary" pendingText="Logging…">
+                Log — let them record the result
+              </SubmitButton>
+            </form>
+          )}
+        </div>
       )}
     </div>
   );

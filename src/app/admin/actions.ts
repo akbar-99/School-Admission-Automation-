@@ -11,6 +11,7 @@ import {
   changeBroadwaySectionAfterTransfer,
   handlePaymentCompleted,
   handleSlotBooked,
+  notifyExternalAssessmentNeedsResult,
   notifyGradeNeedsAssessment,
   notifyGradeNoLongerNeedsAssessment,
   notifyMissedAssessment,
@@ -266,6 +267,99 @@ export async function assignAssessment(formData: FormData) {
   revalidatePath("/admin/assessments");
   redirect(
     "/admin/assessments?ok=" + encodeURIComponent("Assessment scheduled and everyone notified."),
+  );
+}
+
+const LogExternalAssessmentSchema = z.object({
+  application_id: z.string().uuid(),
+  teacher_id: z.string().uuid("Select a teacher"),
+  starts_at: z.string().min(1, "Pick when it happened"),
+});
+
+// Some assessments happen over a Zoom link entirely outside the app (parent
+// and teacher coordinated directly) — there's no in-app meeting to create and
+// no "your assessment is scheduled" message to send, since it already
+// happened. But the result still needs to go through the normal recording
+// flow so it's attributed to the teacher who actually conducted it, not
+// whichever admin happens to be logged in. This opens a slot tied to the real
+// teacher — it shows up on THEIR dashboard under "Assessments to record" —
+// without touching Zoom or assignAssessment's future-only/notification path.
+export async function logExternalAssessment(formData: FormData) {
+  const { profile } = await requireRole(["admin", "coo"]);
+  const parsed = LogExternalAssessmentSchema.safeParse({
+    application_id: formData.get("application_id"),
+    teacher_id: formData.get("teacher_id"),
+    starts_at: formData.get("starts_at"),
+  });
+  if (!parsed.success) {
+    redirect("/admin/assessments?error=" + encodeURIComponent(parsed.error.issues[0].message));
+  }
+  const { application_id, teacher_id, starts_at } = parsed.data!;
+
+  const start = new Date(zonedTimeToUtcISO(starts_at, config.school.timezone));
+  if (Number.isNaN(start.getTime())) {
+    redirect("/admin/assessments?error=" + encodeURIComponent("Invalid date/time."));
+  }
+  const end = new Date(start.getTime() + 60 * 60_000);
+
+  const admin = createSupabaseAdminClient();
+  const { data: app } = await admin
+    .from("applications")
+    .select("status, grade_applying")
+    .eq("id", application_id)
+    .maybeSingle();
+  if (!app || !needsAssessment(app.grade_applying ?? "") || app.status !== "FORM_SUBMITTED") {
+    redirect(
+      "/admin/assessments?error=" +
+        encodeURIComponent("This applicant is no longer awaiting scheduling."),
+    );
+  }
+
+  // Create the slot already booked to this applicant, same as assignAssessment —
+  // but no zoom_* fields (no meeting was ever created in-app), and reminders
+  // pre-marked sent so the 10-min/2h cron jobs never try to remind anyone
+  // about an assessment that's already over.
+  const { data: newSlot, error: slotErr } = await admin
+    .from("assessment_slots")
+    .insert({
+      teacher_id,
+      starts_at: start.toISOString(),
+      ends_at: end.toISOString(),
+      is_open: false,
+      application_id,
+      reminder_sent: true,
+      reminder_2h_sent: true,
+      confirmed_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single();
+  if (slotErr || !newSlot) {
+    redirect("/admin/assessments?error=" + encodeURIComponent(slotErr?.message ?? "Could not log it."));
+  }
+
+  // FORM_SUBMITTED -> ASSESSMENT_SCHEDULED (valid transition, same as assignAssessment).
+  await admin
+    .from("applications")
+    .update({ status: "ASSESSMENT_SCHEDULED" })
+    .eq("id", application_id)
+    .eq("status", "FORM_SUBMITTED");
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "assessment.logged_external",
+    entity: "application",
+    entityId: application_id,
+    details: { teacher_id, starts_at: start.toISOString() },
+  });
+
+  const { data: appRow } = await admin.from("applications").select("*").eq("id", application_id).maybeSingle();
+  if (appRow) await notifyExternalAssessmentNeedsResult(teacher_id, appRow as Application);
+
+  revalidatePath("/admin/assessments");
+  redirect(
+    "/admin/assessments?ok=" +
+      encodeURIComponent("Logged — now on the teacher's dashboard to record the result."),
   );
 }
 

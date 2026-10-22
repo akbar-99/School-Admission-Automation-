@@ -1351,6 +1351,29 @@ export async function notifyTeacherSlotAssigned(
 }
 
 // ---------------------------------------------------------------------------
+// Admin logged an assessment that was conducted entirely outside the app
+// (e.g. parent and teacher coordinated their own Zoom call) — there's no
+// slot-booked/Zoom flow to run here, just a nudge to the assigned teacher
+// that it's sitting in their dashboard ready for a result.
+// ---------------------------------------------------------------------------
+export async function notifyExternalAssessmentNeedsResult(teacherId: string, app: Application) {
+  const admin = createSupabaseAdminClient();
+  const { data: t } = await admin.from("users").select("email, phone").eq("id", teacherId).maybeSingle();
+  if (!t) return;
+  await dispatch(
+    toStaffMember(
+      { email: t.email, phone: t.phone },
+      {
+        applicationId: app.id,
+        event: "SLOT_ASSIGNED",
+        subject: "Assessment result needed",
+        body: `An assessment for ${await studentLabel(app)} (conducted outside the app) has been logged for you — please record the result in your dashboard.`,
+      },
+    ),
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Admin opened a slot to the teacher pool (no teacher pre-assigned) — let
 // every teacher know it's available to claim on a first-come basis.
 // ---------------------------------------------------------------------------
