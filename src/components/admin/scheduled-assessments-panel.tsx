@@ -72,15 +72,12 @@ export function ScheduledAssessmentsPanel({
   }, {});
   const tabs = TAB_ORDER.filter((t) => counts[t]);
 
-  const [active, setActive] = useState<"ALL" | TabKey>("ALL");
-  const visible = active === "ALL" ? withTab : withTab.filter((r) => r.tab === active);
+  const [active, setActive] = useState<TabKey>(tabs[0] ?? "ASSESSMENT_SCHEDULED");
+  const visible = withTab.filter((r) => r.tab === active);
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-1.5">
-        <TabButton active={active === "ALL"} onClick={() => setActive("ALL")}>
-          All <span className="opacity-70">({rows.length})</span>
-        </TabButton>
         {tabs.map((t) => (
           <TabButton key={t} active={active === t} tone={TAB_TONE[t]} onClick={() => setActive(t)}>
             {TAB_LABEL[t]} <span className="opacity-70">({counts[t]})</span>
