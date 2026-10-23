@@ -516,7 +516,6 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
               )}
               schoolTz={schoolTz}
               schoolLabel={schoolLabel}
-              formatInZone={formatInZone}
               rescheduleMissedAssessment={rescheduleMissedAssessment}
               grantRetest={grantRetest}
               generateZoomLink={generateZoomLink}

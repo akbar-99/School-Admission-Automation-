@@ -5,7 +5,7 @@ import { CancelAssessmentButton } from "@/components/admin/cancel-assessment-but
 import { SubmitButton } from "@/components/submit-button";
 import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { cn, formatInZone } from "@/lib/utils";
 import { STATUS_LABEL, STATUS_TONE, type AppStatus, type BadgeTone } from "@/lib/types";
 
 export interface ScheduledRow {
@@ -46,7 +46,6 @@ export function ScheduledAssessmentsPanel({
   rows,
   schoolTz,
   schoolLabel,
-  formatInZone,
   rescheduleMissedAssessment,
   grantRetest,
   generateZoomLink,
@@ -55,7 +54,6 @@ export function ScheduledAssessmentsPanel({
   rows: ScheduledRow[];
   schoolTz: string;
   schoolLabel: string;
-  formatInZone: (iso: string, tz: string) => string;
   rescheduleMissedAssessment: (formData: FormData) => void;
   grantRetest: (formData: FormData) => void;
   generateZoomLink: (formData: FormData) => void;
