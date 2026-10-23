@@ -4,6 +4,7 @@ import { config } from "@/lib/config";
 import { formatInZone, formatInZoneWithDay, toZonedInputValue } from "@/lib/utils";
 import { needsAssessment } from "@/lib/assessment";
 import {
+  cancelScheduledAssessment,
   createAssessmentSlot,
   grantRetest,
   reassignSlotTeacher,
@@ -550,6 +551,14 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
                           </SubmitButton>
                         </form>
                       )
+                    )}
+                    {!missed && s.applications?.status === "ASSESSMENT_SCHEDULED" && (
+                      <form action={cancelScheduledAssessment}>
+                        <input type="hidden" name="application_id" value={s.application_id!} />
+                        <SubmitButton size="sm" variant="ghost" pendingText="Cancelling…">
+                          Cancel
+                        </SubmitButton>
+                      </form>
                     )}
                   </div>
                 </div>

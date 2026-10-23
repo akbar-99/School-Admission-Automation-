@@ -599,6 +599,58 @@ export async function rescheduleMissedAssessment(formData: FormData) {
   redirect("/admin/assessments?ok=" + encodeURIComponent("Slot released — the parent's been sent a new link to pick a time."));
 }
 
+// Cancel a booked assessment that HASN'T happened yet — the admin's own call
+// (e.g. a wrong/duplicate booking, or the applicant asked to pause), as
+// opposed to rescheduleMissedAssessment above, which is specifically for a
+// no-show after the fact and tells the parent "we noticed you missed it."
+// Deliberately silent: no message to the parent, teacher, or lead creator —
+// the applicant just drops back into "awaiting scheduling" (FORM_SUBMITTED)
+// as a quiet pending state, since they may still want the assessment later.
+// Reuses the same release RPC as the missed-assessment path — its guard is
+// purely on application status, not on whether the slot's time has passed.
+const CancelScheduledSchema = z.object({ application_id: z.string().uuid() });
+
+export async function cancelScheduledAssessment(formData: FormData) {
+  const { profile } = await requireRole(["admin", "coo"]);
+  const parsed = CancelScheduledSchema.safeParse({ application_id: formData.get("application_id") });
+  if (!parsed.success) {
+    redirect("/admin/assessments?error=" + encodeURIComponent("Invalid request."));
+  }
+  const { application_id } = parsed.data!;
+
+  const admin = createSupabaseAdminClient();
+  const { data: result, error } = await admin.rpc("admin_release_missed_slot", {
+    p_application: application_id,
+  });
+  if (error) {
+    redirect("/admin/assessments?error=" + encodeURIComponent(error.message));
+  }
+  const r = result as { status: string; slot_id?: string; starts_at?: string };
+  if (r.status === "NOT_FOUND") {
+    redirect("/admin/assessments?error=" + encodeURIComponent("No booked slot found for this applicant."));
+  }
+  if (r.status === "NOT_SCHEDULED") {
+    redirect(
+      "/admin/assessments?error=" +
+        encodeURIComponent("This applicant's assessment already has an outcome recorded — nothing to cancel."),
+    );
+  }
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "admin.cancelled_scheduled_assessment",
+    entity: "application",
+    entityId: application_id,
+    details: { slot_id: r.slot_id, starts_at: r.starts_at },
+  });
+
+  revalidatePath("/admin/assessments");
+  revalidatePath(`/admin/applications/${application_id}`);
+  revalidatePath("/teacher");
+  redirect("/admin/assessments?ok=" + encodeURIComponent("Assessment cancelled — back in the awaiting-scheduling list."));
+}
+
 // Corrects a parent's mis-picked class before the application has been
 // assigned a section — e.g. an assessment was conducted against the wrong
 // grade and no result is recorded yet. Once a section is assigned, the
