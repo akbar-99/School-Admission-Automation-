@@ -13,7 +13,7 @@ import {
   rescheduleSlotTime,
 } from "../actions";
 import { AssignAssessmentRow } from "@/components/admin/assign-assessment-row";
-import { CancelAssessmentButton } from "@/components/admin/cancel-assessment-button";
+import { ScheduledAssessmentsPanel, type ScheduledRow } from "@/components/admin/scheduled-assessments-panel";
 import { AdminUnavailableAlerts } from "@/components/admin/unavailable-alerts";
 import { SubmitButton } from "@/components/submit-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,7 +23,6 @@ import { Select } from "@/components/ui/select";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { StatusBadge } from "@/components/status-badge";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import type { AppStatus } from "@/lib/types";
 
@@ -498,71 +497,31 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
           <CardTitle>Scheduled assessments ({scheduled.length})</CardTitle>
           <CardDescription>Booked assessments — student, teacher, and confirmed time.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-2">
+        <CardContent>
           {scheduled.length === 0 ? (
             <p className="text-sm text-muted-foreground">No scheduled assessments yet.</p>
           ) : (
-            scheduled.map((s) => {
-              const missed =
-                s.applications?.status === "ASSESSMENT_SCHEDULED" &&
-                new Date(s.starts_at).getTime() < Date.now();
-              return (
-                <div
-                  key={s.id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border px-3 py-2 text-sm"
-                >
-                  <div>
-                    <span className="font-medium">
-                      {s.applications?.students?.full_name ?? s.applications?.lead_student_name ?? "Applicant"}
-                    </span>
-                    <span className="text-muted-foreground">
-                      {" "}· Grade {s.applications?.grade_applying ?? "—"} · {s.users?.full_name ?? "Unassigned"}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs text-muted-foreground">
-                      {formatInZone(s.starts_at, schoolTz)} {schoolLabel}
-                    </span>
-                    {missed ? (
-                      <Badge tone="danger">Missed</Badge>
-                    ) : (
-                      <StatusBadge status={(s.applications?.status ?? "ASSESSMENT_SCHEDULED") as AppStatus} />
-                    )}
-                    {missed ? (
-                      <form action={rescheduleMissedAssessment}>
-                        <input type="hidden" name="application_id" value={s.application_id!} />
-                        <SubmitButton size="sm" variant="outline" pendingText="Releasing…">
-                          Reschedule
-                        </SubmitButton>
-                      </form>
-                    ) : s.applications?.status === "REJECTED" ? (
-                      <form action={grantRetest}>
-                        <input type="hidden" name="application_id" value={s.application_id!} />
-                        <SubmitButton size="sm" variant="outline" pendingText="Granting…">
-                          Grant retest
-                        </SubmitButton>
-                      </form>
-                    ) : (
-                      !s.zoom_join_url &&
-                      s.applications?.status !== "ASSESSMENT_COMPLETED" && (
-                        <form action={generateZoomLink}>
-                          <input type="hidden" name="application_id" value={s.application_id!} />
-                          <SubmitButton size="sm" variant="outline" pendingText="Creating…">
-                            Generate Zoom link
-                          </SubmitButton>
-                        </form>
-                      )
-                    )}
-                    {!missed && s.applications?.status === "ASSESSMENT_SCHEDULED" && (
-                      <CancelAssessmentButton
-                        action={cancelScheduledAssessment}
-                        applicationId={s.application_id!}
-                      />
-                    )}
-                  </div>
-                </div>
-              );
-            })
+            <ScheduledAssessmentsPanel
+              rows={scheduled.map(
+                (s): ScheduledRow => ({
+                  id: s.id,
+                  starts_at: s.starts_at,
+                  application_id: s.application_id!,
+                  studentName: s.applications?.students?.full_name ?? s.applications?.lead_student_name ?? "Applicant",
+                  grade: s.applications?.grade_applying ?? null,
+                  teacherName: s.users?.full_name ?? null,
+                  zoomJoinUrl: s.zoom_join_url,
+                  status: (s.applications?.status ?? "ASSESSMENT_SCHEDULED") as AppStatus,
+                }),
+              )}
+              schoolTz={schoolTz}
+              schoolLabel={schoolLabel}
+              formatInZone={formatInZone}
+              rescheduleMissedAssessment={rescheduleMissedAssessment}
+              grantRetest={grantRetest}
+              generateZoomLink={generateZoomLink}
+              cancelScheduledAssessment={cancelScheduledAssessment}
+            />
           )}
         </CardContent>
       </Card>
