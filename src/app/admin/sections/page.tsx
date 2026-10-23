@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { FileDown, FileSpreadsheet } from "lucide-react";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isNextYearAdmission } from "@/lib/broadway";
 import { adjustCapacity, createSection, updateSection, deleteSection, retrySectionBroadwaySync } from "../actions";
@@ -8,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 import { SectionBroadwayFields } from "@/components/admin/section-broadway-fields";
 import { SectionStudentsToggle, type SectionStudentRow } from "@/components/admin/section-students-toggle";
 import type { AppStatus, Section } from "@/lib/types";
@@ -24,12 +26,30 @@ export default async function SectionsPage({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="font-display text-3xl font-semibold tracking-tight">Class sections &amp; capacity</h1>
-        <p className="text-muted-foreground">
-          Seats fill A → B → C automatically. Add, edit or remove sections here — each one saved is
-          sent to Broadway.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="font-display text-3xl font-semibold tracking-tight">Class sections &amp; capacity</h1>
+          <p className="text-muted-foreground">
+            Seats fill A → B → C automatically. Add, edit or remove sections here — each one saved is
+            sent to Broadway.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <a
+            href="/api/admin/export/sections/pdf"
+            className={buttonVariants({ variant: "outline", size: "sm" })}
+          >
+            <FileDown className="size-4" />
+            Export PDF
+          </a>
+          <a
+            href="/api/admin/export/sections/excel"
+            className={buttonVariants({ variant: "outline", size: "sm" })}
+          >
+            <FileSpreadsheet className="size-4" />
+            Export Excel
+          </a>
+        </div>
       </div>
 
       {ok && <Alert variant="success">{ok}</Alert>}
