@@ -13,6 +13,7 @@ import {
   rescheduleSlotTime,
 } from "../actions";
 import { AssignAssessmentRow } from "@/components/admin/assign-assessment-row";
+import { CancelAssessmentButton } from "@/components/admin/cancel-assessment-button";
 import { AdminUnavailableAlerts } from "@/components/admin/unavailable-alerts";
 import { SubmitButton } from "@/components/submit-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -553,12 +554,10 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
                       )
                     )}
                     {!missed && s.applications?.status === "ASSESSMENT_SCHEDULED" && (
-                      <form action={cancelScheduledAssessment}>
-                        <input type="hidden" name="application_id" value={s.application_id!} />
-                        <SubmitButton size="sm" variant="ghost" pendingText="Cancelling…">
-                          Cancel
-                        </SubmitButton>
-                      </form>
+                      <CancelAssessmentButton
+                        action={cancelScheduledAssessment}
+                        applicationId={s.application_id!}
+                      />
                     )}
                   </div>
                 </div>

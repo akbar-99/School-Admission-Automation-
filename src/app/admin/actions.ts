@@ -617,6 +617,10 @@ export async function cancelScheduledAssessment(formData: FormData) {
     redirect("/admin/assessments?error=" + encodeURIComponent("Invalid request."));
   }
   const { application_id } = parsed.data!;
+  const confirm = String(formData.get("confirm") ?? "").trim();
+  if (confirm !== "CANCEL") {
+    redirect("/admin/assessments?error=" + encodeURIComponent('Type "CANCEL" to confirm.'));
+  }
 
   const admin = createSupabaseAdminClient();
   const { data: result, error } = await admin.rpc("admin_release_missed_slot", {
