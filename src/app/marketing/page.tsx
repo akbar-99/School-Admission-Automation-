@@ -4,10 +4,12 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireRole } from "@/lib/auth";
 import { applyUrl } from "@/lib/parent";
 import { formatDateTime, cn } from "@/lib/utils";
-import { createLead, claimLead, dismissLead, addContactInfo, markWithdrawn, restoreWithdrawn, updateLeadRemarks } from "./actions";
+import { createLead, claimLead, dismissLead, addContactInfo, markWithdrawn, restoreWithdrawn, updateLeadRemarks, updateLeadScore } from "./actions";
 import { LeadSourceSelect } from "@/components/marketing/lead-source-select";
 import { CurriculumClassFields } from "@/components/marketing/curriculum-class-fields";
 import { LeadRemarksCell } from "@/components/marketing/lead-remarks-cell";
+import { LeadScoreCell } from "@/components/marketing/lead-score-cell";
+import { TEMPERATURE_LABEL, type Temperature } from "@/lib/lead-scoring";
 import { getClassOptions } from "@/lib/classes";
 import { LiveSearchField } from "@/components/marketing/live-search-field";
 import { describeFilters, parseAdmissionsFilters } from "@/lib/admissions-report";
@@ -48,6 +50,10 @@ interface Row {
   parents: { full_name: string; phone: string | null; email: string | null } | null;
   students: { full_name: string } | null;
   marketing_remarks: string | null;
+  lead_score_answers: Record<string, string> | null;
+  lead_score_points: number | null;
+  lead_temperature: Temperature | null;
+  lead_temperature_override: Temperature | null;
 }
 
 interface UnclaimedRow {
@@ -347,6 +353,42 @@ async function UnclaimedLeadsSection() {
   );
 }
 
+const TEMPERATURE_TONE: Record<Temperature, string> = {
+  HOT: "text-destructive",
+  WARM: "text-amber-600",
+  COLD: "text-primary",
+};
+
+// Quick read on lead quality across the current list — total plus a count
+// per temperature bucket. A lead that's never been scored counts toward the
+// total but not toward any bucket, same as the mockup's "All open" tile.
+function LeadTemperatureSummary({ rows }: { rows: Row[] }) {
+  const counts = rows.reduce<Record<Temperature, number>>(
+    (acc, r) => {
+      const effective = r.lead_temperature_override ?? r.lead_temperature;
+      if (effective) acc[effective] += 1;
+      return acc;
+    },
+    { HOT: 0, WARM: 0, COLD: 0 },
+  );
+  const tiles: { label: string; value: number; className?: string }[] = [
+    { label: "All open", value: rows.length },
+    { label: TEMPERATURE_LABEL.HOT, value: counts.HOT, className: TEMPERATURE_TONE.HOT },
+    { label: TEMPERATURE_LABEL.WARM, value: counts.WARM, className: TEMPERATURE_TONE.WARM },
+    { label: TEMPERATURE_LABEL.COLD, value: counts.COLD, className: TEMPERATURE_TONE.COLD },
+  ];
+  return (
+    <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {tiles.map((t) => (
+        <div key={t.label} className="rounded-lg border border-border px-4 py-3">
+          <div className={cn("font-display text-2xl font-semibold tabular-nums", t.className)}>{t.value}</div>
+          <div className="text-xs uppercase tracking-wide text-muted-foreground">{t.label}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 async function LeadsTableSection({
   status,
   from,
@@ -370,7 +412,7 @@ async function LeadsTableSection({
   let query = admin
     .from("applications")
     .select(
-      "id, status, category, grade_applying, lead_student_name, lead_source, lead_source_other, external_contact_id, access_token, created_at, withdrawn_at, withdrawal_type, withdrawal_reason, marketing_remarks, payments(status, refunded_at, refund_reason), parents(full_name, phone, email), students(full_name)",
+      "id, status, category, grade_applying, lead_student_name, lead_source, lead_source_other, external_contact_id, access_token, created_at, withdrawn_at, withdrawal_type, withdrawal_reason, marketing_remarks, lead_score_answers, lead_score_points, lead_temperature, lead_temperature_override, payments(status, refunded_at, refund_reason), parents(full_name, phone, email), students(full_name)",
     )
     .order("created_at", { ascending: false })
     .limit(100);
@@ -532,6 +574,7 @@ async function LeadsTableSection({
             Instagram/Facebook — needs contact info ({dmRows.length})
           </Link>
         </div>
+        {!showingDm && <LeadTemperatureSummary rows={mainRows} />}
         <div className="mb-4 space-y-3 border-b border-border pb-4">
           <form action="/marketing#leads" method="get" className="flex flex-wrap items-end gap-3">
             {showingDm && <input type="hidden" name="view" value="dm" />}
@@ -621,6 +664,7 @@ async function LeadsTableSection({
                 <TH>Grade</TH>
                 <TH>Teacher</TH>
                 <TH>Status</TH>
+                <TH>Lead score</TH>
                 <TH>Withdrawal</TH>
                 <TH>Remarks</TH>
                 <TH>Created</TH>
@@ -678,6 +722,16 @@ async function LeadsTableSection({
                         ) : null;
                       })()}
                     </div>
+                  </TD>
+                  <TD>
+                    <LeadScoreCell
+                      action={updateLeadScore}
+                      applicationId={r.id}
+                      points={r.lead_score_points}
+                      temperature={r.lead_temperature}
+                      override={r.lead_temperature_override}
+                      answers={r.lead_score_answers}
+                    />
                   </TD>
                   <TD className="min-w-[180px]">
                     {r.withdrawn_at && r.withdrawal_type ? (

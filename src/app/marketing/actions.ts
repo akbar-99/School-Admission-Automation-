@@ -12,6 +12,7 @@ import { cancelBroadwayAdmission } from "@/lib/broadway";
 import { logAudit } from "@/lib/audit";
 import { classCategory } from "@/lib/assessment";
 import { CURRICULUM_OPTIONS } from "@/lib/config";
+import { SCORE_QUESTIONS, scoreLead } from "@/lib/lead-scoring";
 import { LEAD_SOURCES, type Application, type Parent } from "@/lib/types";
 
 // The two DM channels this app can chat through — keyed by lead_source, so
@@ -587,6 +588,75 @@ export async function updateLeadRemarks(formData: FormData) {
 
   revalidatePath("/marketing");
   redirect("/marketing?remarksSaved=1");
+}
+
+const UpdateLeadScoreSchema = z.object({
+  application_id: z.string().uuid(),
+  answers: z.record(z.string(), z.string()),
+  override: z.enum(["HOT", "WARM", "COLD", ""]).optional(),
+});
+
+// Score (or re-score) a lead Hot/Warm/Cold from the six-question rubric in
+// src/lib/lead-scoring.ts. Re-scorable any time, not a one-shot — most of
+// these answers aren't known until partway through a conversation with the
+// parent, so a counselor fills in what they know and can update it later as
+// the relationship progresses. `override` lets a counselor say "I know
+// something the score doesn't" without discarding the underlying answers
+// (clearing it back to "" reverts to the computed result).
+export async function updateLeadScore(formData: FormData) {
+  const { profile } = await requireRole(["marketing", "admin", "coo"]);
+  const answers: Record<string, string> = {};
+  for (const q of SCORE_QUESTIONS) {
+    const v = formData.get(`answer_${q.id}`);
+    if (typeof v === "string" && v) answers[q.id] = v;
+  }
+  const parsed = UpdateLeadScoreSchema.safeParse({
+    application_id: formData.get("application_id"),
+    answers,
+    override: formData.get("override") || "",
+  });
+  if (!parsed.success) {
+    redirect("/marketing?error=" + encodeURIComponent("Invalid score submission."));
+  }
+  const input = parsed.data!;
+
+  const admin = createSupabaseAdminClient();
+  const { data: app } = await admin
+    .from("applications")
+    .select("id, created_by")
+    .eq("id", input.application_id)
+    .maybeSingle();
+  if (!app || (profile.role === "marketing" && app.created_by !== profile.id)) {
+    redirect("/marketing?error=" + encodeURIComponent("Lead not found."));
+  }
+
+  const { points, temperature } = scoreLead(input.answers);
+  const { error } = await admin
+    .from("applications")
+    .update({
+      lead_score_answers: input.answers,
+      lead_score_points: points,
+      lead_temperature: temperature,
+      lead_temperature_override: input.override || null,
+      lead_scored_by: profile.id,
+      lead_scored_at: new Date().toISOString(),
+    })
+    .eq("id", input.application_id);
+  if (error) {
+    redirect("/marketing?error=" + encodeURIComponent("Could not save the score."));
+  }
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "lead.scored",
+    entity: "application",
+    entityId: input.application_id,
+    details: { points, temperature, override: input.override || null },
+  });
+
+  revalidatePath("/marketing");
+  redirect("/marketing?scoreSaved=1");
 }
 
 const DismissLeadSchema = z.object({ application_id: z.string().uuid() });
