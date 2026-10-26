@@ -5,14 +5,18 @@ import { CancelAssessmentButton } from "@/components/admin/cancel-assessment-but
 import { SubmitButton } from "@/components/submit-button";
 import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
+import { LeadTemperatureBadge } from "@/components/lead-temperature-badge";
 import { cn, formatInZone } from "@/lib/utils";
 import { STATUS_LABEL, STATUS_TONE, type AppStatus, type BadgeTone } from "@/lib/types";
+import type { Temperature } from "@/lib/lead-scoring";
 
 export interface ScheduledRow {
   id: string;
   starts_at: string;
   application_id: string;
   studentName: string;
+  temperature: Temperature | null;
+  temperatureOverride: Temperature | null;
   grade: string | null;
   teacherName: string | null;
   zoomJoinUrl: string | null;
@@ -97,7 +101,8 @@ export function ScheduledAssessmentsPanel({
                 className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border px-3 py-2 text-sm"
               >
                 <div>
-                  <span className="font-medium">{s.studentName}</span>
+                  <span className="font-medium">{s.studentName}</span>{" "}
+                  <LeadTemperatureBadge temperature={s.temperature} override={s.temperatureOverride} />
                   <span className="text-muted-foreground">
                     {" "}
                     · Grade {s.grade ?? "—"} · {s.teacherName ?? "Unassigned"}

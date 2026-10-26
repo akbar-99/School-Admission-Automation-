@@ -15,6 +15,7 @@ import {
 import { AssignAssessmentRow } from "@/components/admin/assign-assessment-row";
 import { ScheduledAssessmentsPanel, type ScheduledRow } from "@/components/admin/scheduled-assessments-panel";
 import { AdminUnavailableAlerts } from "@/components/admin/unavailable-alerts";
+import { LeadTemperatureBadge } from "@/components/lead-temperature-badge";
 import { SubmitButton } from "@/components/submit-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -25,6 +26,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import type { AppStatus } from "@/lib/types";
+import type { Temperature } from "@/lib/lead-scoring";
 
 interface TeacherRow {
   id: string;
@@ -38,6 +40,8 @@ interface RequestRow {
   preferred_assessment_date_alt: string | null;
   preferred_assessment_tz: string | null;
   lead_student_name: string | null;
+  lead_temperature: Temperature | null;
+  lead_temperature_override: Temperature | null;
   students: { full_name: string } | null;
   parents: { full_name: string; phone: string } | null;
 }
@@ -55,6 +59,8 @@ interface SlotRow {
     status: string;
     grade_applying: string | null;
     lead_student_name: string | null;
+    lead_temperature: Temperature | null;
+    lead_temperature_override: Temperature | null;
     students: { full_name: string } | null;
     parents: { full_name: string; phone: string } | null;
   } | null;
@@ -128,7 +134,7 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
   let slotQuery = admin
     .from("assessment_slots")
     .select(
-      "id, starts_at, is_open, application_id, teacher_id, claimed_by_teacher, unavailable_reported, zoom_join_url, users(full_name, email), applications(status, grade_applying, lead_student_name, students(full_name), parents(full_name, phone))",
+      "id, starts_at, is_open, application_id, teacher_id, claimed_by_teacher, unavailable_reported, zoom_join_url, users(full_name, email), applications(status, grade_applying, lead_student_name, lead_temperature, lead_temperature_override, students(full_name), parents(full_name, phone))",
     )
     .order("starts_at", { ascending: true });
   if (teacherFilter === "unclaimed") {
@@ -154,7 +160,7 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
     admin
       .from("applications")
       .select(
-        "id, grade_applying, preferred_assessment_date, preferred_assessment_date_alt, preferred_assessment_tz, lead_student_name, students(full_name), parents(full_name, phone)",
+        "id, grade_applying, preferred_assessment_date, preferred_assessment_date_alt, preferred_assessment_tz, lead_student_name, lead_temperature, lead_temperature_override, students(full_name), parents(full_name, phone)",
       )
       .eq("status", "FORM_SUBMITTED")
       .order("preferred_assessment_date", { ascending: true }),
@@ -461,6 +467,8 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
                   key={r.id}
                   applicationId={r.id}
                   studentName={r.students?.full_name ?? r.lead_student_name ?? "Applicant"}
+                  temperature={r.lead_temperature}
+                  temperatureOverride={r.lead_temperature_override}
                   grade={r.grade_applying}
                   phone={r.parents?.phone ?? null}
                   preferred={
@@ -508,6 +516,8 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
                   starts_at: s.starts_at,
                   application_id: s.application_id!,
                   studentName: s.applications?.students?.full_name ?? s.applications?.lead_student_name ?? "Applicant",
+                  temperature: s.applications?.lead_temperature ?? null,
+                  temperatureOverride: s.applications?.lead_temperature_override ?? null,
                   grade: s.applications?.grade_applying ?? null,
                   teacherName: s.users?.full_name ?? null,
                   zoomJoinUrl: s.zoom_join_url,
@@ -720,8 +730,12 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
                       <TD>
                         {booked && s.applications ? (
                           <div>
-                            <div className="font-medium">
-                              {s.applications.students?.full_name ?? s.applications.lead_student_name ?? "Applicant"}
+                            <div className="flex items-center gap-1.5 font-medium">
+                              <span>{s.applications.students?.full_name ?? s.applications.lead_student_name ?? "Applicant"}</span>
+                              <LeadTemperatureBadge
+                                temperature={s.applications.lead_temperature}
+                                override={s.applications.lead_temperature_override}
+                              />
                             </div>
                             <div className="text-xs text-muted-foreground">
                               Grade {s.applications.grade_applying ?? "—"}

@@ -6,6 +6,8 @@ import { SubmitButton } from "@/components/submit-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { LeadTemperatureBadge } from "@/components/lead-temperature-badge";
+import type { Temperature } from "@/lib/lead-scoring";
 
 interface Teacher {
   id: string;
@@ -22,6 +24,8 @@ interface PreferredTime {
 export interface AssignAssessmentRowProps {
   applicationId: string;
   studentName: string;
+  temperature?: Temperature | null;
+  temperatureOverride?: Temperature | null;
   grade: string | null;
   phone: string | null;
   /** Primary requested time (and optional alternate), pre-computed server-side. */
@@ -35,6 +39,8 @@ export interface AssignAssessmentRowProps {
 export function AssignAssessmentRow({
   applicationId,
   studentName,
+  temperature,
+  temperatureOverride,
   grade,
   phone,
   preferred,
@@ -49,7 +55,8 @@ export function AssignAssessmentRow({
     <div className="space-y-2 rounded-md border border-border p-3">
       <div className="flex flex-wrap items-start justify-between gap-2 text-sm">
         <div>
-          <span className="font-medium">{studentName}</span>
+          <span className="font-medium">{studentName}</span>{" "}
+          <LeadTemperatureBadge temperature={temperature ?? null} override={temperatureOverride ?? null} />
           <span className="text-muted-foreground"> · Grade {grade}</span>
           {phone && (
             <a href={`tel:${phone}`} className="ml-2 text-primary hover:underline">
