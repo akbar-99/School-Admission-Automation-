@@ -10,6 +10,7 @@ import { STATUS_LABEL, type AppStatus, type WithdrawalType } from "@/lib/types";
 import { SourceIcon } from "@/components/icons/lead-source-icons";
 import { WithdrawalBadge } from "@/components/withdrawal-badge";
 import { Sparkline } from "@/components/charts/sparkline";
+import { LeadTemperatureBadge } from "@/components/lead-temperature-badge";
 import type { CooBucket, CooFunnelStats, CooStatsRow, TemperatureStats, WithdrawalStats } from "@/lib/marketing-stats";
 import type { Temperature } from "@/lib/lead-scoring";
 
@@ -493,8 +494,12 @@ export function CooDashboard({
                 <ul className="space-y-2">
                   {modalRows.map((r) => (
                     <li key={r.id} className="rounded-lg border border-border bg-muted/30 px-3.5 py-2.5 text-sm">
-                      <div className="font-medium">
-                        {r.students?.full_name ?? r.lead_student_name ?? "Unnamed student"}
+                      <div className="flex items-center gap-1.5 font-medium">
+                        <span>{r.students?.full_name ?? r.lead_student_name ?? "Unnamed student"}</span>
+                        <LeadTemperatureBadge
+                          temperature={r.lead_temperature ?? null}
+                          override={r.lead_temperature_override ?? null}
+                        />
                       </div>
                       <div className="text-xs text-muted-foreground">
                         Parent: {r.parents?.full_name ?? "—"} · {STATUS_LABEL[r.status as AppStatus] ?? r.status} ·{" "}

@@ -1,6 +1,7 @@
 import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { AppStatus, WithdrawalType } from "@/lib/types";
+import type { Temperature } from "@/lib/lead-scoring";
 
 export interface AdmissionsReportFilters {
   status?: AppStatus;
@@ -29,6 +30,8 @@ export interface AdmissionsReportRow {
   withdrawalType: WithdrawalType | null;
   withdrawalReason: string | null;
   marketingRemarks: string | null;
+  leadTemperature: Temperature | null;
+  leadTemperatureOverride: Temperature | null;
 }
 
 // Reads the same filter keys the admin overview page's filter form submits.
@@ -69,7 +72,7 @@ export async function fetchAdmissionsReportRows(
   let query = admin
     .from("applications")
     .select(
-      "id, status, category, grade_applying, admission_number, lead_source, lead_source_other, created_at, lead_student_name, withdrawn_at, withdrawal_type, withdrawal_reason, marketing_remarks, parents(full_name, phone), students(full_name), sections(grade, name)",
+      "id, status, category, grade_applying, admission_number, lead_source, lead_source_other, created_at, lead_student_name, withdrawn_at, withdrawal_type, withdrawal_reason, marketing_remarks, lead_temperature, lead_temperature_override, parents(full_name, phone), students(full_name), sections(grade, name)",
     )
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -96,6 +99,8 @@ export async function fetchAdmissionsReportRows(
     withdrawal_type: WithdrawalType | null;
     withdrawal_reason: string | null;
     marketing_remarks: string | null;
+    lead_temperature: Temperature | null;
+    lead_temperature_override: Temperature | null;
     parents: { full_name: string; phone: string } | null;
     students: { full_name: string } | null;
     sections: { grade: string; name: string } | null;
@@ -120,5 +125,7 @@ export async function fetchAdmissionsReportRows(
     withdrawalType: r.withdrawal_type,
     withdrawalReason: r.withdrawal_reason,
     marketingRemarks: r.marketing_remarks,
+    leadTemperature: r.lead_temperature,
+    leadTemperatureOverride: r.lead_temperature_override,
   }));
 }

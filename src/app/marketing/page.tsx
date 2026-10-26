@@ -9,6 +9,7 @@ import { LeadSourceSelect } from "@/components/marketing/lead-source-select";
 import { CurriculumClassFields } from "@/components/marketing/curriculum-class-fields";
 import { LeadRemarksCell } from "@/components/marketing/lead-remarks-cell";
 import { LeadScoreCell } from "@/components/marketing/lead-score-cell";
+import { LeadTemperatureBadge } from "@/components/lead-temperature-badge";
 import { SCORE_QUESTIONS, TEMPERATURE_LABEL, type Temperature } from "@/lib/lead-scoring";
 import { getClassOptions } from "@/lib/classes";
 import { LiveSearchField } from "@/components/marketing/live-search-field";
@@ -733,7 +734,15 @@ async function LeadsTableSection({
                       </form>
                     )}
                   </TD>
-                  <TD>{r.students?.full_name ?? r.lead_student_name ?? "—"}</TD>
+                  <TD>
+                    <div className="flex items-center gap-1.5">
+                      <span>{r.students?.full_name ?? r.lead_student_name ?? "—"}</span>
+                      <LeadTemperatureBadge
+                        temperature={r.lead_temperature}
+                        override={r.lead_temperature_override}
+                      />
+                    </div>
+                  </TD>
                   <TD>{r.category ?? "—"}</TD>
                   <TD>{leadSourceLabel(r.lead_source, r.lead_source_other)}</TD>
                   <TD>{r.grade_applying ?? "—"}</TD>

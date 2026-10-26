@@ -1,6 +1,8 @@
 // Domain types mirroring the database schema (supabase/migrations).
 // The Supabase clients are used untyped; query results are cast to these.
 
+import type { Temperature } from "@/lib/lead-scoring";
+
 export type UserRole =
   | "marketing"
   | "parent"
@@ -146,6 +148,13 @@ export interface Application {
   withdrawn_by: string | null;
   dismissed_at: string | null;
   dismissed_by: string | null;
+  marketing_remarks: string | null;
+  lead_score_answers: Record<string, string> | null;
+  lead_score_points: number | null;
+  lead_temperature: Temperature | null;
+  lead_temperature_override: Temperature | null;
+  lead_scored_by: string | null;
+  lead_scored_at: string | null;
   created_at: string;
   updated_at: string;
 }

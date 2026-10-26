@@ -30,7 +30,8 @@ import {
   type CooBucket,
   type CooStatsRow,
 } from "@/lib/marketing-stats";
-import { TEMPERATURE_LABEL, type Temperature } from "@/lib/lead-scoring";
+import type { Temperature } from "@/lib/lead-scoring";
+import { LeadTemperatureBadge } from "@/components/lead-temperature-badge";
 import { leadSourceLabel, type AppStatus, type WithdrawalType } from "@/lib/types";
 
 const TEMPERATURE_COLOR: Record<Temperature, string> = {
@@ -344,7 +345,6 @@ export default async function TeamMemberDetailPage({
                   <TH>Grade</TH>
                   <TH>Curriculum</TH>
                   <TH>Status</TH>
-                  <TH>Lead score</TH>
                   <TH>Withdrawal</TH>
                   <TH>Created</TH>
                 </TR>
@@ -376,21 +376,21 @@ export default async function TeamMemberDetailPage({
                           </div>
                         )}
                       </TD>
-                      <TD>{r.students?.full_name ?? r.lead_student_name ?? pending}</TD>
+                      <TD>
+                        <div className="flex items-center gap-1.5">
+                          <span>{r.students?.full_name ?? r.lead_student_name ?? pending}</span>
+                          <LeadTemperatureBadge
+                            temperature={r.lead_temperature ?? null}
+                            override={r.lead_temperature_override ?? null}
+                          />
+                        </div>
+                      </TD>
                       <TD>{r.category ?? pending}</TD>
                       <TD>{leadSourceLabel(r.lead_source, r.lead_source_other)}</TD>
                       <TD>{r.grade_applying ?? pending}</TD>
                       <TD>{r.students?.curriculum ?? r.preferred_curriculum ?? pending}</TD>
                       <TD>
                         <StatusBadge status={r.status as AppStatus} />
-                      </TD>
-                      <TD>
-                        {(() => {
-                          const effective = r.lead_temperature_override ?? r.lead_temperature;
-                          if (!effective) return <span className="text-xs text-muted-foreground">Not scored</span>;
-                          const tone = effective === "HOT" ? "danger" : effective === "WARM" ? "warning" : "info";
-                          return <Badge tone={tone}>{TEMPERATURE_LABEL[effective]}</Badge>;
-                        })()}
                       </TD>
                       <TD>
                         {r.withdrawn_at && r.withdrawal_type ? (

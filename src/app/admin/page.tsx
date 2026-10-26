@@ -26,6 +26,8 @@ import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { FileDown, FileSpreadsheet } from "lucide-react";
 import { STATUS_LABEL, leadSourceLabel, type AppStatus, type WithdrawalType } from "@/lib/types";
 import { WithdrawalBadge } from "@/components/withdrawal-badge";
+import { LeadTemperatureBadge } from "@/components/lead-temperature-badge";
+import type { Temperature } from "@/lib/lead-scoring";
 
 interface Row {
   id: string;
@@ -42,6 +44,8 @@ interface Row {
   withdrawn_at: string | null;
   withdrawal_type: WithdrawalType | null;
   withdrawal_reason: string | null;
+  lead_temperature: Temperature | null;
+  lead_temperature_override: Temperature | null;
 }
 
 // The heading needs no data and used to be the LCP element blocked behind
@@ -281,6 +285,8 @@ async function ApplicationsTableSection({
     withdrawn_at: r.withdrawnAt,
     withdrawal_type: r.withdrawalType,
     withdrawal_reason: r.withdrawalReason,
+    lead_temperature: r.leadTemperature,
+    lead_temperature_override: r.leadTemperatureOverride,
   }));
   const exportQuery = new URLSearchParams(
     Object.entries(filters).filter(([, v]) => v) as [string, string][],
@@ -424,12 +430,18 @@ async function ApplicationsTableSection({
               {rows.map((r) => (
                 <TR key={r.id}>
                   <TD>
-                    <Link
-                      href={`/admin/applications/${r.id}`}
-                      className="font-medium text-primary hover:underline"
-                    >
-                      {r.students?.full_name ?? "View details"}
-                    </Link>
+                    <div className="flex items-center gap-1.5">
+                      <Link
+                        href={`/admin/applications/${r.id}`}
+                        className="font-medium text-primary hover:underline"
+                      >
+                        {r.students?.full_name ?? "View details"}
+                      </Link>
+                      <LeadTemperatureBadge
+                        temperature={r.lead_temperature}
+                        override={r.lead_temperature_override}
+                      />
+                    </div>
                     <div className="text-xs text-muted-foreground">{r.parents?.full_name}</div>
                   </TD>
                   <TD>{r.category ?? "—"}</TD>

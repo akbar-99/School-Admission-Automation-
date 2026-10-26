@@ -6,6 +6,7 @@ import { config } from "@/lib/config";
 import { applyUrl } from "@/lib/parent";
 import { formatDateTime, formatDate, formatINR, formatInZone } from "@/lib/utils";
 import { StatusBadge } from "@/components/status-badge";
+import { LeadTemperatureBadge } from "@/components/lead-temperature-badge";
 import { PrintButton } from "@/components/print-button";
 import { SubmitButton } from "@/components/submit-button";
 import { CopyButton } from "@/components/copy-button";
@@ -149,8 +150,9 @@ export default async function ApplicationDetailPage({
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="font-display text-3xl font-semibold tracking-tight">
+          <h1 className="flex flex-wrap items-center gap-2 font-display text-3xl font-semibold tracking-tight">
             {student?.full_name ?? parent?.full_name ?? "Applicant"}
+            <LeadTemperatureBadge temperature={app.lead_temperature} override={app.lead_temperature_override} />
           </h1>
           <p className="font-mono text-xs text-muted-foreground">{app.id}</p>
         </div>
