@@ -12,19 +12,27 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-// Premium editorial serif for display headings.
+// Premium editorial serif for display headings. `weight: "variable"` loads
+// the single variable-font file (continuous 100-900 range) instead of 4
+// weights x 2 styles = 8 separate static font files — the discrete-array
+// form is what triggers a known Turbopack bug ("next/font/google queries
+// have exactly one entry") on `next build`, confirmed failing twice in a
+// row on the production build server even though it happened to succeed
+// locally (a stale per-machine font-fetch cache was almost certainly
+// masking it here). Every weight this app actually uses (400-700) still
+// renders correctly — a variable font isn't limited to preset weights.
 const fraunces = Fraunces({
   variable: "--font-display",
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: "variable",
   style: ["normal", "italic"],
 });
 
-// Rounded geometric sans for the Broadway wordmark.
+// Rounded geometric sans for the Broadway wordmark — same fix.
 const fredoka = Fredoka({
   variable: "--font-logo",
   subsets: ["latin"],
-  weight: ["500", "600", "700"],
+  weight: "variable",
 });
 
 export const metadata: Metadata = {
