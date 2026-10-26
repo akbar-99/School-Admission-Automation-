@@ -10,7 +10,8 @@ import { STATUS_LABEL, type AppStatus, type WithdrawalType } from "@/lib/types";
 import { SourceIcon } from "@/components/icons/lead-source-icons";
 import { WithdrawalBadge } from "@/components/withdrawal-badge";
 import { Sparkline } from "@/components/charts/sparkline";
-import type { CooBucket, CooFunnelStats, CooStatsRow, WithdrawalStats } from "@/lib/marketing-stats";
+import type { CooBucket, CooFunnelStats, CooStatsRow, TemperatureStats, WithdrawalStats } from "@/lib/marketing-stats";
+import type { Temperature } from "@/lib/lead-scoring";
 
 // Mirrors cooConversionValue/cooConversionLabel in lib/marketing-stats.ts —
 // duplicated (not imported) because that module is server-only and this is a
@@ -21,6 +22,21 @@ function conversionValue(stats: CooFunnelStats): number {
 function conversionLabel(stats: CooFunnelStats): string {
   return stats.enquiries > 0 ? `${((stats.admissionCompleted / stats.enquiries) * 100).toFixed(1)}%` : "—";
 }
+
+// Mirrors temperatureConversionValue/temperatureConversionLabel — same
+// duplication reasoning as above.
+function tempConversionValue(s: TemperatureStats): number {
+  return s.enquiries > 0 ? (s.admissionCompleted / s.enquiries) * 100 : -1;
+}
+function tempConversionLabel(s: TemperatureStats): string {
+  return s.enquiries > 0 ? `${((s.admissionCompleted / s.enquiries) * 100).toFixed(1)}%` : "—";
+}
+
+const TEMPERATURE_COLOR: Record<Temperature, string> = {
+  HOT: "#c0392b",
+  WARM: "#c08a2d",
+  COLD: "#1b7e9a",
+};
 
 interface StaffEntry {
   id: string;
@@ -58,6 +74,7 @@ export function CooDashboard({
   totals,
   sourceBreakdown,
   curriculumBreakdown,
+  temperatureBreakdown,
   withdrawalStats,
   withdrawals,
   stageTrends,
@@ -72,6 +89,7 @@ export function CooDashboard({
   totals: CooFunnelStats;
   sourceBreakdown: { source: string; label: string; count: number }[];
   curriculumBreakdown: { curriculum: string; count: number }[];
+  temperatureBreakdown: TemperatureStats[];
   withdrawalStats: WithdrawalStats;
   withdrawals: WithdrawalEntry[];
   stageTrends: Record<CooBucket, number[]>;
@@ -230,6 +248,47 @@ export function CooDashboard({
                 </div>
               );
             })
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Conversion rate by lead temperature</CardTitle>
+          <CardDescription>
+            Admission completed ÷ scored enquiries in each bucket — whether Hot really does convert
+            better than Cold, for the selected range. A lead with no Hot/Warm/Cold score yet isn&apos;t
+            counted in any bucket.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {temperatureBreakdown.every((t) => t.enquiries === 0) ? (
+            <p className="text-sm text-muted-foreground">No leads have been scored yet for this range.</p>
+          ) : (
+            (() => {
+              const maxTempConversion = Math.max(1, ...temperatureBreakdown.map((t) => Math.max(0, tempConversionValue(t))));
+              return temperatureBreakdown.map((t) => {
+                const value = Math.max(0, tempConversionValue(t));
+                const pct = Math.round((value / maxTempConversion) * 100);
+                return (
+                  <div key={t.temperature} className="flex items-center gap-3">
+                    <div className="w-20 shrink-0 text-sm font-medium">{t.label}</div>
+                    <div className="h-6 flex-1 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{ width: `${pct}%`, backgroundColor: TEMPERATURE_COLOR[t.temperature] }}
+                      />
+                    </div>
+                    <div className="w-40 shrink-0 text-right text-sm tabular-nums">
+                      <span className="font-medium">{tempConversionLabel(t)}</span>
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        {t.admissionCompleted} of {t.enquiries} admitted
+                      </span>
+                    </div>
+                  </div>
+                );
+              });
+            })()
           )}
         </CardContent>
       </Card>

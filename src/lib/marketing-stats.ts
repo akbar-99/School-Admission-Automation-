@@ -2,6 +2,7 @@ import "server-only";
 import { LEAD_SOURCE_LABEL, LEAD_SOURCES, type AppStatus, type WithdrawalType } from "@/lib/types";
 import { needsAssessment } from "@/lib/assessment";
 import { CURRICULUM_OPTIONS } from "@/lib/config";
+import { TEMPERATURE_LABEL, type Temperature } from "@/lib/lead-scoring";
 
 // Statuses that mean a lead reached at least this funnel stage. Derived from
 // the status machine (0002_functions.sql): once a lead leaves LEAD_CREATED /
@@ -149,6 +150,8 @@ export interface CooStatsRow {
   students: { full_name: string; curriculum?: string | null } | null;
   parents: { full_name: string } | null;
   payments?: { amount: number; status: string }[] | null;
+  lead_temperature?: Temperature | null;
+  lead_temperature_override?: Temperature | null;
 }
 
 export type CooBucket =
@@ -235,6 +238,45 @@ export function computeCooStatsByCreator(rows: CooStatsRow[]): Map<string, CooCr
   }
 
   return byCreator;
+}
+
+export interface TemperatureStats {
+  temperature: Temperature;
+  label: string;
+  enquiries: number;
+  admissionCompleted: number;
+}
+
+// Does the Hot/Warm/Cold score actually predict who enrolls? Scored with
+// the exact same REACHED_PAYMENT + withdrawn_at rule as
+// computeCooStatsByCreator's admissionCompleted, so this conversion rate is
+// directly comparable to the per-team-member one. A lead's effective
+// temperature is its manual override if a counselor set one, else the
+// computed result from the six-question score; a never-scored lead isn't
+// counted in any bucket — there's nothing to validate for it yet.
+export function computeTemperatureBreakdown(
+  rows: Pick<CooStatsRow, "status" | "withdrawn_at" | "lead_temperature" | "lead_temperature_override">[],
+): TemperatureStats[] {
+  const buckets: Record<Temperature, TemperatureStats> = {
+    HOT: { temperature: "HOT", label: TEMPERATURE_LABEL.HOT, enquiries: 0, admissionCompleted: 0 },
+    WARM: { temperature: "WARM", label: TEMPERATURE_LABEL.WARM, enquiries: 0, admissionCompleted: 0 },
+    COLD: { temperature: "COLD", label: TEMPERATURE_LABEL.COLD, enquiries: 0, admissionCompleted: 0 },
+  };
+  for (const row of rows) {
+    const effective = row.lead_temperature_override ?? row.lead_temperature;
+    if (!effective) continue;
+    const bucket = buckets[effective];
+    bucket.enquiries += 1;
+    if (REACHED_PAYMENT.has(row.status) && !row.withdrawn_at) bucket.admissionCompleted += 1;
+  }
+  return [buckets.HOT, buckets.WARM, buckets.COLD];
+}
+
+export function temperatureConversionValue(s: TemperatureStats): number {
+  return s.enquiries > 0 ? (s.admissionCompleted / s.enquiries) * 100 : -1;
+}
+export function temperatureConversionLabel(s: TemperatureStats): string {
+  return s.enquiries > 0 ? `${((s.admissionCompleted / s.enquiries) * 100).toFixed(1)}%` : "—";
 }
 
 // Which lead source is actually producing enquiries — shared by the

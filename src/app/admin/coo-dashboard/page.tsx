@@ -10,6 +10,7 @@ import {
   computeCooStatsByCreator,
   computeCurriculumBreakdown,
   computeSourceBreakdown,
+  computeTemperatureBreakdown,
   computeWithdrawalStats,
   EMPTY_COO_STATS,
   type CooBucket,
@@ -139,7 +140,7 @@ async function CooDashboardData({ from, to }: { from?: string; to?: string }) {
   let query = admin
     .from("applications")
     .select(
-      "id, status, grade_applying, created_by, broadway_status, created_at, lead_student_name, lead_source, lead_source_other, external_contact_id, preferred_curriculum, withdrawn_at, withdrawal_type, withdrawal_reason, students(full_name, curriculum), parents(full_name), payments(amount, status)",
+      "id, status, grade_applying, created_by, broadway_status, created_at, lead_student_name, lead_source, lead_source_other, external_contact_id, preferred_curriculum, withdrawn_at, withdrawal_type, withdrawal_reason, lead_temperature, lead_temperature_override, students(full_name, curriculum), parents(full_name), payments(amount, status)",
     )
     .not("created_by", "is", null);
   if (from) query = query.gte("created_at", `${from}T00:00:00`);
@@ -176,6 +177,7 @@ async function CooDashboardData({ from, to }: { from?: string; to?: string }) {
   const sourceBreakdown = computeSourceBreakdown(rows);
   const curriculumBreakdown = computeCurriculumBreakdown(rows);
   const withdrawalStats = computeWithdrawalStats(rows);
+  const temperatureBreakdown = computeTemperatureBreakdown(rows);
 
   // Sparkline trends for the stat-card grid — one series per stage, built
   // from the same matched rows the numeric totals already came from (so a
@@ -262,6 +264,7 @@ async function CooDashboardData({ from, to }: { from?: string; to?: string }) {
       totals={totals}
       sourceBreakdown={sourceBreakdown}
       curriculumBreakdown={curriculumBreakdown}
+      temperatureBreakdown={temperatureBreakdown}
       withdrawalStats={withdrawalStats}
       withdrawals={withdrawals}
       stageTrends={stageTrends}
