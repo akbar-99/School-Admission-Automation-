@@ -1324,6 +1324,33 @@ export async function notifyMissedAssessment(appId: string, missedSlot: { starts
 }
 
 // ---------------------------------------------------------------------------
+// A marketing counselor's own next-follow-up date on a lead has arrived —
+// reminds ONLY that lead's creator (notifyLeadCreator), never the whole
+// team and never the parent. Polled daily by
+// src/app/api/cron/follow-up-reminders, which claims the row (marking
+// next_follow_up_reminder_sent) before calling this, so a delivery failure
+// here is logged by the caller rather than retried indefinitely.
+// ---------------------------------------------------------------------------
+export async function notifyFollowUpDue(app: Application) {
+  const { data: parentRow } = await createSupabaseAdminClient()
+    .from("parents")
+    .select("full_name, phone")
+    .eq("id", app.parent_id)
+    .maybeSingle();
+  const parent = parentRow as Parent | null;
+  const context = staffContextLine(await studentLabel(app), parent?.full_name ?? "—");
+
+  await dispatch(
+    await notifyLeadCreator(app, {
+      applicationId: app.id,
+      event: "FOLLOW_UP_DUE",
+      subject: "Follow-up due today",
+      body: `${context}You set a follow-up reminder for today${parent?.phone ? ` — ${parent.phone}` : ""}.`,
+    }),
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Admin assigned a new slot to a teacher — let the teacher know.
 // ---------------------------------------------------------------------------
 export async function notifyTeacherSlotAssigned(

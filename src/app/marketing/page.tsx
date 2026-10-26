@@ -4,12 +4,13 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireRole } from "@/lib/auth";
 import { applyUrl } from "@/lib/parent";
 import { formatDateTime, cn } from "@/lib/utils";
-import { createLead, claimLead, dismissLead, addContactInfo, markWithdrawn, restoreWithdrawn, updateLeadRemarks, updateLeadScore } from "./actions";
+import { createLead, claimLead, dismissLead, addContactInfo, markWithdrawn, restoreWithdrawn, updateLeadRemarks, updateLeadScore, updateLeadFollowUp } from "./actions";
 import { LeadSourceSelect } from "@/components/marketing/lead-source-select";
 import { CurriculumClassFields } from "@/components/marketing/curriculum-class-fields";
 import { LeadRemarksCell } from "@/components/marketing/lead-remarks-cell";
 import { LeadScoreCell } from "@/components/marketing/lead-score-cell";
 import { LeadTemperatureBadge } from "@/components/lead-temperature-badge";
+import { LeadFollowUpCell } from "@/components/marketing/lead-follow-up-cell";
 import { SCORE_QUESTIONS, TEMPERATURE_LABEL, type Temperature } from "@/lib/lead-scoring";
 import { getClassOptions } from "@/lib/classes";
 import { LiveSearchField } from "@/components/marketing/live-search-field";
@@ -55,6 +56,7 @@ interface Row {
   lead_score_points: number | null;
   lead_temperature: Temperature | null;
   lead_temperature_override: Temperature | null;
+  next_follow_up_at: string | null;
 }
 
 interface UnclaimedRow {
@@ -441,7 +443,7 @@ async function LeadsTableSection({
   let query = admin
     .from("applications")
     .select(
-      "id, status, category, grade_applying, lead_student_name, lead_source, lead_source_other, external_contact_id, access_token, created_at, withdrawn_at, withdrawal_type, withdrawal_reason, marketing_remarks, lead_score_answers, lead_score_points, lead_temperature, lead_temperature_override, payments(status, refunded_at, refund_reason), parents(full_name, phone, email), students(full_name)",
+      "id, status, category, grade_applying, lead_student_name, lead_source, lead_source_other, external_contact_id, access_token, created_at, withdrawn_at, withdrawal_type, withdrawal_reason, marketing_remarks, lead_score_answers, lead_score_points, lead_temperature, lead_temperature_override, next_follow_up_at, payments(status, refunded_at, refund_reason), parents(full_name, phone, email), students(full_name)",
     )
     .order("created_at", { ascending: false })
     .limit(100);
@@ -696,6 +698,7 @@ async function LeadsTableSection({
                 <TH>Lead score</TH>
                 <TH>Withdrawal</TH>
                 <TH>Remarks</TH>
+                <TH>Next follow-up</TH>
                 <TH>Created</TH>
                 <TH>Link</TH>
                 <TH></TH>
@@ -810,6 +813,13 @@ async function LeadsTableSection({
                       action={updateLeadRemarks}
                       applicationId={r.id}
                       initialRemarks={r.marketing_remarks}
+                    />
+                  </TD>
+                  <TD>
+                    <LeadFollowUpCell
+                      action={updateLeadFollowUp}
+                      applicationId={r.id}
+                      nextFollowUpAt={r.next_follow_up_at}
                     />
                   </TD>
                   <TD className="whitespace-nowrap text-muted-foreground">

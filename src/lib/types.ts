@@ -155,6 +155,8 @@ export interface Application {
   lead_temperature_override: Temperature | null;
   lead_scored_by: string | null;
   lead_scored_at: string | null;
+  next_follow_up_at: string | null;
+  next_follow_up_reminder_sent: boolean;
   created_at: string;
   updated_at: string;
 }

@@ -683,6 +683,65 @@ export async function updateLeadScore(formData: FormData) {
   redirect("/marketing?scoreSaved=1");
 }
 
+const UpdateFollowUpSchema = z.object({
+  application_id: z.string().uuid(),
+  next_follow_up_at: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a valid date")
+    .optional()
+    .or(z.literal("")),
+});
+
+// A counselor's own reminder-to-self — src/app/api/cron/follow-up-reminders
+// reminds only them (never the parent, never the rest of the team) once the
+// date arrives. Picking a new date always re-arms the reminder, including
+// re-picking the same date after it already fired today.
+export async function updateLeadFollowUp(formData: FormData) {
+  const { profile } = await requireRole(["marketing", "admin", "coo"]);
+  const parsed = UpdateFollowUpSchema.safeParse({
+    application_id: formData.get("application_id"),
+    next_follow_up_at: formData.get("next_follow_up_at") || "",
+  });
+  if (!parsed.success) {
+    redirect("/marketing?error=" + encodeURIComponent(parsed.error.issues[0].message));
+  }
+  const input = parsed.data!;
+
+  const admin = createSupabaseAdminClient();
+  const { data: app } = await admin
+    .from("applications")
+    .select("id, created_by")
+    .eq("id", input.application_id)
+    .maybeSingle();
+  if (!app || (profile.role === "marketing" && app.created_by !== profile.id)) {
+    redirect("/marketing?error=" + encodeURIComponent("Lead not found."));
+  }
+
+  const { error } = await admin
+    .from("applications")
+    .update({
+      next_follow_up_at: input.next_follow_up_at || null,
+      next_follow_up_reminder_sent: false,
+    })
+    .eq("id", input.application_id);
+  if (error) {
+    redirect("/marketing?error=" + encodeURIComponent("Could not save the follow-up date."));
+  }
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "lead.follow_up_set",
+    entity: "application",
+    entityId: input.application_id,
+    details: { next_follow_up_at: input.next_follow_up_at || null },
+  });
+
+  revalidatePath("/marketing");
+  redirect("/marketing?followUpSaved=1");
+}
+
 const DismissLeadSchema = z.object({ application_id: z.string().uuid() });
 
 // Takes an unclaimed enquiry out of the pool without deleting it — for one
