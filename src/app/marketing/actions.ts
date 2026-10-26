@@ -191,6 +191,19 @@ export async function createLead(formData: FormData) {
   }
   const parent = parentRow as Parent;
 
+  // Scoring at creation is entirely optional (the "Score this lead now"
+  // disclosure on the New lead form) — most of the time nothing's been
+  // asked yet and the lead stays unscored, same as one created with no
+  // answers at all; updateLeadScore (src/app/marketing/actions.ts) remains
+  // the normal way to score/re-score a lead afterward.
+  const scoreAnswers: Record<string, string> = {};
+  for (const q of SCORE_QUESTIONS) {
+    const v = formData.get(`answer_${q.id}`);
+    if (typeof v === "string" && v) scoreAnswers[q.id] = v;
+  }
+  const hasScore = Object.keys(scoreAnswers).length > 0;
+  const score = hasScore ? scoreLead(scoreAnswers) : null;
+
   const { data: appRow, error: aErr } = await admin
     .from("applications")
     .insert({
@@ -203,6 +216,15 @@ export async function createLead(formData: FormData) {
       grade_applying: input.grade_applying || null,
       category: input.grade_applying ? classCategory(input.grade_applying) : null,
       created_by: profile.id,
+      ...(hasScore
+        ? {
+            lead_score_answers: scoreAnswers,
+            lead_score_points: score!.points,
+            lead_temperature: score!.temperature,
+            lead_scored_by: profile.id,
+            lead_scored_at: new Date().toISOString(),
+          }
+        : {}),
     })
     .select("*")
     .single();
@@ -218,7 +240,9 @@ export async function createLead(formData: FormData) {
     action: "lead.created",
     entity: "application",
     entityId: app.id,
-    details: { parent_id: parent.id },
+    details: hasScore
+      ? { parent_id: parent.id, points: score!.points, temperature: score!.temperature }
+      : { parent_id: parent.id },
   });
 
   revalidatePath("/marketing");

@@ -9,7 +9,7 @@ import { LeadSourceSelect } from "@/components/marketing/lead-source-select";
 import { CurriculumClassFields } from "@/components/marketing/curriculum-class-fields";
 import { LeadRemarksCell } from "@/components/marketing/lead-remarks-cell";
 import { LeadScoreCell } from "@/components/marketing/lead-score-cell";
-import { TEMPERATURE_LABEL, type Temperature } from "@/lib/lead-scoring";
+import { SCORE_QUESTIONS, TEMPERATURE_LABEL, type Temperature } from "@/lib/lead-scoring";
 import { getClassOptions } from "@/lib/classes";
 import { LiveSearchField } from "@/components/marketing/live-search-field";
 import { describeFilters, parseAdmissionsFilters } from "@/lib/admissions-report";
@@ -230,6 +230,34 @@ export default async function MarketingPage({
             <div className="space-y-1.5">
               <Label htmlFor="lead_source">Source of enquiry *</Label>
               <LeadSourceSelect name="lead_source" />
+            </div>
+            <div className="sm:col-span-2">
+              <details className="rounded-md border border-border p-3">
+                <summary className="cursor-pointer text-sm font-medium text-primary">
+                  Score this lead now (optional)
+                </summary>
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  Only fill in what you already know from the call — anything left blank counts as 0
+                  for now, and you can score or update it any time from the leads list below.
+                </p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  {SCORE_QUESTIONS.map((q) => (
+                    <div key={q.id} className="space-y-1.5">
+                      <Label htmlFor={`answer_${q.id}`} className="text-xs">
+                        {q.label}
+                      </Label>
+                      <Select id={`answer_${q.id}`} name={`answer_${q.id}`} defaultValue="" className="h-9 text-sm">
+                        <option value="">Not asked yet</option>
+                        {q.options.map((o) => (
+                          <option key={o.id} value={o.id}>
+                            {o.label} ({o.points})
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                  ))}
+                </div>
+              </details>
             </div>
             <div className="sm:col-span-2">
               <SubmitButton pendingText="Creating…">Create lead &amp; send link</SubmitButton>
