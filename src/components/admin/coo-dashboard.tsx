@@ -43,6 +43,11 @@ interface StaffEntry {
   name: string;
   stats: CooFunnelStats;
   rows: Record<CooBucket, CooStatsRow[]>;
+  temperature: TemperatureStats[]; // [HOT, WARM, COLD], same order computeTemperatureBreakdown returns
+}
+
+function tempCount(entry: StaffEntry, temperature: Temperature): number {
+  return entry.temperature.find((t) => t.temperature === temperature)?.enquiries ?? 0;
 }
 
 const COLUMNS: { key: CooBucket; label: string }[] = [
@@ -55,7 +60,24 @@ const COLUMNS: { key: CooBucket; label: string }[] = [
   { key: "addedToCourse", label: "Added to course" },
 ];
 
-type SortKey = CooBucket | "name" | "conversion";
+type SortKey = CooBucket | "name" | "conversion" | "hot" | "warm" | "cold";
+
+function sortValue(entry: StaffEntry, key: SortKey): string | number {
+  switch (key) {
+    case "name":
+      return entry.name;
+    case "conversion":
+      return conversionValue(entry.stats);
+    case "hot":
+      return tempCount(entry, "HOT");
+    case "warm":
+      return tempCount(entry, "WARM");
+    case "cold":
+      return tempCount(entry, "COLD");
+    default:
+      return entry.stats[key];
+  }
+}
 
 const PALETTE = ["#1b7e9a", "#2f8f6b", "#c08a2d", "#94ac9f", "#c0392b", "#475569", "#7c5cbf", "#0f766e"];
 
@@ -110,8 +132,8 @@ export function CooDashboard({
   const sorted = useMemo(() => {
     const copy = [...staff];
     copy.sort((a, b) => {
-      const va = sortKey === "name" ? a.name : sortKey === "conversion" ? conversionValue(a.stats) : a.stats[sortKey];
-      const vb = sortKey === "name" ? b.name : sortKey === "conversion" ? conversionValue(b.stats) : b.stats[sortKey];
+      const va = sortValue(a, sortKey);
+      const vb = sortValue(b, sortKey);
       const cmp = typeof va === "string" ? va.localeCompare(vb as string) : (va as number) - (vb as number);
       return sortDir === "asc" ? cmp : -cmp;
     });
@@ -372,6 +394,17 @@ export function CooDashboard({
                       </button>
                     </th>
                   ))}
+                  {(["hot", "warm", "cold"] as const).map((key) => (
+                    <th key={key} className="py-2 pr-4 text-right">
+                      <button
+                        type="button"
+                        onClick={() => toggleSort(key)}
+                        className="inline-flex items-center gap-1 font-medium hover:text-foreground"
+                      >
+                        {key === "hot" ? "Hot" : key === "warm" ? "Warm" : "Cold"} <SortIcon column={key} />
+                      </button>
+                    </th>
+                  ))}
                   <th className="py-2 pr-4 text-right">
                     <button
                       type="button"
@@ -407,6 +440,15 @@ export function CooDashboard({
                         </button>
                       </td>
                     ))}
+                    <td className="py-2.5 pr-4 text-right tabular-nums" style={{ color: TEMPERATURE_COLOR.HOT }}>
+                      {tempCount(s, "HOT")}
+                    </td>
+                    <td className="py-2.5 pr-4 text-right tabular-nums" style={{ color: TEMPERATURE_COLOR.WARM }}>
+                      {tempCount(s, "WARM")}
+                    </td>
+                    <td className="py-2.5 pr-4 text-right tabular-nums" style={{ color: TEMPERATURE_COLOR.COLD }}>
+                      {tempCount(s, "COLD")}
+                    </td>
                     <td className="py-2.5 pr-4 text-right">
                       <Badge tone="success">{conversionLabel(s.stats)}</Badge>
                     </td>

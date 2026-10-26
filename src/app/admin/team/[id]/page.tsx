@@ -21,13 +21,23 @@ import {
   computeCooStatsByCreator,
   computeCurriculumBreakdown,
   computeSourceBreakdown,
+  computeTemperatureBreakdown,
   computeWithdrawalStats,
   cooConversionLabel,
   EMPTY_COO_STATS,
+  temperatureConversionLabel,
+  temperatureConversionValue,
   type CooBucket,
   type CooStatsRow,
 } from "@/lib/marketing-stats";
+import { TEMPERATURE_LABEL, type Temperature } from "@/lib/lead-scoring";
 import { leadSourceLabel, type AppStatus, type WithdrawalType } from "@/lib/types";
+
+const TEMPERATURE_COLOR: Record<Temperature, string> = {
+  HOT: "#c0392b",
+  WARM: "#c08a2d",
+  COLD: "#1b7e9a",
+};
 
 const STAT_CARDS: { key: keyof typeof EMPTY_COO_STATS; label: string }[] = [
   { key: "enquiries", label: "Total enquiries" },
@@ -66,7 +76,7 @@ export default async function TeamMemberDetailPage({
   let query = admin
     .from("applications")
     .select(
-      "id, status, grade_applying, created_by, broadway_status, created_at, lead_student_name, lead_source, lead_source_other, external_contact_id, lead_message, preferred_curriculum, category, withdrawn_at, withdrawal_type, withdrawal_reason, students(full_name, curriculum), parents(full_name), payments(amount, status)",
+      "id, status, grade_applying, created_by, broadway_status, created_at, lead_student_name, lead_source, lead_source_other, external_contact_id, lead_message, preferred_curriculum, category, withdrawn_at, withdrawal_type, withdrawal_reason, lead_temperature, lead_temperature_override, students(full_name, curriculum), parents(full_name), payments(amount, status)",
     )
     .eq("created_by", id)
     .order("created_at", { ascending: false })
@@ -87,7 +97,9 @@ export default async function TeamMemberDetailPage({
   const sourceBreakdown = computeSourceBreakdown(rows);
   const curriculumBreakdown = computeCurriculumBreakdown(rows);
   const withdrawalStats = computeWithdrawalStats(rows);
+  const temperatureBreakdown = computeTemperatureBreakdown(rows);
   const maxSource = Math.max(1, ...sourceBreakdown.map((s) => s.count));
+  const maxTempConversion = Math.max(1, ...temperatureBreakdown.map((t) => Math.max(0, temperatureConversionValue(t))));
 
   // Sparkline trends for this member's own stat-card grid — same shape as
   // the team-wide Team dashboard, just scoped to their own rows.
@@ -279,6 +291,43 @@ export default async function TeamMemberDetailPage({
 
       <Card>
         <CardHeader>
+          <CardTitle>Conversion rate by lead temperature</CardTitle>
+          <CardDescription>
+            Admission completed ÷ scored enquiries in each bucket. A lead with no Hot/Warm/Cold score
+            yet isn&apos;t counted in any bucket.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {temperatureBreakdown.every((t) => t.enquiries === 0) ? (
+            <p className="text-sm text-muted-foreground">No leads have been scored yet for this range.</p>
+          ) : (
+            temperatureBreakdown.map((t) => {
+              const value = Math.max(0, temperatureConversionValue(t));
+              const pct = Math.round((value / maxTempConversion) * 100);
+              return (
+                <div key={t.temperature} className="flex items-center gap-3">
+                  <div className="w-20 shrink-0 text-sm font-medium">{t.label}</div>
+                  <div className="h-6 flex-1 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{ width: `${pct}%`, backgroundColor: TEMPERATURE_COLOR[t.temperature] }}
+                    />
+                  </div>
+                  <div className="w-40 shrink-0 text-right text-sm tabular-nums">
+                    <span className="font-medium">{temperatureConversionLabel(t)}</span>
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      {t.admissionCompleted} of {t.enquiries} admitted
+                    </span>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>All leads ({rows.length})</CardTitle>
         </CardHeader>
         <CardContent>
@@ -295,6 +344,7 @@ export default async function TeamMemberDetailPage({
                   <TH>Grade</TH>
                   <TH>Curriculum</TH>
                   <TH>Status</TH>
+                  <TH>Lead score</TH>
                   <TH>Withdrawal</TH>
                   <TH>Created</TH>
                 </TR>
@@ -333,6 +383,14 @@ export default async function TeamMemberDetailPage({
                       <TD>{r.students?.curriculum ?? r.preferred_curriculum ?? pending}</TD>
                       <TD>
                         <StatusBadge status={r.status as AppStatus} />
+                      </TD>
+                      <TD>
+                        {(() => {
+                          const effective = r.lead_temperature_override ?? r.lead_temperature;
+                          if (!effective) return <span className="text-xs text-muted-foreground">Not scored</span>;
+                          const tone = effective === "HOT" ? "danger" : effective === "WARM" ? "warning" : "info";
+                          return <Badge tone={tone}>{TEMPERATURE_LABEL[effective]}</Badge>;
+                        })()}
                       </TD>
                       <TD>
                         {r.withdrawn_at && r.withdrawal_type ? (

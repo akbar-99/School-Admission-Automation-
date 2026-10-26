@@ -260,6 +260,10 @@ async function CooDashboardData({ from, to }: { from?: string; to?: string }) {
           admissionCompleted: [],
           addedToCourse: [],
         },
+        // This person's own slice of the same team-wide temperature
+        // breakdown above — rows.enquiries already holds every one of their
+        // leads (computeCooStatsByCreator pushes to it unconditionally).
+        temperature: computeTemperatureBreakdown(statsByStaff.get(m.id)?.rows.enquiries ?? []),
       }))}
       totals={totals}
       sourceBreakdown={sourceBreakdown}
