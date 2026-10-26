@@ -89,15 +89,16 @@ export async function generateAdmissionsReportPdf(input: AdmissionsReportPdfInpu
     x: number;
     w: number;
   }[] = [
-    { key: "studentName", label: "STUDENT", x: M, w: 120 },
-    { key: "parentName", label: "PARENT", x: M + 120, w: 100 },
-    { key: "parentPhone", label: "PHONE", x: M + 220, w: 75 },
-    { key: "category", label: "CATEGORY", x: M + 295, w: 55 },
-    { key: "gradeApplying", label: "GRADE", x: M + 350, w: 45 },
-    { key: "status", label: "STATUS", x: M + 395, w: 110 },
-    { key: "admissionNumber", label: "ADM. NO.", x: M + 505, w: 90 },
-    { key: "section", label: "SECTION", x: M + 595, w: 60 },
-    { key: "createdAt", label: "CREATED", x: M + 655, w: right - (M + 655) },
+    { key: "studentName", label: "STUDENT", x: M, w: 105 },
+    { key: "parentName", label: "PARENT", x: M + 105, w: 88 },
+    { key: "parentPhone", label: "PHONE", x: M + 193, w: 72 },
+    { key: "category", label: "CATEGORY", x: M + 265, w: 48 },
+    { key: "gradeApplying", label: "GRADE", x: M + 313, w: 42 },
+    { key: "status", label: "STATUS", x: M + 355, w: 98 },
+    { key: "admissionNumber", label: "ADM. NO.", x: M + 453, w: 76 },
+    { key: "section", label: "SECTION", x: M + 529, w: 52 },
+    { key: "createdAt", label: "CREATED", x: M + 581, w: 80 },
+    { key: "marketingRemarks", label: "REMARKS", x: M + 661, w: right - (M + 661) },
   ];
 
   const headerRow = (yy: number) => {
@@ -135,6 +136,10 @@ export async function generateAdmissionsReportPdf(input: AdmissionsReportPdfInpu
           return r.admissionNumber ?? "—";
         case "section":
           return r.sectionGrade ? `${r.sectionGrade}-${r.sectionName}` : "—";
+        case "marketingRemarks":
+          // Collapse to one line — drawText doesn't honor newlines, and this
+          // column is already truncated below like every other cell.
+          return r.marketingRemarks ? r.marketingRemarks.replace(/\s*\n+\s*/g, " ").trim() : "—";
         default:
           return String(r[key as keyof AdmissionsReportRow] ?? "—");
       }

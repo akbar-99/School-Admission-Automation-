@@ -538,6 +538,57 @@ export async function restoreWithdrawn(formData: FormData) {
   redirect("/marketing?restored=1");
 }
 
+const UpdateRemarksSchema = z.object({
+  application_id: z.string().uuid(),
+  marketing_remarks: z.string().trim().max(2000, "Keep it under 2000 characters").optional(),
+});
+
+// Free-text internal note for the marketing team's own lead tracking —
+// never shown to the parent anywhere (not the apply portal, not any
+// notification), only here and in the marketing/admin leads export. A
+// marketing rep can only edit their own leads, same scoping as the rest of
+// this table; admin/coo can edit any.
+export async function updateLeadRemarks(formData: FormData) {
+  const { profile } = await requireRole(["marketing", "admin", "coo"]);
+  const parsed = UpdateRemarksSchema.safeParse({
+    application_id: formData.get("application_id"),
+    marketing_remarks: formData.get("marketing_remarks") || undefined,
+  });
+  if (!parsed.success) {
+    redirect("/marketing?error=" + encodeURIComponent(parsed.error.issues[0].message));
+  }
+  const input = parsed.data!;
+
+  const admin = createSupabaseAdminClient();
+  const { data: app } = await admin
+    .from("applications")
+    .select("id, created_by")
+    .eq("id", input.application_id)
+    .maybeSingle();
+  if (!app || (profile.role === "marketing" && app.created_by !== profile.id)) {
+    redirect("/marketing?error=" + encodeURIComponent("Lead not found."));
+  }
+
+  const { error } = await admin
+    .from("applications")
+    .update({ marketing_remarks: input.marketing_remarks ?? null })
+    .eq("id", input.application_id);
+  if (error) {
+    redirect("/marketing?error=" + encodeURIComponent("Could not save remarks."));
+  }
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "lead.remarks_updated",
+    entity: "application",
+    entityId: input.application_id,
+  });
+
+  revalidatePath("/marketing");
+  redirect("/marketing?remarksSaved=1");
+}
+
 const DismissLeadSchema = z.object({ application_id: z.string().uuid() });
 
 // Takes an unclaimed enquiry out of the pool without deleting it — for one

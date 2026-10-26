@@ -29,6 +29,7 @@ const COLUMNS: { key: string; header: string; width: number }[] = [
   { key: "admission_no", header: "Admission No.", width: 16 },
   { key: "section", header: "Section", width: 12 },
   { key: "created", header: "Created", width: 16 },
+  { key: "remarks", header: "Remarks", width: 30 },
 ];
 
 function fmtDate(iso: string): string {
@@ -110,6 +111,7 @@ export async function generateAdmissionsReportExcel(
       admission_no: r.admissionNumber ?? "—",
       section: r.sectionGrade ? `${r.sectionGrade}-${r.sectionName}` : "—",
       created: fmtDate(r.createdAt),
+      remarks: r.marketingRemarks ?? "—",
     });
     const zebra = i % 2 === 1;
     row.eachCell((cell) => {
@@ -119,6 +121,7 @@ export async function generateAdmissionsReportExcel(
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: SOFT } };
       }
     });
+    row.getCell("remarks").alignment = { wrapText: true, vertical: "top" };
   });
 
   const buffer = await workbook.xlsx.writeBuffer();

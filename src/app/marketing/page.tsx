@@ -4,9 +4,10 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireRole } from "@/lib/auth";
 import { applyUrl } from "@/lib/parent";
 import { formatDateTime, cn } from "@/lib/utils";
-import { createLead, claimLead, dismissLead, addContactInfo, markWithdrawn, restoreWithdrawn } from "./actions";
+import { createLead, claimLead, dismissLead, addContactInfo, markWithdrawn, restoreWithdrawn, updateLeadRemarks } from "./actions";
 import { LeadSourceSelect } from "@/components/marketing/lead-source-select";
 import { CurriculumClassFields } from "@/components/marketing/curriculum-class-fields";
+import { LeadRemarksCell } from "@/components/marketing/lead-remarks-cell";
 import { getClassOptions } from "@/lib/classes";
 import { LiveSearchField } from "@/components/marketing/live-search-field";
 import { describeFilters, parseAdmissionsFilters } from "@/lib/admissions-report";
@@ -46,6 +47,7 @@ interface Row {
   payments: { status: string; refunded_at: string | null; refund_reason: string | null }[] | null;
   parents: { full_name: string; phone: string | null; email: string | null } | null;
   students: { full_name: string } | null;
+  marketing_remarks: string | null;
 }
 
 interface UnclaimedRow {
@@ -368,7 +370,7 @@ async function LeadsTableSection({
   let query = admin
     .from("applications")
     .select(
-      "id, status, category, grade_applying, lead_student_name, lead_source, lead_source_other, external_contact_id, access_token, created_at, withdrawn_at, withdrawal_type, withdrawal_reason, payments(status, refunded_at, refund_reason), parents(full_name, phone, email), students(full_name)",
+      "id, status, category, grade_applying, lead_student_name, lead_source, lead_source_other, external_contact_id, access_token, created_at, withdrawn_at, withdrawal_type, withdrawal_reason, marketing_remarks, payments(status, refunded_at, refund_reason), parents(full_name, phone, email), students(full_name)",
     )
     .order("created_at", { ascending: false })
     .limit(100);
@@ -620,6 +622,7 @@ async function LeadsTableSection({
                 <TH>Teacher</TH>
                 <TH>Status</TH>
                 <TH>Withdrawal</TH>
+                <TH>Remarks</TH>
                 <TH>Created</TH>
                 <TH>Link</TH>
                 <TH></TH>
@@ -710,6 +713,13 @@ async function LeadsTableSection({
                     ) : (
                       <span className="text-xs text-muted-foreground">—</span>
                     )}
+                  </TD>
+                  <TD>
+                    <LeadRemarksCell
+                      action={updateLeadRemarks}
+                      applicationId={r.id}
+                      initialRemarks={r.marketing_remarks}
+                    />
                   </TD>
                   <TD className="whitespace-nowrap text-muted-foreground">
                     {formatDateTime(r.created_at)}
