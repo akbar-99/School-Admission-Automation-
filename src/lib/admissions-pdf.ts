@@ -89,16 +89,20 @@ export async function generateAdmissionsReportPdf(input: AdmissionsReportPdfInpu
     x: number;
     w: number;
   }[] = [
-    { key: "studentName", label: "STUDENT", x: M, w: 105 },
-    { key: "parentName", label: "PARENT", x: M + 105, w: 88 },
-    { key: "parentPhone", label: "PHONE", x: M + 193, w: 72 },
-    { key: "category", label: "CATEGORY", x: M + 265, w: 48 },
-    { key: "gradeApplying", label: "GRADE", x: M + 313, w: 42 },
-    { key: "status", label: "STATUS", x: M + 355, w: 98 },
-    { key: "admissionNumber", label: "ADM. NO.", x: M + 453, w: 76 },
-    { key: "section", label: "SECTION", x: M + 529, w: 52 },
-    { key: "createdAt", label: "CREATED", x: M + 581, w: 80 },
-    { key: "marketingRemarks", label: "REMARKS", x: M + 661, w: right - (M + 661) },
+    { key: "studentName", label: "STUDENT", x: M, w: 100 },
+    { key: "parentName", label: "PARENT", x: M + 100, w: 85 },
+    { key: "parentPhone", label: "PHONE", x: M + 185, w: 72 },
+    // CATEGORY's own header label ("CATEGORY", ~47pt at bold 8.5) needs real
+    // room — at 48pt it overran straight into GRADE's column (confirmed
+    // live: rendered as "CATEGORYGRADE" with no gap). Measured every label
+    // width directly before picking these.
+    { key: "category", label: "CATEGORY", x: M + 257, w: 58 },
+    { key: "gradeApplying", label: "GRADE", x: M + 315, w: 44 },
+    { key: "status", label: "STATUS", x: M + 359, w: 95 },
+    { key: "admissionNumber", label: "ADM. NO.", x: M + 454, w: 72 },
+    { key: "section", label: "SECTION", x: M + 526, w: 50 },
+    { key: "createdAt", label: "CREATED", x: M + 576, w: 72 },
+    { key: "marketingRemarks", label: "REMARKS", x: M + 648, w: right - (M + 648) },
   ];
 
   const headerRow = (yy: number) => {
