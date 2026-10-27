@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CheckCircle2 } from "lucide-react";
 import { SubmitButton } from "@/components/submit-button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -12,18 +13,22 @@ import { formatDate } from "@/lib/utils";
 // (src/app/api/cron/follow-up-reminders); this cell only sets the date.
 export function LeadFollowUpCell({
   action,
+  markDoneAction,
   applicationId,
   nextFollowUpAt,
+  completedAt,
 }: {
   action: (formData: FormData) => void;
+  markDoneAction: (formData: FormData) => void;
   applicationId: string;
   nextFollowUpAt: string | null;
+  completedAt: string | null;
 }) {
   const [editing, setEditing] = useState(false);
 
   const todayStr = new Date().toISOString().slice(0, 10);
-  const isOverdue = Boolean(nextFollowUpAt && nextFollowUpAt < todayStr);
-  const isToday = nextFollowUpAt === todayStr;
+  const isOverdue = Boolean(nextFollowUpAt && !completedAt && nextFollowUpAt < todayStr);
+  const isToday = Boolean(nextFollowUpAt && !completedAt && nextFollowUpAt === todayStr);
 
   if (!editing) {
     return (
@@ -31,8 +36,17 @@ export function LeadFollowUpCell({
         {nextFollowUpAt ? (
           <div className="flex items-center gap-1.5">
             <span className="text-xs">{formatDate(nextFollowUpAt)}</span>
-            {isOverdue && <Badge tone="danger">Overdue</Badge>}
-            {isToday && <Badge tone="warning">Today</Badge>}
+            {completedAt ? (
+              <Badge tone="success">
+                <CheckCircle2 className="mr-1 size-3" />
+                Done
+              </Badge>
+            ) : (
+              <>
+                {isOverdue && <Badge tone="danger">Overdue</Badge>}
+                {isToday && <Badge tone="warning">Today</Badge>}
+              </>
+            )}
           </div>
         ) : (
           <p className="text-xs text-muted-foreground">Not set</p>
@@ -45,14 +59,12 @@ export function LeadFollowUpCell({
           >
             {nextFollowUpAt ? "Change" : "Set follow-up"}
           </button>
-          {nextFollowUpAt && (
-            // One click, no date picker — clears next_follow_up_at, which
-            // is exactly what stops the Overdue/Today badge, the WhatsApp
-            // cron, and the in-portal popup for this lead. Needing a new
-            // follow-up later just means picking a fresh date.
-            <form action={action}>
+          {nextFollowUpAt && !completedAt && (
+            // Leaves next_follow_up_at untouched — the date itself stays
+            // visible, just flagged done instead of wiped. Picking a new
+            // date later (via Change) clears this flag again.
+            <form action={markDoneAction}>
               <input type="hidden" name="application_id" value={applicationId} />
-              <input type="hidden" name="next_follow_up_at" value="" />
               <button type="submit" className="text-xs text-primary underline-offset-2 hover:underline">
                 Mark done
               </button>

@@ -723,6 +723,10 @@ export async function updateLeadFollowUp(formData: FormData) {
     .update({
       next_follow_up_at: input.next_follow_up_at || null,
       next_follow_up_reminder_sent: false,
+      // A new date (or clearing it) always starts a fresh, un-done cycle —
+      // "done" only ever applies to the follow-up that was actually marked,
+      // not to whatever gets picked next.
+      next_follow_up_completed_at: null,
     })
     .eq("id", input.application_id);
   if (error) {
@@ -740,6 +744,51 @@ export async function updateLeadFollowUp(formData: FormData) {
 
   revalidatePath("/marketing");
   redirect("/marketing?followUpSaved=1");
+}
+
+const MarkFollowUpDoneSchema = z.object({ application_id: z.string().uuid() });
+
+// "Mark done" deliberately leaves next_follow_up_at untouched — the
+// counselor still wants to see what the date was, just flagged as dealt
+// with instead of wiped. This is what the WhatsApp cron and the in-portal
+// popup both check (alongside next_follow_up_at) to stay silent on an
+// already-done follow-up, even though its date has technically arrived.
+export async function markLeadFollowUpDone(formData: FormData) {
+  const { profile } = await requireRole(["marketing", "admin", "coo"]);
+  const parsed = MarkFollowUpDoneSchema.safeParse({ application_id: formData.get("application_id") });
+  if (!parsed.success) {
+    redirect("/marketing?error=" + encodeURIComponent("Invalid request."));
+  }
+  const { application_id } = parsed.data!;
+
+  const admin = createSupabaseAdminClient();
+  const { data: app } = await admin
+    .from("applications")
+    .select("id, created_by")
+    .eq("id", application_id)
+    .maybeSingle();
+  if (!app || (profile.role === "marketing" && app.created_by !== profile.id)) {
+    redirect("/marketing?error=" + encodeURIComponent("Lead not found."));
+  }
+
+  const { error } = await admin
+    .from("applications")
+    .update({ next_follow_up_completed_at: new Date().toISOString() })
+    .eq("id", application_id);
+  if (error) {
+    redirect("/marketing?error=" + encodeURIComponent("Could not mark the follow-up done."));
+  }
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "lead.follow_up_done",
+    entity: "application",
+    entityId: application_id,
+  });
+
+  revalidatePath("/marketing");
+  redirect("/marketing?followUpDone=1");
 }
 
 const DismissLeadSchema = z.object({ application_id: z.string().uuid() });

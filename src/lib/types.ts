@@ -157,6 +157,7 @@ export interface Application {
   lead_scored_at: string | null;
   next_follow_up_at: string | null;
   next_follow_up_reminder_sent: boolean;
+  next_follow_up_completed_at: string | null;
   created_at: string;
   updated_at: string;
 }

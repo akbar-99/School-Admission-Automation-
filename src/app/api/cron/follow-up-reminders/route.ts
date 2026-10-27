@@ -34,6 +34,11 @@ export async function GET(request: Request) {
     .eq("next_follow_up_reminder_sent", false)
     .not("next_follow_up_at", "is", null)
     .not("created_by", "is", null)
+    // "Mark done" leaves next_follow_up_at in place on purpose (the
+    // counselor still wants to see what it was) — this is what keeps an
+    // already-done follow-up from reminding anyone even though its date
+    // has technically arrived.
+    .is("next_follow_up_completed_at", null)
     .lte("next_follow_up_at", today)
     .select("*");
 
