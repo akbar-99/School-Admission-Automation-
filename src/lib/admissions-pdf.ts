@@ -1,6 +1,7 @@
 import "server-only";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import { STATUS_LABEL } from "@/lib/types";
+import { TEMPERATURE_LABEL } from "@/lib/lead-scoring";
 import type { AdmissionsReportRow } from "@/lib/admissions-report";
 
 // Brand palette (matches result-pdf.ts / the web theme).
@@ -83,26 +84,26 @@ export async function generateAdmissionsReportPdf(input: AdmissionsReportPdfInpu
   y -= 22;
 
   // ---- Table ----
+  // Every column width here was measured directly (header label width at
+  // bold 8.5pt + 6pt padding) before picking it — CATEGORY/GRADE previously
+  // overlapped ("CATEGORYGRADE" with no gap) from guessing widths instead.
   const cols: {
-    key: keyof AdmissionsReportRow | "status" | "createdAt" | "section" | "category";
+    key: keyof AdmissionsReportRow | "status" | "createdAt" | "section" | "category" | "leadScore";
     label: string;
     x: number;
     w: number;
   }[] = [
-    { key: "studentName", label: "STUDENT", x: M, w: 100 },
-    { key: "parentName", label: "PARENT", x: M + 100, w: 85 },
-    { key: "parentPhone", label: "PHONE", x: M + 185, w: 72 },
-    // CATEGORY's own header label ("CATEGORY", ~47pt at bold 8.5) needs real
-    // room — at 48pt it overran straight into GRADE's column (confirmed
-    // live: rendered as "CATEGORYGRADE" with no gap). Measured every label
-    // width directly before picking these.
-    { key: "category", label: "CATEGORY", x: M + 257, w: 58 },
-    { key: "gradeApplying", label: "GRADE", x: M + 315, w: 44 },
-    { key: "status", label: "STATUS", x: M + 359, w: 95 },
-    { key: "admissionNumber", label: "ADM. NO.", x: M + 454, w: 72 },
-    { key: "section", label: "SECTION", x: M + 526, w: 50 },
-    { key: "createdAt", label: "CREATED", x: M + 576, w: 72 },
-    { key: "marketingRemarks", label: "REMARKS", x: M + 648, w: right - (M + 648) },
+    { key: "studentName", label: "STUDENT", x: M, w: 92 },
+    { key: "parentName", label: "PARENT", x: M + 92, w: 78 },
+    { key: "parentPhone", label: "PHONE", x: M + 170, w: 66 },
+    { key: "category", label: "CATEGORY", x: M + 236, w: 58 },
+    { key: "gradeApplying", label: "GRADE", x: M + 294, w: 44 },
+    { key: "status", label: "STATUS", x: M + 338, w: 80 },
+    { key: "leadScore", label: "LEAD SCORE", x: M + 418, w: 72 },
+    { key: "admissionNumber", label: "ADM. NO.", x: M + 490, w: 62 },
+    { key: "section", label: "SECTION", x: M + 552, w: 50 },
+    { key: "createdAt", label: "CREATED", x: M + 602, w: 62 },
+    { key: "marketingRemarks", label: "REMARKS", x: M + 664, w: right - (M + 664) },
   ];
 
   const headerRow = (yy: number) => {
@@ -144,6 +145,12 @@ export async function generateAdmissionsReportPdf(input: AdmissionsReportPdfInpu
           // Collapse to one line — drawText doesn't honor newlines, and this
           // column is already truncated below like every other cell.
           return r.marketingRemarks ? r.marketingRemarks.replace(/\s*\n+\s*/g, " ").trim() : "—";
+        case "leadScore": {
+          const effective = r.leadTemperatureOverride ?? r.leadTemperature;
+          if (!effective) return "—";
+          const pts = r.leadScorePoints != null ? ` (${r.leadScorePoints})` : "";
+          return `${TEMPERATURE_LABEL[effective]}${pts}`;
+        }
         default:
           return String(r[key as keyof AdmissionsReportRow] ?? "—");
       }

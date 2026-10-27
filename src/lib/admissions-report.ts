@@ -32,6 +32,7 @@ export interface AdmissionsReportRow {
   marketingRemarks: string | null;
   leadTemperature: Temperature | null;
   leadTemperatureOverride: Temperature | null;
+  leadScorePoints: number | null;
 }
 
 // Reads the same filter keys the admin overview page's filter form submits.
@@ -72,7 +73,7 @@ export async function fetchAdmissionsReportRows(
   let query = admin
     .from("applications")
     .select(
-      "id, status, category, grade_applying, admission_number, lead_source, lead_source_other, created_at, lead_student_name, withdrawn_at, withdrawal_type, withdrawal_reason, marketing_remarks, lead_temperature, lead_temperature_override, parents(full_name, phone), students(full_name), sections(grade, name)",
+      "id, status, category, grade_applying, admission_number, lead_source, lead_source_other, created_at, lead_student_name, withdrawn_at, withdrawal_type, withdrawal_reason, marketing_remarks, lead_temperature, lead_temperature_override, lead_score_points, parents(full_name, phone), students(full_name), sections(grade, name)",
     )
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -101,6 +102,7 @@ export async function fetchAdmissionsReportRows(
     marketing_remarks: string | null;
     lead_temperature: Temperature | null;
     lead_temperature_override: Temperature | null;
+    lead_score_points: number | null;
     parents: { full_name: string; phone: string } | null;
     students: { full_name: string } | null;
     sections: { grade: string; name: string } | null;
@@ -127,5 +129,6 @@ export async function fetchAdmissionsReportRows(
     marketingRemarks: r.marketing_remarks,
     leadTemperature: r.lead_temperature,
     leadTemperatureOverride: r.lead_temperature_override,
+    leadScorePoints: r.lead_score_points,
   }));
 }

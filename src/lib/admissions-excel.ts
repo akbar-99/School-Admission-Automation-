@@ -1,6 +1,7 @@
 import "server-only";
 import ExcelJS from "exceljs";
 import { STATUS_LABEL } from "@/lib/types";
+import { TEMPERATURE_LABEL } from "@/lib/lead-scoring";
 import type { AdmissionsReportRow } from "@/lib/admissions-report";
 
 const TEAL = "FF1B7E9A";
@@ -26,6 +27,7 @@ const COLUMNS: { key: string; header: string; width: number }[] = [
   { key: "category", header: "Category", width: 12 },
   { key: "grade", header: "Grade", width: 10 },
   { key: "status", header: "Status", width: 20 },
+  { key: "lead_score", header: "Lead score", width: 16 },
   { key: "admission_no", header: "Admission No.", width: 16 },
   { key: "section", header: "Section", width: 12 },
   { key: "created", header: "Created", width: 16 },
@@ -108,6 +110,12 @@ export async function generateAdmissionsReportExcel(
       category: r.category ?? "—",
       grade: r.gradeApplying ?? "—",
       status: STATUS_LABEL[r.status] ?? r.status,
+      lead_score: (() => {
+        const effective = r.leadTemperatureOverride ?? r.leadTemperature;
+        if (!effective) return "—";
+        const pts = r.leadScorePoints != null ? ` (${r.leadScorePoints}/100)` : "";
+        return `${TEMPERATURE_LABEL[effective]}${pts}`;
+      })(),
       admission_no: r.admissionNumber ?? "—",
       section: r.sectionGrade ? `${r.sectionGrade}-${r.sectionName}` : "—",
       created: fmtDate(r.createdAt),
