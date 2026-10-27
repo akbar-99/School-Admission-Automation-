@@ -37,13 +37,28 @@ export function LeadFollowUpCell({
         ) : (
           <p className="text-xs text-muted-foreground">Not set</p>
         )}
-        <button
-          type="button"
-          onClick={() => setEditing(true)}
-          className="text-xs text-primary underline-offset-2 hover:underline"
-        >
-          {nextFollowUpAt ? "Change" : "Set follow-up"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="text-xs text-primary underline-offset-2 hover:underline"
+          >
+            {nextFollowUpAt ? "Change" : "Set follow-up"}
+          </button>
+          {nextFollowUpAt && (
+            // One click, no date picker — clears next_follow_up_at, which
+            // is exactly what stops the Overdue/Today badge, the WhatsApp
+            // cron, and the in-portal popup for this lead. Needing a new
+            // follow-up later just means picking a fresh date.
+            <form action={action}>
+              <input type="hidden" name="application_id" value={applicationId} />
+              <input type="hidden" name="next_follow_up_at" value="" />
+              <button type="submit" className="text-xs text-primary underline-offset-2 hover:underline">
+                Mark done
+              </button>
+            </form>
+          )}
+        </div>
       </div>
     );
   }
