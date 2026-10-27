@@ -11,6 +11,8 @@ import { LeadRemarksCell } from "@/components/marketing/lead-remarks-cell";
 import { LeadScoreCell } from "@/components/marketing/lead-score-cell";
 import { LeadTemperatureBadge } from "@/components/lead-temperature-badge";
 import { LeadFollowUpCell } from "@/components/marketing/lead-follow-up-cell";
+import { LeadFollowUpAlerts } from "@/components/marketing/lead-follow-up-alerts";
+import { config } from "@/lib/config";
 import { SCORE_QUESTIONS, TEMPERATURE_LABEL, type Temperature } from "@/lib/lead-scoring";
 import { getClassOptions } from "@/lib/classes";
 import { LiveSearchField } from "@/components/marketing/live-search-field";
@@ -201,6 +203,10 @@ export default async function MarketingPage({
       )}
 
       <Suspense fallback={null}>
+        <FollowUpAlertsSection />
+      </Suspense>
+
+      <Suspense fallback={null}>
         <UnclaimedLeadsSection />
       </Suspense>
 
@@ -289,6 +295,43 @@ function LeadsTableSkeleton() {
       </CardContent>
     </Card>
   );
+}
+
+// Popup (bell icon, chime, dismissible) for any of THIS staff member's own
+// leads whose follow-up date has arrived — admin/coo included, but only for
+// leads they personally created, same targeting as the WhatsApp reminder
+// (notifyFollowUpDue). Deliberately independent of
+// next_follow_up_reminder_sent (that flag is the cron's own claim lock, not
+// a "has this been shown in-app" flag) — LiveAlerts' own per-browser
+// localStorage dedupe is what stops this from re-popping every page load.
+async function FollowUpAlertsSection() {
+  const { profile } = await requireRole(["marketing", "admin", "coo"]);
+  const admin = createSupabaseAdminClient();
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: config.school.timezone }).format(new Date());
+
+  const { data } = await admin
+    .from("applications")
+    .select("id, lead_student_name, next_follow_up_at, students(full_name)")
+    .eq("created_by", profile.id)
+    .not("next_follow_up_at", "is", null)
+    .lte("next_follow_up_at", today);
+
+  const initialAlerts = (
+    (data ?? []) as unknown as {
+      id: string;
+      lead_student_name: string | null;
+      next_follow_up_at: string;
+      students: { full_name: string } | null;
+    }[]
+  ).map((r) => ({
+    // Keyed by date, not just application id — re-picking a new date must
+    // re-pop this too, same as it re-arms the WhatsApp reminder, so this
+    // can't go permanently silent on a lead that keeps getting followed up.
+    id: `follow-up-${r.id}-${r.next_follow_up_at}`,
+    text: `Follow-up due for ${r.students?.full_name ?? r.lead_student_name ?? "a lead"}.`,
+  }));
+
+  return <LeadFollowUpAlerts staffId={profile.id} initialAlerts={initialAlerts} />;
 }
 
 async function UnclaimedLeadsSection() {
