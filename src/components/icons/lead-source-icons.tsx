@@ -91,11 +91,14 @@ export function MetaAdsIcon({ className }: { className?: string }) {
 export function ChatGptIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden>
-      <circle cx="12" cy="12" r="10" fill="#10A37F" />
-      <g fill="#fff">
-        <rect x="10.6" y="5" width="2.8" height="8" rx="1.4" />
-        <rect x="10.6" y="5" width="2.8" height="8" rx="1.4" transform="rotate(60 12 12)" />
-        <rect x="10.6" y="5" width="2.8" height="8" rx="1.4" transform="rotate(120 12 12)" />
+      <rect x="2" y="2" width="20" height="20" rx="6" fill="#74AA9C" />
+      <g fill="none" stroke="#fff" strokeWidth="1.9">
+        <circle cx="12" cy="8.8" r="2.7" />
+        <circle cx="14.77" cy="10.4" r="2.7" />
+        <circle cx="14.77" cy="13.6" r="2.7" />
+        <circle cx="12" cy="15.2" r="2.7" />
+        <circle cx="9.23" cy="13.6" r="2.7" />
+        <circle cx="9.23" cy="10.4" r="2.7" />
       </g>
     </svg>
   );
