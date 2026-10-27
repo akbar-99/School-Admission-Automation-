@@ -52,6 +52,7 @@ export function LeadFollowUpAlerts({
 }) {
   const [unseen, setUnseen] = useState<FollowUpAlert[]>([]);
   const [open, setOpen] = useState(false);
+  const [index, setIndex] = useState(0);
   const audioCtxRef = useRef<AudioContext | null>(null);
 
   useEffect(() => {
@@ -96,6 +97,8 @@ export function LeadFollowUpAlerts({
 
   if (!open || unseen.length === 0) return null;
 
+  const current = unseen[Math.min(index, unseen.length - 1)];
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={dismiss}>
       <div
@@ -118,31 +121,54 @@ export function LeadFollowUpAlerts({
             <X className="size-4" />
           </button>
         </div>
-        <div className="max-h-[60vh] space-y-2.5 overflow-y-auto p-5">
-          {unseen.map((a) => (
-            <div key={a.id} className="space-y-1 rounded-lg border border-border bg-muted/30 px-3.5 py-2.5 text-sm">
-              <div className="font-medium">{a.studentName}</div>
-              <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
-                <span>Parent: {a.parentName ?? "—"}</span>
-                {a.parentPhone && (
-                  <>
-                    ·
-                    <a href={`tel:${a.parentPhone}`} className="text-primary hover:underline">
-                      {a.parentPhone}
-                    </a>
-                  </>
-                )}
-                {a.grade && <span>· Grade {a.grade}</span>}
-              </div>
-              {a.remarks && (
-                <p className="whitespace-pre-wrap rounded-md bg-card px-2 py-1 text-xs italic text-foreground">
-                  “{a.remarks}”
-                </p>
+
+        {/* One at a time, not a stacked list — a numbered switcher instead
+            of letting the box grow with however many are due. */}
+        {unseen.length > 1 && (
+          <div className="flex flex-wrap gap-1.5 border-b border-border px-5 py-3">
+            {unseen.map((a, i) => (
+              <button
+                key={a.id}
+                type="button"
+                onClick={() => setIndex(i)}
+                className={
+                  i === index
+                    ? "flex size-7 items-center justify-center rounded-full bg-primary text-xs font-medium text-primary-foreground"
+                    : "flex size-7 items-center justify-center rounded-full bg-secondary text-xs font-medium text-secondary-foreground hover:bg-secondary/70"
+                }
+                aria-label={`Show follow-up ${i + 1} of ${unseen.length}`}
+                aria-current={i === index}
+              >
+                {i + 1}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="max-h-[60vh] overflow-y-auto p-5">
+          <div className="space-y-1 rounded-lg border border-border bg-muted/30 px-3.5 py-2.5 text-sm">
+            <div className="font-medium">{current.studentName}</div>
+            <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
+              <span>Parent: {current.parentName ?? "—"}</span>
+              {current.parentPhone && (
+                <>
+                  ·
+                  <a href={`tel:${current.parentPhone}`} className="text-primary hover:underline">
+                    {current.parentPhone}
+                  </a>
+                </>
               )}
-              <div className="text-xs text-muted-foreground">Due {formatDate(a.followUpAt)}</div>
+              {current.grade && <span>· Grade {current.grade}</span>}
             </div>
-          ))}
+            {current.remarks && (
+              <p className="whitespace-pre-wrap rounded-md bg-card px-2 py-1 text-xs italic text-foreground">
+                “{current.remarks}”
+              </p>
+            )}
+            <div className="text-xs text-muted-foreground">Due {formatDate(current.followUpAt)}</div>
+          </div>
         </div>
+
         <div className="border-t border-border px-5 py-3 text-right">
           <button
             type="button"
