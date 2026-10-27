@@ -2,10 +2,16 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Bell, X } from "lucide-react";
+import { formatDate } from "@/lib/utils";
 
 export interface FollowUpAlert {
   id: string; // dedupe key — includes the follow-up date, so a re-picked date pops again
-  text: string;
+  studentName: string;
+  parentName: string | null;
+  parentPhone: string | null;
+  grade: string | null;
+  remarks: string | null;
+  followUpAt: string;
 }
 
 function storageKeyFor(staffId: string) {
@@ -112,11 +118,29 @@ export function LeadFollowUpAlerts({
             <X className="size-4" />
           </button>
         </div>
-        <div className="max-h-[60vh] space-y-2 overflow-y-auto p-5">
+        <div className="max-h-[60vh] space-y-2.5 overflow-y-auto p-5">
           {unseen.map((a) => (
-            <p key={a.id} className="rounded-lg border border-border bg-muted/30 px-3.5 py-2.5 text-sm">
-              {a.text}
-            </p>
+            <div key={a.id} className="space-y-1 rounded-lg border border-border bg-muted/30 px-3.5 py-2.5 text-sm">
+              <div className="font-medium">{a.studentName}</div>
+              <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
+                <span>Parent: {a.parentName ?? "—"}</span>
+                {a.parentPhone && (
+                  <>
+                    ·
+                    <a href={`tel:${a.parentPhone}`} className="text-primary hover:underline">
+                      {a.parentPhone}
+                    </a>
+                  </>
+                )}
+                {a.grade && <span>· Grade {a.grade}</span>}
+              </div>
+              {a.remarks && (
+                <p className="whitespace-pre-wrap rounded-md bg-card px-2 py-1 text-xs italic text-foreground">
+                  “{a.remarks}”
+                </p>
+              )}
+              <div className="text-xs text-muted-foreground">Due {formatDate(a.followUpAt)}</div>
+            </div>
           ))}
         </div>
         <div className="border-t border-border px-5 py-3 text-right">

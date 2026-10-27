@@ -311,7 +311,9 @@ async function FollowUpAlertsSection() {
 
   const { data } = await admin
     .from("applications")
-    .select("id, lead_student_name, next_follow_up_at, students(full_name)")
+    .select(
+      "id, lead_student_name, grade_applying, next_follow_up_at, marketing_remarks, students(full_name), parents(full_name, phone)",
+    )
     .eq("created_by", profile.id)
     .not("next_follow_up_at", "is", null)
     .lte("next_follow_up_at", today);
@@ -320,15 +322,23 @@ async function FollowUpAlertsSection() {
     (data ?? []) as unknown as {
       id: string;
       lead_student_name: string | null;
+      grade_applying: string | null;
       next_follow_up_at: string;
+      marketing_remarks: string | null;
       students: { full_name: string } | null;
+      parents: { full_name: string; phone: string } | null;
     }[]
   ).map((r) => ({
     // Keyed by date, not just application id — re-picking a new date must
     // re-pop this too, same as it re-arms the WhatsApp reminder, so this
     // can't go permanently silent on a lead that keeps getting followed up.
     id: `follow-up-${r.id}-${r.next_follow_up_at}`,
-    text: `Follow-up due for ${r.students?.full_name ?? r.lead_student_name ?? "a lead"}.`,
+    studentName: r.students?.full_name ?? r.lead_student_name ?? "a lead",
+    parentName: r.parents?.full_name ?? null,
+    parentPhone: r.parents?.phone ?? null,
+    grade: r.grade_applying,
+    remarks: r.marketing_remarks,
+    followUpAt: r.next_follow_up_at,
   }));
 
   return <LeadFollowUpAlerts staffId={profile.id} initialAlerts={initialAlerts} />;
