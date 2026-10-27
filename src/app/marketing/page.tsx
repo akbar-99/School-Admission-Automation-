@@ -698,7 +698,7 @@ async function LeadsTableSection({
                 <TH>Lead score</TH>
                 <TH>Withdrawal</TH>
                 <TH>Remarks</TH>
-                <TH>Next follow-up</TH>
+                <TH className="whitespace-nowrap">Follow-up</TH>
                 <TH>Created</TH>
                 <TH>Link</TH>
                 <TH></TH>

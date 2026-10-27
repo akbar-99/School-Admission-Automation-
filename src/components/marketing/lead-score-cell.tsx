@@ -40,12 +40,12 @@ export function LeadScoreCell({
     return (
       <div className="space-y-1">
         {effective ? (
-          <div className="space-y-0.5">
+          <div className="flex items-center gap-1.5">
             <Badge tone={TONE[effective]}>
               {TEMPERATURE_LABEL[effective]}
               {override && override !== temperature ? " (overridden)" : ""}
             </Badge>
-            {points != null && <div className="text-xs text-muted-foreground">{points} / 100 pts</div>}
+            {points != null && <span className="text-xs tabular-nums text-muted-foreground">{points}/100</span>}
           </div>
         ) : (
           <span className="text-xs text-muted-foreground">Not scored yet</span>
