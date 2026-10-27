@@ -4,13 +4,24 @@ import { useState } from "react";
 import { SearchSelect, type SearchOption } from "@/components/ui/search-select";
 import { Input } from "@/components/ui/input";
 import { MoreHorizontal, Users } from "lucide-react";
-import { InstagramIcon, FacebookIcon, WhatsappIcon, GoogleIcon } from "@/components/icons/lead-source-icons";
+import {
+  InstagramIcon,
+  FacebookIcon,
+  WhatsappIcon,
+  GoogleIcon,
+  GoogleAdsIcon,
+  MetaAdsIcon,
+  ChatGptIcon,
+} from "@/components/icons/lead-source-icons";
 
 const OPTIONS: SearchOption[] = [
   { value: "instagram", search: "instagram", label: <Row icon={<InstagramIcon className="size-4" />} text="Instagram" /> },
   { value: "facebook", search: "facebook", label: <Row icon={<FacebookIcon className="size-4" />} text="Facebook" /> },
   { value: "whatsapp", search: "whatsapp", label: <Row icon={<WhatsappIcon className="size-4" />} text="WhatsApp" /> },
   { value: "google", search: "google", label: <Row icon={<GoogleIcon className="size-4" />} text="Google" /> },
+  { value: "google_ads", search: "google ads", label: <Row icon={<GoogleAdsIcon className="size-4" />} text="Google Ads" /> },
+  { value: "meta_ads", search: "meta ads facebook ads", label: <Row icon={<MetaAdsIcon className="size-4" />} text="Meta Ads" /> },
+  { value: "chatgpt", search: "chatgpt openai", label: <Row icon={<ChatGptIcon className="size-4" />} text="ChatGPT" /> },
   { value: "referral", search: "referral", label: <Row icon={<Users className="size-4 text-muted-foreground" />} text="Referral" /> },
   { value: "other", search: "other", label: <Row icon={<MoreHorizontal className="size-4 text-muted-foreground" />} text="Other" /> },
 ];

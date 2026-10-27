@@ -280,13 +280,26 @@ export const STATUS_LABEL: Record<AppStatus, string> = {
   REJECTED: "Not eligible",
 };
 
-export const LEAD_SOURCES = ["instagram", "facebook", "whatsapp", "google", "referral", "other"] as const;
+export const LEAD_SOURCES = [
+  "instagram",
+  "facebook",
+  "whatsapp",
+  "google",
+  "google_ads",
+  "meta_ads",
+  "chatgpt",
+  "referral",
+  "other",
+] as const;
 export type LeadSource = (typeof LEAD_SOURCES)[number];
 export const LEAD_SOURCE_LABEL: Record<LeadSource, string> = {
   instagram: "Instagram",
   facebook: "Facebook",
   whatsapp: "WhatsApp",
   google: "Google",
+  google_ads: "Google Ads",
+  meta_ads: "Meta Ads",
+  chatgpt: "ChatGPT",
   referral: "Referral",
   other: "Other",
 };

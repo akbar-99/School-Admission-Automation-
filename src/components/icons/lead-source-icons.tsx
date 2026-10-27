@@ -66,6 +66,41 @@ export function GoogleIcon({ className }: { className?: string }) {
   );
 }
 
+export function GoogleAdsIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden>
+      <path d="M12 12 12 2A10 10 0 0 1 20.66 17Z" fill="#4285F4" />
+      <path d="M12 12 20.66 17A10 10 0 0 1 3.34 17Z" fill="#34A853" />
+      <path d="M12 12 3.34 17A10 10 0 0 1 12 2Z" fill="#FBBC05" />
+      <circle cx="12" cy="12" r="4" fill="#fff" />
+      <path d="M10.3 9.5v5l4.4-2.5Z" fill="#4285F4" />
+    </svg>
+  );
+}
+
+export function MetaAdsIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden>
+      <circle cx="12" cy="12" r="10" fill="#0668E1" />
+      <circle cx="9" cy="12" r="3.6" fill="none" stroke="#fff" strokeWidth="1.8" />
+      <circle cx="15" cy="12" r="3.6" fill="none" stroke="#fff" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+export function ChatGptIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden>
+      <circle cx="12" cy="12" r="10" fill="#10A37F" />
+      <g fill="#fff">
+        <rect x="10.6" y="5" width="2.8" height="8" rx="1.4" />
+        <rect x="10.6" y="5" width="2.8" height="8" rx="1.4" transform="rotate(60 12 12)" />
+        <rect x="10.6" y="5" width="2.8" height="8" rx="1.4" transform="rotate(120 12 12)" />
+      </g>
+    </svg>
+  );
+}
+
 // Shared by every place that lists lead sources with their real logo
 // (the picker, the Team dashboard's source breakdown, the per-person detail
 // page) so they never drift out of sync with each other.
@@ -79,6 +114,12 @@ export function SourceIcon({ source, className }: { source: string; className?: 
       return <WhatsappIcon className={className} />;
     case "google":
       return <GoogleIcon className={className} />;
+    case "google_ads":
+      return <GoogleAdsIcon className={className} />;
+    case "meta_ads":
+      return <MetaAdsIcon className={className} />;
+    case "chatgpt":
+      return <ChatGptIcon className={className} />;
     case "referral":
       return <Users className={className} />;
     default:
