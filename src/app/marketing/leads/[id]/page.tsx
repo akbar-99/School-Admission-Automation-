@@ -33,20 +33,22 @@ const SOCIAL_MESSAGES_TABLE: Record<string, string> = {
 
 // Renders a real player for a media DM instead of leaving the team stuck
 // with just the generic "Sent a voice message" caption and no way to
-// actually hear/see it.
-function MessageAttachment({ url, type }: { url: string; type: string | null }) {
+// actually hear/see it. `src` is our own /api/media-proxy route, not Meta's
+// CDN URL directly — see that route for why (mainly: Meta labels Instagram
+// voice notes `video/mp4`, which <audio> elements refuse to play as-is).
+function MessageAttachment({ src, type }: { src: string; type: string | null }) {
   if (type === "audio") {
-    return <audio controls preload="none" src={url} className="h-9 w-56 max-w-full" />;
+    return <audio controls preload="none" src={src} className="h-9 w-56 max-w-full" />;
   }
   if (type === "image") {
-    // eslint-disable-next-line @next/next/no-img-element -- external, short-lived Meta CDN URL; not worth Next/Image's remote-pattern config for a one-off chat attachment.
-    return <img src={url} alt="Attachment" className="max-h-64 max-w-full rounded-lg" />;
+    // eslint-disable-next-line @next/next/no-img-element -- proxied, not a static/remote asset worth Next/Image's config for a one-off chat attachment.
+    return <img src={src} alt="Attachment" className="max-h-64 max-w-full rounded-lg" />;
   }
   if (type === "video") {
-    return <video controls preload="none" src={url} className="max-h-64 max-w-full rounded-lg" />;
+    return <video controls preload="none" src={src} className="max-h-64 max-w-full rounded-lg" />;
   }
   return (
-    <a href={url} target="_blank" rel="noopener noreferrer" className="block underline underline-offset-2">
+    <a href={src} target="_blank" rel="noopener noreferrer" className="block underline underline-offset-2">
       View attachment
     </a>
   );
@@ -126,7 +128,9 @@ export default async function LeadConversationPage({
                         : "bg-card text-foreground shadow-soft",
                     )}
                   >
-                    {m.attachment_url && <MessageAttachment url={m.attachment_url} type={m.attachment_type} />}
+                    {m.attachment_url && (
+                      <MessageAttachment src={`/api/media-proxy/${app.lead_source}/${m.id}`} type={m.attachment_type} />
+                    )}
                     {m.message_text}
                   </div>
                   <span className="px-1 text-[11px] text-muted-foreground">
