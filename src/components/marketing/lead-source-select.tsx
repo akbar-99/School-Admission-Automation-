@@ -19,7 +19,7 @@ const OPTIONS: SearchOption[] = [
   { value: "facebook", search: "facebook", label: <Row icon={<FacebookIcon className="size-4" />} text="Facebook" /> },
   { value: "whatsapp", search: "whatsapp", label: <Row icon={<WhatsappIcon className="size-4" />} text="WhatsApp" /> },
   { value: "google", search: "google", label: <Row icon={<GoogleIcon className="size-4" />} text="Google" /> },
-  { value: "google_ads", search: "google ads", label: <Row icon={<GoogleAdsIcon className="size-4" />} text="Google Ads" /> },
+  { value: "google_ads", search: "google ads g-ads", label: <Row icon={<GoogleAdsIcon className="size-4" />} text="G-Ads" /> },
   { value: "meta_ads", search: "meta ads facebook ads", label: <Row icon={<MetaAdsIcon className="size-4" />} text="Meta Ads" /> },
   { value: "chatgpt", search: "chatgpt openai", label: <Row icon={<ChatGptIcon className="size-4" />} text="ChatGPT" /> },
   { value: "referral", search: "referral", label: <Row icon={<Users className="size-4 text-muted-foreground" />} text="Referral" /> },

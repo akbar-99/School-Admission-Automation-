@@ -297,7 +297,7 @@ export const LEAD_SOURCE_LABEL: Record<LeadSource, string> = {
   facebook: "Facebook",
   whatsapp: "WhatsApp",
   google: "Google",
-  google_ads: "Google Ads",
+  google_ads: "G-Ads",
   meta_ads: "Meta Ads",
   chatgpt: "ChatGPT",
   referral: "Referral",
