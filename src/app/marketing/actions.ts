@@ -291,21 +291,29 @@ export async function claimLead(formData: FormData) {
   redirect("/marketing?claimed=1");
 }
 
-const AddContactInfoSchema = z.object({
+const UpdateLeadDetailsSchema = z.object({
   application_id: z.string().uuid(),
+  parent_name: z.string().trim().min(2, "Parent name is required"),
   phone: z.string().trim().min(7, "A valid phone number is required"),
   email: z.string().trim().email("A valid email is required").or(z.literal("")),
+  student_name: z.string().trim().optional(),
 });
 
-// Fills in a claimed-but-contactless lead's phone/email (an Instagram DM
-// enquiry has neither until a rep gets them mid-conversation), then sends
-// the N-1 admission link now that this app can actually reach the family.
-export async function addContactInfo(formData: FormData) {
+// Fills in or corrects a lead's parent/student details — most commonly a
+// claimed-but-contactless Instagram/Facebook DM enquiry, where the parent's
+// name, phone, email, and the student's name only become known mid-
+// conversation, but also a plain typo fix on any lead a rep owns later on.
+// The first time real contact info lands (no phone on file yet), this also
+// sends the N-1 admission link now that the app can actually reach the
+// family; a later edit just updates the record silently.
+export async function updateLeadDetails(formData: FormData) {
   const { profile } = await requireRole(["marketing", "admin", "coo"]);
-  const parsed = AddContactInfoSchema.safeParse({
+  const parsed = UpdateLeadDetailsSchema.safeParse({
     application_id: formData.get("application_id"),
+    parent_name: formData.get("parent_name"),
     phone: formData.get("phone"),
     email: formData.get("email") ?? "",
+    student_name: formData.get("student_name") ?? "",
   });
   if (!parsed.success) {
     redirect("/marketing?error=" + encodeURIComponent(parsed.error.issues[0].message));
@@ -313,19 +321,23 @@ export async function addContactInfo(formData: FormData) {
   const input = parsed.data!;
 
   const admin = createSupabaseAdminClient();
-  const { data: app } = await admin
-    .from("applications")
-    .select("*")
-    .eq("id", input.application_id)
-    .eq("created_by", profile.id)
-    .maybeSingle();
+  let appQuery = admin.from("applications").select("*").eq("id", input.application_id);
+  if (profile.role === "marketing") appQuery = appQuery.eq("created_by", profile.id);
+  const { data: app } = await appQuery.maybeSingle();
   if (!app) {
     redirect("/marketing?error=" + encodeURIComponent("Enquiry not found."));
   }
 
+  const { data: existingParent } = await admin
+    .from("parents")
+    .select("phone")
+    .eq("id", app!.parent_id)
+    .maybeSingle();
+  const isFirstContactInfo = !existingParent?.phone;
+
   const { data: parent, error: pErr } = await admin
     .from("parents")
-    .update({ phone: input.phone, email: input.email || null })
+    .update({ full_name: input.parent_name, phone: input.phone, email: input.email || null })
     .eq("id", app!.parent_id)
     .select("*")
     .single();
@@ -333,17 +345,31 @@ export async function addContactInfo(formData: FormData) {
     redirect("/marketing?error=" + encodeURIComponent(pErr?.message ?? "Could not save contact info."));
   }
 
-  await notifyLeadCreated(app as Application, parent as Parent);
+  // A formal `students` row only exists from DETAILS_PENDING onward (the
+  // parent fills it in themselves) — before that, lead_student_name on the
+  // application is the only record of the student's name. full_name is
+  // required there, so a blank edit never clears an already-known name.
+  if (app!.student_id) {
+    if (input.student_name) {
+      await admin.from("students").update({ full_name: input.student_name }).eq("id", app!.student_id);
+    }
+  } else {
+    await admin.from("applications").update({ lead_student_name: input.student_name || null }).eq("id", app!.id);
+  }
+
+  if (isFirstContactInfo) {
+    await notifyLeadCreated(app as Application, parent as Parent);
+  }
   await logAudit({
     actorId: profile.id,
     actorRole: profile.role,
-    action: "lead.contact_info_added",
+    action: isFirstContactInfo ? "lead.contact_info_added" : "lead.details_edited",
     entity: "application",
     entityId: app!.id,
   });
 
   revalidatePath("/marketing");
-  redirect("/marketing?created=" + app!.access_token);
+  redirect(isFirstContactInfo ? "/marketing?created=" + app!.access_token : "/marketing?updated=1");
 }
 
 const SendInstagramReplySchema = z.object({

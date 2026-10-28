@@ -4,10 +4,11 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireRole } from "@/lib/auth";
 import { applyUrl } from "@/lib/parent";
 import { formatDateTime, cn } from "@/lib/utils";
-import { createLead, claimLead, dismissLead, addContactInfo, markWithdrawn, restoreWithdrawn, updateLeadRemarks, updateLeadScore, updateLeadFollowUp, markLeadFollowUpDone } from "./actions";
+import { createLead, claimLead, dismissLead, updateLeadDetails, markWithdrawn, restoreWithdrawn, updateLeadRemarks, updateLeadScore, updateLeadFollowUp, markLeadFollowUpDone } from "./actions";
 import { LeadSourceSelect } from "@/components/marketing/lead-source-select";
 import { CurriculumClassFields } from "@/components/marketing/curriculum-class-fields";
 import { LeadRemarksCell } from "@/components/marketing/lead-remarks-cell";
+import { LeadEditCell } from "@/components/marketing/lead-edit-cell";
 import { LeadScoreCell } from "@/components/marketing/lead-score-cell";
 import { LeadTemperatureBadge } from "@/components/lead-temperature-badge";
 import { LeadFollowUpCell } from "@/components/marketing/lead-follow-up-cell";
@@ -93,11 +94,12 @@ export default async function MarketingPage({
     to?: string;
     claimed?: string;
     dismissed?: string;
+    updated?: string;
     view?: string;
     q?: string;
   }>;
 }) {
-  const { created, error, duplicate, status, from, to, claimed, dismissed, view, q } = await searchParams;
+  const { created, error, duplicate, status, from, to, claimed, dismissed, updated, view, q } = await searchParams;
   let duplicateInfo: {
     input: {
       parent_name: string;
@@ -150,6 +152,7 @@ export default async function MarketingPage({
       )}
       {error && <Alert variant="error">{error}</Alert>}
       {claimed && <Alert variant="success">Enquiry claimed — it&apos;s now in your leads below.</Alert>}
+      {updated && <Alert variant="success">Lead details updated.</Alert>}
       {dismissed && (
         <Alert variant="success">
           Enquiry dismissed. If this parent sends a new message, it&apos;ll come back to the pool automatically.
@@ -779,18 +782,15 @@ async function LeadsTableSection({
                         )
                       )}
                     </div>
-                    {r.parents?.phone ? (
-                      <div className="text-xs text-muted-foreground">{r.parents.phone}</div>
-                    ) : (
-                      <form action={addContactInfo} className="mt-1 flex flex-wrap items-center gap-1.5">
-                        <input type="hidden" name="application_id" value={r.id} />
-                        <PhoneField id={`phone-${r.id}`} name="phone" placeholder="9XXXXXXXXX" required />
-                        <Input name="email" type="email" placeholder="Email (optional)" className="h-9 w-36" />
-                        <SubmitButton size="sm" variant="outline" pendingText="…">
-                          Save
-                        </SubmitButton>
-                      </form>
-                    )}
+                    {r.parents?.phone && <div className="text-xs text-muted-foreground">{r.parents.phone}</div>}
+                    <LeadEditCell
+                      action={updateLeadDetails}
+                      applicationId={r.id}
+                      parentName={r.parents?.full_name ?? ""}
+                      phone={r.parents?.phone ?? null}
+                      email={r.parents?.email ?? null}
+                      studentName={r.students?.full_name ?? r.lead_student_name ?? null}
+                    />
                   </TD>
                   <TD>
                     <div className="flex items-center gap-1.5">

@@ -226,7 +226,7 @@ export async function notifyLeadCreated(app: Application, parent: Parent) {
 // unclaimed lead (created_by null) for any marketing team member to pick up
 // via claim_lead. No N-1 admission link goes out yet: there's no phone/email
 // to send it to until a rep gets the parent's number from the DM
-// conversation and submits it via addContactInfo.
+// conversation and submits it via updateLeadDetails.
 // ---------------------------------------------------------------------------
 type SocialPlatform = "instagram" | "facebook";
 
@@ -342,7 +342,7 @@ async function handleInboundSocialMessage(
 // A new unclaimed lead came in via Instagram DM — for any marketing team
 // member to pick up via claim_lead. No N-1 admission link goes out yet:
 // there's no phone/email to send it to until a rep gets the parent's number
-// from the DM conversation and submits it via addContactInfo.
+// from the DM conversation and submits it via updateLeadDetails.
 export async function handleInboundInstagramMessage(
   igsid: string,
   profile: { name?: string | null; username?: string | null },
