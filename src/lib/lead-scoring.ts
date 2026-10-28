@@ -39,8 +39,7 @@ export const SCORE_QUESTIONS: ScoreQuestion[] = [
     id: "demo_class",
     label: "Demo class",
     options: [
-      { id: "attended", label: "Attended", points: 20 },
-      { id: "booked", label: "Booked", points: 10 },
+      { id: "attended", label: "Shared", points: 20 },
       { id: "none_yet", label: "None yet", points: 0 },
     ],
   },
