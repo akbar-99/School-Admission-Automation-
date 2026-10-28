@@ -41,7 +41,9 @@ interface InstagramMessagingEvent {
     // Present (with no usable text) for structured interactions like the
     // native "Enquire" appointment-request button — Meta doesn't expose the
     // actual request details (preferred time, message) through this field.
-    attachments?: { type?: string }[];
+    // A real media attachment (voice note, photo, video, file) carries a
+    // `payload.url` instead — that's what lets the team actually play/view it.
+    attachments?: { type?: string; payload?: { url?: string } }[];
   };
 }
 interface InstagramWebhookPayload {
@@ -91,9 +93,14 @@ export async function POST(request: Request) {
     const igsid = event.sender?.id;
     if (!igsid) continue;
 
+    const media = event.message.attachments?.find((a) => a.payload?.url);
+    const attachment = media ? { type: media.type ?? "file", url: media.payload!.url! } : null;
+    const messageText =
+      event.message.text?.trim() ||
+      (attachment ? attachmentFallbackText(attachment.type) : hasAttachment ? "Requested an appointment via Instagram" : null);
+
     const profile = await fetchInstagramProfile(igsid);
-    const messageText = event.message.text?.trim() || (hasAttachment ? "Requested an appointment via Instagram" : null);
-    await handleInboundInstagramMessage(igsid, profile, messageText);
+    await handleInboundInstagramMessage(igsid, profile, messageText, attachment);
   }
 
   // Meta requires 200 within a few seconds regardless of outcome, or it
@@ -121,6 +128,22 @@ async function fetchInstagramProfile(igsid: string): Promise<{ name: string | nu
 // ones like "Hi" or non-English enquiries.
 function hasRealText(text: string | undefined): boolean {
   return Boolean(text && /[\p{L}\p{N}]/u.test(text));
+}
+
+// Caption shown in the thread (and in notifications) for a media message
+// that came in with no text of its own, so the team sees what kind of
+// attachment is waiting rather than a blank bubble.
+function attachmentFallbackText(type: string): string {
+  switch (type) {
+    case "audio":
+      return "Sent a voice message";
+    case "image":
+      return "Sent a photo";
+    case "video":
+      return "Sent a video";
+    default:
+      return "Sent a file";
+  }
 }
 
 function verifySignature(rawBody: string, signature: string | null): boolean {

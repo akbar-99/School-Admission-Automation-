@@ -244,10 +244,12 @@ async function handleInboundSocialMessage(
   contactId: string,
   profile: { name?: string | null; username?: string | null },
   messageText?: string | null,
+  attachment?: { type: string; url: string } | null,
 ): Promise<void> {
   const admin = createSupabaseAdminClient();
   const text = messageText?.trim() || null;
   const messagesTable = SOCIAL_MESSAGES_TABLE[platform];
+  const attachmentFields = { attachment_url: attachment?.url ?? null, attachment_type: attachment?.type ?? null };
 
   // Already-known sender (any status) — an ordinary reply in an existing
   // conversation, not a new lead. Also makes a duplicate webhook delivery of
@@ -265,6 +267,7 @@ async function handleInboundSocialMessage(
       application_id: existing.id,
       direction: "inbound",
       message_text: text ?? "(no message text)",
+      ...attachmentFields,
     });
     // A dismissed, still-unclaimed enquiry that writes again is live again —
     // put it back in the pool and tell the team, rather than losing the
@@ -330,6 +333,7 @@ async function handleInboundSocialMessage(
     application_id: app.id,
     direction: "inbound",
     message_text: text ?? "(no message text)",
+    ...attachmentFields,
   });
 
   await notifyNewUnclaimedLead(app as Application, parent as Parent);
@@ -343,8 +347,9 @@ export async function handleInboundInstagramMessage(
   igsid: string,
   profile: { name?: string | null; username?: string | null },
   messageText?: string | null,
+  attachment?: { type: string; url: string } | null,
 ): Promise<void> {
-  return handleInboundSocialMessage("instagram", igsid, profile, messageText);
+  return handleInboundSocialMessage("instagram", igsid, profile, messageText, attachment);
 }
 
 // Same as handleInboundInstagramMessage, for a Facebook Page Messenger DM.
@@ -352,8 +357,9 @@ export async function handleInboundFacebookMessage(
   psid: string,
   profile: { name?: string | null; username?: string | null },
   messageText?: string | null,
+  attachment?: { type: string; url: string } | null,
 ): Promise<void> {
-  return handleInboundSocialMessage("facebook", psid, profile, messageText);
+  return handleInboundSocialMessage("facebook", psid, profile, messageText, attachment);
 }
 
 // Shared by recordInstagramEcho/recordFacebookEcho below — a reply typed

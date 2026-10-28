@@ -35,7 +35,9 @@ interface FacebookMessagingEvent {
     mid: string;
     text?: string;
     is_echo?: boolean;
-    attachments?: { type?: string }[];
+    // A real media attachment (voice note, photo, video, file) carries a
+    // `payload.url` — that's what lets the team actually play/view it.
+    attachments?: { type?: string; payload?: { url?: string } }[];
   };
 }
 interface FacebookWebhookPayload {
@@ -77,9 +79,14 @@ export async function POST(request: Request) {
     const psid = event.sender?.id;
     if (!psid) continue;
 
+    const media = event.message.attachments?.find((a) => a.payload?.url);
+    const attachment = media ? { type: media.type ?? "file", url: media.payload!.url! } : null;
+    const messageText =
+      event.message.text?.trim() ||
+      (attachment ? attachmentFallbackText(attachment.type) : hasAttachment ? "Sent an attachment via Facebook" : null);
+
     const profile = await fetchFacebookProfile(psid);
-    const messageText = event.message.text?.trim() || (hasAttachment ? "Sent an attachment via Facebook" : null);
-    await handleInboundFacebookMessage(psid, profile, messageText);
+    await handleInboundFacebookMessage(psid, profile, messageText, attachment);
   }
 
   // Meta requires 200 within a few seconds regardless of outcome, or it
@@ -108,6 +115,22 @@ async function fetchFacebookProfile(psid: string): Promise<{ name: string | null
 // ones like "Hi" or non-English enquiries.
 function hasRealText(text: string | undefined): boolean {
   return Boolean(text && /[\p{L}\p{N}]/u.test(text));
+}
+
+// Caption shown in the thread (and in notifications) for a media message
+// that came in with no text of its own, so the team sees what kind of
+// attachment is waiting rather than a blank bubble.
+function attachmentFallbackText(type: string): string {
+  switch (type) {
+    case "audio":
+      return "Sent a voice message";
+    case "image":
+      return "Sent a photo";
+    case "video":
+      return "Sent a video";
+    default:
+      return "Sent a file";
+  }
 }
 
 function verifySignature(rawBody: string, signature: string | null): boolean {

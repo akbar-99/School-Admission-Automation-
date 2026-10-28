@@ -20,6 +20,8 @@ interface Message {
   message_text: string;
   sent_by: string | null;
   created_at: string;
+  attachment_url: string | null;
+  attachment_type: string | null;
 }
 
 // The one conversation page serves either DM channel — keyed by lead_source
@@ -28,6 +30,27 @@ const SOCIAL_MESSAGES_TABLE: Record<string, string> = {
   instagram: "instagram_messages",
   facebook: "facebook_messages",
 };
+
+// Renders a real player for a media DM instead of leaving the team stuck
+// with just the generic "Sent a voice message" caption and no way to
+// actually hear/see it.
+function MessageAttachment({ url, type }: { url: string; type: string | null }) {
+  if (type === "audio") {
+    return <audio controls preload="none" src={url} className="h-9 w-56 max-w-full" />;
+  }
+  if (type === "image") {
+    // eslint-disable-next-line @next/next/no-img-element -- external, short-lived Meta CDN URL; not worth Next/Image's remote-pattern config for a one-off chat attachment.
+    return <img src={url} alt="Attachment" className="max-h-64 max-w-full rounded-lg" />;
+  }
+  if (type === "video") {
+    return <video controls preload="none" src={url} className="max-h-64 max-w-full rounded-lg" />;
+  }
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer" className="block underline underline-offset-2">
+      View attachment
+    </a>
+  );
+}
 
 export default async function LeadConversationPage({
   params,
@@ -54,7 +77,7 @@ export default async function LeadConversationPage({
     admin.from("parents").select("full_name").eq("id", app.parent_id).maybeSingle(),
     admin
       .from(messagesTable)
-      .select("id, direction, message_text, sent_by, created_at")
+      .select("id, direction, message_text, sent_by, created_at, attachment_url, attachment_type")
       .eq("application_id", id)
       .order("created_at", { ascending: true }),
   ]);
@@ -97,12 +120,13 @@ export default async function LeadConversationPage({
                 >
                   <div
                     className={cn(
-                      "max-w-[80%] rounded-2xl px-3.5 py-2 text-sm",
+                      "max-w-[80%] space-y-1.5 rounded-2xl px-3.5 py-2 text-sm",
                       m.direction === "outbound"
                         ? "bg-primary text-primary-foreground"
                         : "bg-card text-foreground shadow-soft",
                     )}
                   >
+                    {m.attachment_url && <MessageAttachment url={m.attachment_url} type={m.attachment_type} />}
                     {m.message_text}
                   </div>
                   <span className="px-1 text-[11px] text-muted-foreground">
