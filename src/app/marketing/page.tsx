@@ -42,6 +42,8 @@ interface Row {
   status: AppStatus;
   category: string | null;
   grade_applying: string | null;
+  preferred_curriculum: string | null;
+  section_id: string | null;
   lead_student_name: string | null;
   lead_source: string | null;
   lead_source_other: string | null;
@@ -497,11 +499,12 @@ async function LeadsTableSection({
   // Marketing only sees leads they created themselves; admin sees everything.
   const scopedToOwn = profile.role === "marketing";
   const admin = createSupabaseAdminClient();
+  const classOptions = await getClassOptions();
 
   let query = admin
     .from("applications")
     .select(
-      "id, status, category, grade_applying, lead_student_name, lead_source, lead_source_other, external_contact_id, access_token, created_at, withdrawn_at, withdrawal_type, withdrawal_reason, marketing_remarks, lead_score_answers, lead_score_points, lead_temperature, lead_temperature_override, next_follow_up_at, next_follow_up_completed_at, payments(status, refunded_at, refund_reason), parents(full_name, phone, email), students(full_name)",
+      "id, status, category, grade_applying, preferred_curriculum, section_id, lead_student_name, lead_source, lead_source_other, external_contact_id, access_token, created_at, withdrawn_at, withdrawal_type, withdrawal_reason, marketing_remarks, lead_score_answers, lead_score_points, lead_temperature, lead_temperature_override, next_follow_up_at, next_follow_up_completed_at, payments(status, refunded_at, refund_reason), parents(full_name, phone, email), students(full_name)",
     )
     .order("created_at", { ascending: false })
     .limit(100);
@@ -790,6 +793,10 @@ async function LeadsTableSection({
                       phone={r.parents?.phone ?? null}
                       email={r.parents?.email ?? null}
                       studentName={r.students?.full_name ?? r.lead_student_name ?? null}
+                      curriculum={r.preferred_curriculum}
+                      grade={r.grade_applying}
+                      classOptions={classOptions}
+                      canEditClass={!r.section_id && (r.status === "LEAD_CREATED" || r.status === "FORM_SUBMITTED")}
                     />
                   </TD>
                   <TD>

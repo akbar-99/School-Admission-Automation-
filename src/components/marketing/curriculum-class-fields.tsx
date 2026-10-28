@@ -29,21 +29,29 @@ export function CurriculumClassFields({
   classOptions,
   initialCurriculum = "",
   initialGrade = "",
+  idPrefix = "",
 }: {
   classOptions: string[];
   initialCurriculum?: string;
   initialGrade?: string;
+  // Distinguishes multiple instances of this component on one page (e.g.
+  // one per row of the leads table) so their <label htmlFor>/<select id>
+  // pairs don't collide — the single "New lead" form instance leaves this
+  // unset and keeps its original plain ids.
+  idPrefix?: string;
 }) {
   const [curriculum, setCurriculum] = useState(initialCurriculum);
   const [grade, setGrade] = useState(initialGrade);
   const filtered = filterByCurriculum(classOptions, curriculum);
+  const curriculumId = `${idPrefix}preferred_curriculum`;
+  const gradeId = `${idPrefix}grade_applying`;
 
   return (
     <>
       <div className="space-y-1.5">
-        <Label htmlFor="preferred_curriculum">Curriculum</Label>
+        <Label htmlFor={curriculumId}>Curriculum</Label>
         <Select
-          id="preferred_curriculum"
+          id={curriculumId}
           name="preferred_curriculum"
           value={curriculum}
           onChange={(e) => {
@@ -59,9 +67,9 @@ export function CurriculumClassFields({
         </Select>
       </div>
       <div className="space-y-1.5">
-        <Label htmlFor="grade_applying">Class</Label>
+        <Label htmlFor={gradeId}>Class</Label>
         <Select
-          id="grade_applying"
+          id={gradeId}
           name="grade_applying"
           value={grade}
           onChange={(e) => setGrade(e.target.value)}

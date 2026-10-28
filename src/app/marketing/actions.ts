@@ -297,6 +297,8 @@ const UpdateLeadDetailsSchema = z.object({
   phone: z.string().trim().min(7, "A valid phone number is required"),
   email: z.string().trim().email("A valid email is required").or(z.literal("")),
   student_name: z.string().trim().optional(),
+  preferred_curriculum: z.enum(CURRICULUM_OPTIONS).optional().or(z.literal("")),
+  grade_applying: z.string().trim().optional(),
 });
 
 // Fills in or corrects a lead's parent/student details — most commonly a
@@ -314,6 +316,8 @@ export async function updateLeadDetails(formData: FormData) {
     phone: formData.get("phone"),
     email: formData.get("email") ?? "",
     student_name: formData.get("student_name") ?? "",
+    preferred_curriculum: formData.get("preferred_curriculum") ?? "",
+    grade_applying: formData.get("grade_applying") ?? "",
   });
   if (!parsed.success) {
     redirect("/marketing?error=" + encodeURIComponent(parsed.error.issues[0].message));
@@ -349,13 +353,32 @@ export async function updateLeadDetails(formData: FormData) {
   // parent fills it in themselves) — before that, lead_student_name on the
   // application is the only record of the student's name. full_name is
   // required there, so a blank edit never clears an already-known name.
-  if (app!.student_id) {
-    if (input.student_name) {
-      await admin.from("students").update({ full_name: input.student_name }).eq("id", app!.student_id);
-    }
-  } else {
-    await admin.from("applications").update({ lead_student_name: input.student_name || null }).eq("id", app!.id);
+  if (app!.student_id && input.student_name) {
+    await admin.from("students").update({ full_name: input.student_name }).eq("id", app!.student_id);
   }
+  // Grade/curriculum are only safe to change this casually before a section
+  // is assigned and before the assessment pipeline has started (mirrors the
+  // guard in updateApplicationGrade, src/app/admin/actions.ts) — past that,
+  // a grade swap can desync an already-scheduled assessment or an assigned
+  // section, which needs the dedicated admin flow instead. Re-checked here
+  // server-side regardless of what the form showed, since canEditClass on
+  // the client is just a display hint, not an authorization boundary.
+  const canEditClass = !app!.section_id && (app!.status === "LEAD_CREATED" || app!.status === "FORM_SUBMITTED");
+  // No separate "Category" input — it's always derived from the class, same
+  // as at lead creation (see classCategory below).
+  await admin
+    .from("applications")
+    .update({
+      ...(app!.student_id ? {} : { lead_student_name: input.student_name || null }),
+      ...(canEditClass
+        ? {
+            grade_applying: input.grade_applying || null,
+            preferred_curriculum: input.preferred_curriculum || null,
+            category: input.grade_applying ? classCategory(input.grade_applying) : null,
+          }
+        : {}),
+    })
+    .eq("id", app!.id);
 
   if (isFirstContactInfo) {
     await notifyLeadCreated(app as Application, parent as Parent);

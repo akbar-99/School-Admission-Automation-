@@ -4,12 +4,15 @@ import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { PhoneField } from "@/components/apply/phone-field";
 import { SubmitButton } from "@/components/submit-button";
+import { CurriculumClassFields } from "@/components/marketing/curriculum-class-fields";
 
-// Lets a rep fill in or correct a lead's parent/student details — shown
-// as an always-open form for a contactless DM lead (there's nothing to
-// summarize yet), or collapsed behind an "Edit" link once a phone is on
+// Lets a rep fill in or correct a lead's parent/student/class details —
+// shown as an always-open form for a contactless DM lead (there's nothing
+// to summarize yet), or collapsed behind an "Edit" link once a phone is on
 // file. Posts to updateLeadDetails (src/app/marketing/actions.ts), which
 // also sends the N-1 admission link the first time real contact info lands.
+// No separate "Category" field — it's derived from the class picked here
+// (classCategory in src/lib/assessment.ts), same as at lead creation.
 export function LeadEditCell({
   action,
   applicationId,
@@ -17,6 +20,10 @@ export function LeadEditCell({
   phone,
   email,
   studentName,
+  curriculum,
+  grade,
+  classOptions,
+  canEditClass,
 }: {
   action: (formData: FormData) => void;
   applicationId: string;
@@ -24,6 +31,14 @@ export function LeadEditCell({
   phone: string | null;
   email: string | null;
   studentName: string | null;
+  curriculum: string | null;
+  grade: string | null;
+  classOptions: string[];
+  // Once a section is assigned, or the lead has moved past FORM_SUBMITTED,
+  // changing the class can desync assessment/section state in ways this
+  // lightweight form doesn't handle — use Admin → Applications instead at
+  // that point (updateApplicationGrade in src/app/admin/actions.ts).
+  canEditClass: boolean;
 }) {
   const [editing, setEditing] = useState(!phone);
 
@@ -54,6 +69,21 @@ export function LeadEditCell({
         placeholder="Student's name (optional)"
         className="h-8 text-xs"
       />
+      {canEditClass ? (
+        <CurriculumClassFields
+          classOptions={classOptions}
+          initialCurriculum={curriculum ?? ""}
+          initialGrade={grade ?? ""}
+          idPrefix={`${applicationId}-`}
+        />
+      ) : (
+        (curriculum || grade) && (
+          <p className="text-[11px] text-muted-foreground">
+            {[curriculum, grade].filter(Boolean).join(" · ")} — past this stage, change the class from Admin →
+            Applications instead.
+          </p>
+        )
+      )}
       <div className="flex items-center gap-2">
         <SubmitButton size="sm" variant="outline" pendingText="Saving…">
           Save
