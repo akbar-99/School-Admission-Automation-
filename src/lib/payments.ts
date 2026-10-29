@@ -272,6 +272,21 @@ export async function markPaymentFailed(
   const payment = payRow as Payment | null;
   if (!payment) return { ok: false, reason: "not_found" };
 
+  // A completed payment is terminal and authoritative — never let this
+  // downgrade it. Standard Checkout allows several attempts against the
+  // same order (e.g. a timed-out/declined first try, then a successful
+  // retry); their two webhook events aren't guaranteed to arrive in order,
+  // and this function is only ever keyed by order_id, not payment_id, so a
+  // late-arriving `payment.failed` for the earlier, unrelated attempt would
+  // otherwise stomp a row that `markPaymentCompleted` already finished
+  // processing (confirmed live: exactly this happened to a real ₹6,000
+  // admission payment — Razorpay's own records showed it captured, the
+  // application was correctly enrolled, but this function's unconditional
+  // update flipped the payments row back to "failed" afterward).
+  if (payment.status === "completed") {
+    return { ok: true, applicationId: payment.application_id };
+  }
+
   const { error: payErr } = await admin
     .from("payments")
     .update({ status: "failed" })
