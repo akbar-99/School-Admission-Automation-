@@ -145,7 +145,9 @@ async function SectionsList() {
   const { data: enrolledData } = sectionIds.length
     ? await admin
         .from("applications")
-        .select("id, section_id, admission_number, status, students(full_name), parents(full_name)")
+        .select(
+          "id, section_id, admission_number, status, preferred_curriculum, students(full_name, curriculum), parents(full_name)",
+        )
         .in("section_id", sectionIds)
         .is("withdrawn_at", null)
     : { data: [] };
@@ -154,7 +156,8 @@ async function SectionsList() {
     section_id: string;
     admission_number: string | null;
     status: AppStatus;
-    students: { full_name: string } | null;
+    preferred_curriculum: string | null;
+    students: { full_name: string; curriculum: string | null } | null;
     parents: { full_name: string } | null;
   }[];
   const studentsBySection = enrolledRows.reduce<Record<string, SectionStudentRow[]>>((acc, r) => {
@@ -164,6 +167,10 @@ async function SectionsList() {
       parentName: r.parents?.full_name ?? "—",
       admissionNumber: r.admission_number,
       status: r.status,
+      // KG sections mix both curricula in the same batch, with nothing in
+      // the section name to tell them apart (unlike STAGE/STD grades) —
+      // shown for every grade, not just KG, so it doubles as a sanity check.
+      curriculum: r.students?.curriculum ?? r.preferred_curriculum ?? null,
     });
     return acc;
   }, {});

@@ -13,6 +13,7 @@ export interface SectionStudentRow {
   parentName: string;
   admissionNumber: string | null;
   status: AppStatus;
+  curriculum: string | null;
 }
 
 export interface TransferTargetSection {
@@ -44,7 +45,14 @@ function StudentRow({
     <div className="p-3 text-sm">
       <div className="flex items-center justify-between gap-3">
         <Link href={`/admin/applications/${student.id}`} className="hover:underline">
-          <div className="font-medium">{student.studentName}</div>
+          <div className="flex items-center gap-1.5 font-medium">
+            {student.studentName}
+            {student.curriculum && (
+              <span className="rounded-full border border-border px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
+                {student.curriculum}
+              </span>
+            )}
+          </div>
           <div className="text-xs text-muted-foreground">
             {student.parentName} · {STATUS_LABEL[student.status] ?? student.status}
           </div>
