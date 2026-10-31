@@ -180,6 +180,11 @@ export interface Section {
   name: string;
   batch: string | null;
   class_timing: string | null;
+  // Only ever set for a KG section — every other grade's name (STAGE vs
+  // STD) already disambiguates curriculum on its own. Enforced in
+  // enroll_application so a KG section never auto-enrolls the wrong
+  // curriculum's applicant.
+  curriculum: "CBSE" | "Cambridge" | null;
   // The admin-typed name sent to Broadway as `erpClassName` (the field that
   // encodes curriculum). Separate from broadway_class_name (Broadway's own
   // returned, prettified name) since the two can differ in format and only

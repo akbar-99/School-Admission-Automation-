@@ -262,6 +262,7 @@ async function SectionsList() {
                           initialBatch={s.batch ?? ""}
                           initialBroadwayInputName={s.broadway_input_name ?? ""}
                           initialClassTiming={s.class_timing ?? ""}
+                          initialCurriculum={s.curriculum ?? ""}
                           between={
                             <div className="space-y-1">
                               <Label htmlFor={`cap-${s.id}`} className="text-xs">Capacity</Label>

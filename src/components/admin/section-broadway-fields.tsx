@@ -114,6 +114,7 @@ export function SectionBroadwayFields({
   initialBatch = "",
   initialBroadwayInputName = "",
   initialClassTiming = "",
+  initialCurriculum = "",
   variant = "create",
   between,
 }: {
@@ -123,6 +124,7 @@ export function SectionBroadwayFields({
   initialBatch?: string;
   initialBroadwayInputName?: string;
   initialClassTiming?: string;
+  initialCurriculum?: string;
   variant?: "create" | "edit";
   // Rendered between Batch and the Broadway class name, so callers can keep
   // the Capacity field in its original on-screen position.
@@ -136,7 +138,7 @@ export function SectionBroadwayFields({
   const [grade, setGrade] = useState(initialGrade);
   const [name, setName] = useState(initialName);
   const [batch, setBatch] = useState(initialBatch);
-  const [kgCurriculum, setKgCurriculum] = useState("");
+  const [kgCurriculum, setKgCurriculum] = useState(initialCurriculum);
   // Once the admin edits the Broadway class name directly, stop overwriting
   // it as Grade/Section/Batch change — it's a live-computed default, not a
   // locked-in value. A saved value already on the row (editing an existing
@@ -189,11 +191,13 @@ export function SectionBroadwayFields({
         />
       </div>
       {between}
-      {kg && !broadwayTouched && (
+      {kg && (
         <div className={isEdit ? "space-y-1" : "space-y-1.5"}>
           <Label htmlFor={id("kg_curriculum")} className={labelClass}>Curriculum</Label>
           <select
             id={id("kg_curriculum")}
+            name="curriculum"
+            required
             value={kgCurriculum}
             onChange={(e) => setKgCurriculum(e.target.value)}
             className={`${heightClass}w-28 rounded-md border border-input bg-card px-3 text-sm shadow-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}

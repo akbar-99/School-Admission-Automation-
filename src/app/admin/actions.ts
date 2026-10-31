@@ -26,7 +26,7 @@ import {
 } from "@/lib/workflow";
 import { cancelBroadwayAdmission, removeBroadwaySection } from "@/lib/broadway";
 import { logAudit } from "@/lib/audit";
-import { config } from "@/lib/config";
+import { config, CURRICULUM_OPTIONS } from "@/lib/config";
 import { zonedTimeToUtcISO, toZonedInputValue } from "@/lib/utils";
 import { needsAssessment } from "@/lib/assessment";
 import type { Application, Parent } from "@/lib/types";
@@ -1553,6 +1553,7 @@ const UpdateSectionSchema = z.object({
   batch: z.string().trim().max(60).optional().or(z.literal("")),
   broadway_input_name: z.string().trim().max(120).optional().or(z.literal("")),
   class_timing: z.string().trim().max(200).optional().or(z.literal("")),
+  curriculum: z.enum(CURRICULUM_OPTIONS).optional().or(z.literal("")),
   capacity: z.coerce.number().int().positive().max(200),
 });
 
@@ -1565,10 +1566,11 @@ export async function updateSection(formData: FormData) {
     batch: formData.get("batch") ?? "",
     broadway_input_name: formData.get("broadway_input_name") ?? "",
     class_timing: formData.get("class_timing") ?? "",
+    curriculum: formData.get("curriculum") ?? "",
     capacity: formData.get("capacity"),
   });
   if (!parsed.success) sectionsBack(parsed.error.issues[0].message, "error");
-  const { section_id, grade, name, batch, broadway_input_name, class_timing, capacity } = parsed.data!;
+  const { section_id, grade, name, batch, broadway_input_name, class_timing, curriculum, capacity } = parsed.data!;
 
   const admin = createSupabaseAdminClient();
   const { data: section } = await admin
@@ -1583,6 +1585,16 @@ export async function updateSection(formData: FormData) {
 
   const gradeUpper = grade.toUpperCase();
   const nameUpper = name.toUpperCase();
+  // The <select required> on the client is just a hint — enforce it here too,
+  // since a KG section with no curriculum set is exactly the gap that let
+  // CBSE and Cambridge students end up mixed in the same batch.
+  if (/kg/i.test(gradeUpper) && !curriculum) {
+    sectionsBack("Pick a curriculum for this KG section.", "error");
+  }
+  // curriculum is only ever submitted for a KG grade (the only field in this
+  // component not tied 1:1 to Broadway's own data) — a non-KG edit leaves it
+  // null, same as every section already does (its grade name alone already
+  // disambiguates curriculum, e.g. "STAGE 6" vs "STD 6").
   const { error } = await admin
     .from("sections")
     .update({
@@ -1591,6 +1603,7 @@ export async function updateSection(formData: FormData) {
       batch: batch || null,
       broadway_input_name: broadway_input_name || null,
       class_timing: class_timing || null,
+      curriculum: curriculum || null,
       capacity,
     })
     .eq("id", section_id);
@@ -1608,6 +1621,7 @@ export async function updateSection(formData: FormData) {
       batch: batch || null,
       broadway_input_name: broadway_input_name || null,
       class_timing: class_timing || null,
+      curriculum: curriculum || null,
       capacity,
     },
   });
@@ -1763,6 +1777,7 @@ const SectionSchema = z.object({
   batch: z.string().trim().max(60).optional().or(z.literal("")),
   broadway_input_name: z.string().trim().max(120).optional().or(z.literal("")),
   class_timing: z.string().trim().max(200).optional().or(z.literal("")),
+  curriculum: z.enum(CURRICULUM_OPTIONS).optional().or(z.literal("")),
   capacity: z.coerce.number().int().positive().max(200).default(30),
 });
 
@@ -1774,14 +1789,19 @@ export async function createSection(formData: FormData) {
     batch: formData.get("batch") ?? "",
     broadway_input_name: formData.get("broadway_input_name") ?? "",
     class_timing: formData.get("class_timing") ?? "",
+    curriculum: formData.get("curriculum") ?? "",
     capacity: formData.get("capacity") ?? 30,
   });
   if (!parsed.success) sectionsBack("Invalid section", "error");
-  const { grade, name, batch, broadway_input_name, class_timing, capacity } = parsed.data!;
+  const { grade, name, batch, broadway_input_name, class_timing, curriculum, capacity } = parsed.data!;
 
-  const admin = createSupabaseAdminClient();
   const gradeUpper = grade.toUpperCase();
   const nameUpper = name.toUpperCase();
+  if (/kg/i.test(gradeUpper) && !curriculum) {
+    sectionsBack("Pick a curriculum for this KG section.", "error");
+  }
+
+  const admin = createSupabaseAdminClient();
   const { data: created, error } = await admin
     .from("sections")
     .insert({
@@ -1790,6 +1810,7 @@ export async function createSection(formData: FormData) {
       batch: batch || null,
       broadway_input_name: broadway_input_name || null,
       class_timing: class_timing || null,
+      curriculum: curriculum || null,
       capacity,
     })
     .select("id")
@@ -1808,6 +1829,7 @@ export async function createSection(formData: FormData) {
       batch: batch || null,
       broadway_input_name: broadway_input_name || null,
       class_timing: class_timing || null,
+      curriculum: curriculum || null,
       capacity,
     },
   });
