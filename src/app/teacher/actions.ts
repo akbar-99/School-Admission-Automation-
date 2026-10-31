@@ -30,10 +30,10 @@ export async function claimAssessmentSlot(formData: FormData) {
     p_teacher: profile.id,
   });
   if (error) {
-    redirect(
-      "/teacher?error=" +
-        encodeURIComponent("That slot was just claimed by another teacher. Please pick another."),
-    );
+    const message = error.message?.includes("WEEKLY_CAP_REACHED")
+      ? "You've claimed your fair share of this week's open slots. More open up to everyone 24 hours after being posted if still unclaimed."
+      : "That slot was just claimed by another teacher. Please pick another.";
+    redirect("/teacher?error=" + encodeURIComponent(message));
   }
   const slot = data as { slot_id: string; starts_at: string };
 
@@ -82,7 +82,7 @@ export async function reportUnavailable(formData: FormData) {
     // Not booked yet — just release it back to the pool.
     await admin
       .from("assessment_slots")
-      .update({ teacher_id: null, claimed_by_teacher: false })
+      .update({ teacher_id: null, claimed_by_teacher: false, claimed_at: null })
       .eq("id", slot_id);
     await logAudit({
       actorId: profile.id,

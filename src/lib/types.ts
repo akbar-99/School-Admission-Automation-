@@ -203,11 +203,16 @@ export interface Section {
 
 export interface AssessmentSlot {
   id: string;
-  teacher_id: string;
+  teacher_id: string | null;
   starts_at: string;
   ends_at: string;
   is_open: boolean;
   application_id: string | null;
+  // Set when a teacher self-claims the slot from the open pool (see
+  // claim_assessment_slot) — null for an admin-assigned-at-creation slot or
+  // one still sitting unclaimed.
+  claimed_at: string | null;
+  claimed_by_teacher: boolean;
   created_at: string;
   updated_at: string;
 }
