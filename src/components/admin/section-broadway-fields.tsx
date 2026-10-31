@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 
 // Grouped by grade band so the dropdown shows a heading over each school's
 // set of timings, rather than one flat list mixing all of them together.
@@ -77,11 +78,11 @@ function ClassTimingPicker({
         Class timing
       </Label>
       <input type="hidden" name="class_timing" value={value} />
-      <select
+      <Select
         id={id}
         value={selected}
         onChange={(e) => setSelected(e.target.value)}
-        className={`${heightClass}w-full min-w-56 rounded-md border border-input bg-card px-3 text-sm shadow-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
+        className={`${heightClass}w-full min-w-56 text-sm`}
       >
         <option value="">No timing set</option>
         {TIMING_GROUPS.map((group) => (
@@ -94,7 +95,7 @@ function ClassTimingPicker({
           </optgroup>
         ))}
         <option value={CUSTOM}>+ Add a time…</option>
-      </select>
+      </Select>
       {selected === CUSTOM && (
         <Input
           value={customValue}
@@ -194,18 +195,18 @@ export function SectionBroadwayFields({
       {kg && (
         <div className={isEdit ? "space-y-1" : "space-y-1.5"}>
           <Label htmlFor={id("kg_curriculum")} className={labelClass}>Curriculum</Label>
-          <select
+          <Select
             id={id("kg_curriculum")}
             name="curriculum"
             required
             value={kgCurriculum}
             onChange={(e) => setKgCurriculum(e.target.value)}
-            className={`${heightClass}w-28 rounded-md border border-input bg-card px-3 text-sm shadow-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
+            className={`${heightClass}w-32 text-sm`}
           >
             <option value="">— pick —</option>
             <option value="CBSE">CBSE</option>
             <option value="Cambridge">Cambridge</option>
-          </select>
+          </Select>
         </div>
       )}
       <div className={isEdit ? "space-y-1" : "space-y-1.5"}>
