@@ -796,7 +796,7 @@ async function LeadsTableSection({
                           aria-label={`Message ${r.parents.full_name ?? "parent"} on WhatsApp`}
                           className="shrink-0 rounded-full p-0.5 hover:bg-muted"
                         >
-                          <WhatsappIcon className="size-3.5" />
+                          <WhatsappIcon className="size-4.5" />
                         </a>
                       </div>
                     )}
