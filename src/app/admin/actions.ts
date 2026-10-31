@@ -814,6 +814,94 @@ export async function updateApplicationGrade(formData: FormData) {
   );
 }
 
+const UpdateStudentDetailsSchema = z.object({
+  application_id: z.string().uuid(),
+  full_name: z.string().trim().min(2, "Student's name is required"),
+  dob: z.string().refine((v) => !Number.isNaN(Date.parse(v)), "A valid date of birth is required"),
+  gender: z.enum(["male", "female", "other"]).optional().or(z.literal("")),
+  previous_school: z.string().trim().optional(),
+  country_of_residence: z.string().trim().optional(),
+  pen_number: z.string().trim().optional(),
+  current_address: z.string().trim().optional(),
+  permanent_address: z.string().trim().optional(),
+});
+
+// Corrects a student's own profile fields (name, DOB, gender, etc.) — there
+// was previously no way to fix a parent's data-entry mistake here (e.g. a
+// wrong date of birth) once the application moved past the early marketing
+// edit stage (updateLeadDetails, src/app/marketing/actions.ts, which is
+// locked down once a section is assigned). Admin/COO only, and deliberately
+// doesn't touch grade/curriculum/section — those have their own guarded
+// flow (updateApplicationGrade above) with assessment/status implications
+// this simple field edit shouldn't risk disturbing.
+export async function updateStudentDetails(formData: FormData) {
+  const { profile } = await requireRole(["admin", "coo"]);
+  const applicationId = String(formData.get("application_id") ?? "");
+  const parsed = UpdateStudentDetailsSchema.safeParse({
+    application_id: applicationId,
+    full_name: formData.get("full_name"),
+    dob: formData.get("dob"),
+    gender: formData.get("gender"),
+    previous_school: formData.get("previous_school"),
+    country_of_residence: formData.get("country_of_residence"),
+    pen_number: formData.get("pen_number"),
+    current_address: formData.get("current_address"),
+    permanent_address: formData.get("permanent_address"),
+  });
+  if (!parsed.success) {
+    redirect(`/admin/applications/${applicationId}?error=` + encodeURIComponent(parsed.error.issues[0].message));
+  }
+  const input = parsed.data!;
+
+  const admin = createSupabaseAdminClient();
+  const { data: appRow } = await admin
+    .from("applications")
+    .select("student_id")
+    .eq("id", input.application_id)
+    .maybeSingle();
+  if (!appRow?.student_id) {
+    redirect(
+      `/admin/applications/${input.application_id}?error=` +
+        encodeURIComponent("This applicant doesn't have a student record yet."),
+    );
+  }
+
+  const { data: before } = await admin
+    .from("students")
+    .select("full_name, dob, gender, previous_school, country_of_residence, pen_number, current_address, permanent_address")
+    .eq("id", appRow!.student_id)
+    .maybeSingle();
+
+  const { error } = await admin
+    .from("students")
+    .update({
+      full_name: input.full_name,
+      dob: input.dob,
+      gender: input.gender || null,
+      previous_school: input.previous_school || null,
+      country_of_residence: input.country_of_residence || null,
+      pen_number: input.pen_number || null,
+      current_address: input.current_address || null,
+      permanent_address: input.permanent_address || null,
+    })
+    .eq("id", appRow!.student_id);
+  if (error) {
+    redirect(`/admin/applications/${input.application_id}?error=` + encodeURIComponent(error.message));
+  }
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "admin.update_student_details",
+    entity: "student",
+    entityId: appRow!.student_id,
+    details: { before, after: input },
+  });
+
+  revalidatePath(`/admin/applications/${input.application_id}`);
+  redirect(`/admin/applications/${input.application_id}?ok=` + encodeURIComponent("Student details updated."));
+}
+
 // Reassigns which staff member a lead is attributed to (applications.created_by)
 // — every marketing stat (Team dashboard, performance report, conversion
 // rate) is grouped by this field, so a lead logged under the wrong person

@@ -26,6 +26,7 @@ import {
 } from "../../actions";
 import { needsAssessment } from "@/lib/assessment";
 import { getClassOptions } from "@/lib/classes";
+import { StudentEditForm } from "@/components/admin/student-edit-form";
 import { leadSourceLabel, outcomeLabel, type Application, type Student, type Parent, type Payment, type SubjectResult, type AssessmentOutcome } from "@/lib/types";
 
 const DOC_LABEL: Record<string, string> = {
@@ -305,6 +306,21 @@ export default async function ApplicationDetailPage({
         <Field label="PEN number" value={student?.pen_number ?? "—"} />
         <Field label="Current address" value={student?.current_address ?? "—"} wide />
         <Field label="Permanent address" value={student?.permanent_address ?? "—"} wide />
+        {student && (
+          <div className="sm:col-span-2 lg:col-span-3">
+            <StudentEditForm
+              applicationId={app.id}
+              fullName={student.full_name}
+              dob={student.dob}
+              gender={student.gender}
+              previousSchool={student.previous_school}
+              countryOfResidence={student.country_of_residence}
+              penNumber={student.pen_number}
+              currentAddress={student.current_address}
+              permanentAddress={student.permanent_address}
+            />
+          </div>
+        )}
       </Section>
 
       <Section title="Parent / guardian">
