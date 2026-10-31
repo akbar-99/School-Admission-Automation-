@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { requireRole } from "@/lib/auth";
 import { applyUrl } from "@/lib/parent";
-import { formatDateTime, cn } from "@/lib/utils";
+import { formatDateTime, cn, whatsappLink } from "@/lib/utils";
 import { createLead, claimLead, dismissLead, updateLeadDetails, markWithdrawn, restoreWithdrawn, updateLeadRemarks, updateLeadScore, updateLeadFollowUp, markLeadFollowUpDone } from "./actions";
 import { LeadSourceSelect } from "@/components/marketing/lead-source-select";
 import { CurriculumClassFields } from "@/components/marketing/curriculum-class-fields";
@@ -21,7 +21,7 @@ import { describeFilters, parseAdmissionsFilters } from "@/lib/admissions-report
 import { StatusBadge } from "@/components/status-badge";
 import { WithdrawalBadge } from "@/components/withdrawal-badge";
 import { Badge } from "@/components/ui/badge";
-import { SourceIcon, InstagramIcon, FacebookIcon } from "@/components/icons/lead-source-icons";
+import { SourceIcon, InstagramIcon, FacebookIcon, WhatsappIcon } from "@/components/icons/lead-source-icons";
 import { CopyButton } from "@/components/copy-button";
 import { PhoneField } from "@/components/apply/phone-field";
 import { SubmitButton } from "@/components/submit-button";
@@ -785,7 +785,21 @@ async function LeadsTableSection({
                         )
                       )}
                     </div>
-                    {r.parents?.phone && <div className="text-xs text-muted-foreground">{r.parents.phone}</div>}
+                    {r.parents?.phone && (
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        {r.parents.phone}
+                        <a
+                          href={whatsappLink(r.parents.phone)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={`Message ${r.parents.full_name ?? "parent"} on WhatsApp`}
+                          aria-label={`Message ${r.parents.full_name ?? "parent"} on WhatsApp`}
+                          className="shrink-0 rounded-full p-0.5 hover:bg-muted"
+                        >
+                          <WhatsappIcon className="size-3.5" />
+                        </a>
+                      </div>
+                    )}
                     <LeadEditCell
                       action={updateLeadDetails}
                       applicationId={r.id}

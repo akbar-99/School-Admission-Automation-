@@ -6,6 +6,13 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+// wa.me needs the number as plain digits (country code, no "+", no spaces)
+// — phones are stored combined like "+917994480109" (see PhoneField), so
+// this is just stripping everything that isn't a digit.
+export function whatsappLink(phone: string): string {
+  return `https://wa.me/${phone.replace(/\D/g, "")}`;
+}
+
 // How long before a slot's start time its Zoom link becomes usable.
 export const ZOOM_LINK_LEAD_MINUTES = 30;
 
