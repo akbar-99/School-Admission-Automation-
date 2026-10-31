@@ -360,9 +360,11 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
           <CardTitle>Create slots</CardTitle>
           <CardDescription>
             Pick a weekday, time and how many slots to open — e.g. Monday 8:00 PM, 10 slots — and
-            any teacher can claim one from their dashboard, first-come first-served. Repeat it
-            weekly, or assign a single slot to a specific teacher instead. The weekday resolves to
-            its next upcoming date; waiting parents are notified either way.
+            any teacher can claim from their dashboard, up to a fair weekly share each (the
+            week&apos;s open slots split evenly across active teachers, so one teacher can&apos;t
+            grab them all). A slot still unclaimed 24h after posting opens up to everyone, cap or
+            not. Repeat it weekly, or assign a single slot to a specific teacher instead. The
+            weekday resolves to its next upcoming date; waiting parents are notified either way.
           </CardDescription>
         </CardHeader>
         <CardContent>
