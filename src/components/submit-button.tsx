@@ -8,11 +8,14 @@ import { Button, type ButtonProps } from "@/components/ui/button";
 export function SubmitButton({
   children,
   pendingText,
+  disabled,
   ...props
 }: ButtonProps & { pendingText?: string }) {
   const { pending } = useFormStatus();
+  // Merged, not overridden: a caller's `disabled={x || undefined}` must never
+  // switch off the while-pending disable, or a second click re-submits.
   return (
-    <Button type="submit" disabled={pending} aria-busy={pending} {...props}>
+    <Button type="submit" disabled={pending || disabled} aria-busy={pending} {...props}>
       {pending && <Loader2 className="animate-spin" />}
       {pending ? (pendingText ?? "Working…") : children}
     </Button>
