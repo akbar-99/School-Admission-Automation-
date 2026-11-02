@@ -22,6 +22,7 @@ import {
 import { AssignAssessmentRow } from "@/components/admin/assign-assessment-row";
 import { SlotCreationLogTable } from "@/components/admin/slot-creation-log-table";
 import { WeeklySlotCalculator } from "@/components/admin/weekly-slot-calculator";
+import { CollapsibleSection } from "@/components/admin/collapsible-section";
 import { ScheduledAssessmentsPanel, type ScheduledRow } from "@/components/admin/scheduled-assessments-panel";
 import { AdminUnavailableAlerts } from "@/components/admin/unavailable-alerts";
 import { LeadTemperatureBadge } from "@/components/lead-temperature-badge";
@@ -658,35 +659,37 @@ async function AssessmentsBody({ teacherFilter, month }: { teacherFilter?: strin
 
               <WeeklySlotCalculator currentTotal={thisWeekTotal} teacherCount={teachers.length} />
 
-              <Table>
-                <THead>
-                  <TR>
-                    <TH>Teacher</TH>
-                    <TH>Claimed this week</TH>
-                    <TH>Weekly cap</TH>
-                    <TH>Can still claim</TH>
-                  </TR>
-                </THead>
-                <TBody>
-                  {weeklyCapRows.map(({ teacher, claimed, remaining }) => (
-                    <TR key={teacher.id}>
-                      <TD>
-                        <div className="font-medium">{teacher.full_name ?? "—"}</div>
-                        <div className="text-xs text-muted-foreground">{teacher.email}</div>
-                      </TD>
-                      <TD>{claimed}</TD>
-                      <TD className="text-muted-foreground">{weeklyCap}</TD>
-                      <TD>
-                        {remaining > 0 ? (
-                          <Badge tone="success">{remaining} more</Badge>
-                        ) : (
-                          <Badge tone="warning">At cap</Badge>
-                        )}
-                      </TD>
+              <CollapsibleSection count={weeklyCapRows.length} itemLabel="teacher">
+                <Table>
+                  <THead>
+                    <TR>
+                      <TH>Teacher</TH>
+                      <TH>Claimed this week</TH>
+                      <TH>Weekly cap</TH>
+                      <TH>Can still claim</TH>
                     </TR>
-                  ))}
-                </TBody>
-              </Table>
+                  </THead>
+                  <TBody>
+                    {weeklyCapRows.map(({ teacher, claimed, remaining }) => (
+                      <TR key={teacher.id}>
+                        <TD>
+                          <div className="font-medium">{teacher.full_name ?? "—"}</div>
+                          <div className="text-xs text-muted-foreground">{teacher.email}</div>
+                        </TD>
+                        <TD>{claimed}</TD>
+                        <TD className="text-muted-foreground">{weeklyCap}</TD>
+                        <TD>
+                          {remaining > 0 ? (
+                            <Badge tone="success">{remaining} more</Badge>
+                          ) : (
+                            <Badge tone="warning">At cap</Badge>
+                          )}
+                        </TD>
+                      </TR>
+                    ))}
+                  </TBody>
+                </Table>
+              </CollapsibleSection>
             </>
           )}
         </CardContent>
@@ -735,35 +738,37 @@ async function AssessmentsBody({ teacherFilter, month }: { teacherFilter?: strin
                 <span className="text-muted-foreground"> (informational).</span>
               </p>
 
-              <Table>
-                <THead>
-                  <TR>
-                    <TH>Teacher</TH>
-                    <TH>Claimed this month</TH>
-                    <TH>Monthly fair share</TH>
-                    <TH>Headroom</TH>
-                  </TR>
-                </THead>
-                <TBody>
-                  {monthlyCapRows.map(({ teacher, claimed, remaining }) => (
-                    <TR key={teacher.id}>
-                      <TD>
-                        <div className="font-medium">{teacher.full_name ?? "—"}</div>
-                        <div className="text-xs text-muted-foreground">{teacher.email}</div>
-                      </TD>
-                      <TD>{claimed}</TD>
-                      <TD className="text-muted-foreground">{monthlyCap}</TD>
-                      <TD>
-                        {remaining > 0 ? (
-                          <Badge tone="success">{remaining} more</Badge>
-                        ) : (
-                          <Badge tone="warning">At share</Badge>
-                        )}
-                      </TD>
+              <CollapsibleSection count={monthlyCapRows.length} itemLabel="teacher">
+                <Table>
+                  <THead>
+                    <TR>
+                      <TH>Teacher</TH>
+                      <TH>Claimed this month</TH>
+                      <TH>Monthly fair share</TH>
+                      <TH>Headroom</TH>
                     </TR>
-                  ))}
-                </TBody>
-              </Table>
+                  </THead>
+                  <TBody>
+                    {monthlyCapRows.map(({ teacher, claimed, remaining }) => (
+                      <TR key={teacher.id}>
+                        <TD>
+                          <div className="font-medium">{teacher.full_name ?? "—"}</div>
+                          <div className="text-xs text-muted-foreground">{teacher.email}</div>
+                        </TD>
+                        <TD>{claimed}</TD>
+                        <TD className="text-muted-foreground">{monthlyCap}</TD>
+                        <TD>
+                          {remaining > 0 ? (
+                            <Badge tone="success">{remaining} more</Badge>
+                          ) : (
+                            <Badge tone="warning">At share</Badge>
+                          )}
+                        </TD>
+                      </TR>
+                    ))}
+                  </TBody>
+                </Table>
+              </CollapsibleSection>
             </>
           )}
         </CardContent>
