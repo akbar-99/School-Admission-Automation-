@@ -23,6 +23,9 @@ import { AssignAssessmentRow } from "@/components/admin/assign-assessment-row";
 import { SlotCreationLogTable } from "@/components/admin/slot-creation-log-table";
 import { WeeklySlotCalculator } from "@/components/admin/weekly-slot-calculator";
 import { CollapsibleSection } from "@/components/admin/collapsible-section";
+import { CreateSlotsProvider } from "@/components/admin/create-slots-context";
+import { CreateSlotsForm } from "@/components/admin/create-slots-form";
+import { SlotCalculator } from "@/components/admin/slot-calculator";
 import { ScheduledAssessmentsPanel, type ScheduledRow } from "@/components/admin/scheduled-assessments-panel";
 import { AdminUnavailableAlerts } from "@/components/admin/unavailable-alerts";
 import { LeadTemperatureBadge } from "@/components/lead-temperature-badge";
@@ -206,7 +209,6 @@ async function AssessmentsBody({ teacherFilter, month }: { teacherFilter?: strin
     { data: creationLogData },
     { data: weekLedgerData },
     { data: weekClaimedData },
-    { data: monthClaimedData },
   ] = await Promise.all([
     admin
       .from("users")
@@ -262,14 +264,6 @@ async function AssessmentsBody({ teacherFilter, month }: { teacherFilter?: strin
       .eq("claimed_by_teacher", true)
       .gte("starts_at", weekStart.toISOString())
       .lt("starts_at", weekEnd.toISOString()),
-    // Same shape, for the monthly (informational-only — nothing enforces a
-    // monthly limit) view below, over the same month as "Slots created".
-    admin
-      .from("assessment_slots")
-      .select("teacher_id")
-      .eq("claimed_by_teacher", true)
-      .gte("starts_at", monthStart.toISOString())
-      .lt("starts_at", monthEnd.toISOString()),
   ]);
   const teachers = (teacherData ?? []) as TeacherRow[];
 
@@ -311,29 +305,6 @@ async function AssessmentsBody({ teacherFilter, month }: { teacherFilter?: strin
     }
   }
   const creationLogTotalSlots = creationLogs.reduce((sum, l) => sum + (l.details?.total ?? 0), 0);
-
-  // Monthly mirror of the weekly calculator above — informational only.
-  // Nothing in claim_assessment_slot enforces a monthly limit; this is just
-  // the same fair-share math totalled over the selected month, so the admin
-  // can gauge pacing without mistaking it for a second, separate cap.
-  // Direct single-teacher assignments (details.teacher_id set) are excluded,
-  // same as the weekly ledger excludes them — they never compete in the pool.
-  const monthlyPoolTotal = creationLogs.reduce(
-    (sum, l) => sum + (l.details?.teacher_id ? 0 : (l.details?.total ?? 0)),
-    0,
-  );
-  const monthlyCap = teachers.length > 0 ? Math.ceil(monthlyPoolTotal / teachers.length) : 0;
-  const claimedThisMonthByTeacher = new Map<string, number>();
-  for (const row of (monthClaimedData ?? []) as { teacher_id: string | null }[]) {
-    if (!row.teacher_id) continue;
-    claimedThisMonthByTeacher.set(row.teacher_id, (claimedThisMonthByTeacher.get(row.teacher_id) ?? 0) + 1);
-  }
-  const monthlyCapRows = teachers
-    .map((t) => {
-      const claimed = claimedThisMonthByTeacher.get(t.id) ?? 0;
-      return { teacher: t, claimed, remaining: Math.max(monthlyCap - claimed, 0) };
-    })
-    .sort((a, b) => b.claimed - a.claimed);
 
   // Current status of every individual slot this month's batches created —
   // booked / claimed-but-not-yet-booked / still sitting open / assigned
@@ -472,6 +443,7 @@ async function AssessmentsBody({ teacherFilter, month }: { teacherFilter?: strin
   }
 
   return (
+    <CreateSlotsProvider schoolTz={schoolTz}>
     <div className="space-y-6">
       <AdminUnavailableAlerts initialAlerts={unavailableInitialAlerts} />
 
@@ -538,7 +510,7 @@ async function AssessmentsBody({ teacherFilter, month }: { teacherFilter?: strin
         </Card>
       )}
 
-      <Card>
+      <Card id="create-slots" className="scroll-mt-28">
         <CardHeader>
           <CardTitle>Create slots</CardTitle>
           <CardDescription>
@@ -557,78 +529,11 @@ async function AssessmentsBody({ teacherFilter, month }: { teacherFilter?: strin
               no one to claim them.
             </Alert>
           )}
-          <form action={createAssessmentSlot} className="space-y-1.5">
-            <div className="flex flex-wrap items-end gap-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="weekday">Day</Label>
-                <Select id="weekday" name="weekday" defaultValue="1" className="w-36">
-                  <option value="1">Monday</option>
-                  <option value="2">Tuesday</option>
-                  <option value="3">Wednesday</option>
-                  <option value="4">Thursday</option>
-                  <option value="5">Friday</option>
-                  <option value="6">Saturday</option>
-                  <option value="0">Sunday</option>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="time">Time ({schoolLabel})</Label>
-                <Input id="time" name="time" type="time" required className="w-32" />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="duration">Duration (min)</Label>
-                <Input
-                  id="duration"
-                  name="duration"
-                  type="number"
-                  min={10}
-                  max={240}
-                  defaultValue={30}
-                  className="w-28"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="quantity">Slots per week</Label>
-                <Input
-                  id="quantity"
-                  name="quantity"
-                  type="number"
-                  min={1}
-                  max={50}
-                  defaultValue={1}
-                  className="w-28"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="weeks">Repeat for (weeks)</Label>
-                <Input
-                  id="weeks"
-                  name="weeks"
-                  type="number"
-                  min={1}
-                  max={26}
-                  defaultValue={1}
-                  className="w-28"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="teacher_id">Assign teacher</Label>
-                <Select id="teacher_id" name="teacher_id" defaultValue="" className="min-w-56">
-                  <option value="">Open — any teacher can claim it</option>
-                  {teachers.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.full_name ?? t.email}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-              <SubmitButton pendingText="Creating…">Create slot(s)</SubmitButton>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Assign teacher only works when slots per week and repeat weeks are both 1. Otherwise
-              leave as &quot;Open&quot;.
-            </p>
-          </form>
+          <CreateSlotsForm
+            teachers={teachers.map((t) => ({ id: t.id, label: t.full_name ?? t.email ?? t.id }))}
+            schoolLabel={schoolLabel}
+            action={createAssessmentSlot}
+          />
         </CardContent>
       </Card>
 
@@ -695,82 +600,16 @@ async function AssessmentsBody({ teacherFilter, month }: { teacherFilter?: strin
         </CardContent>
       </Card>
 
-      <Card id="calculator-month">
+      <Card id="calculator-month" className="scroll-mt-28">
         <CardHeader>
-          <CardTitle>Monthly slot calculator</CardTitle>
+          <CardTitle>Slot calculator</CardTitle>
           <CardDescription>
-            Same fair-share split, totalled for a whole month instead of just this week — for
-            planning ahead, not a separate limit. Only the weekly cap above is actually
-            enforced when a teacher claims a slot.
+            Plan how many slots to create so every teacher gets the same number. Nothing is saved
+            here — &quot;Use these numbers&quot; only fills the Create slots form above.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <form
-            action="/admin/assessments#calculator-month"
-            method="get"
-            className="flex flex-wrap items-end gap-3"
-          >
-            <div className="space-y-1.5">
-              <Label htmlFor="month_filter_calc">Month</Label>
-              <Input
-                id="month_filter_calc"
-                name="month"
-                type="month"
-                defaultValue={selectedMonth}
-                className="w-40"
-              />
-            </div>
-            <Button type="submit" variant="outline">
-              Filter
-            </Button>
-          </form>
-
-          {teachers.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No teachers yet.</p>
-          ) : (
-            <>
-              <p className="text-sm">
-                <span className="font-medium">{monthlyPoolTotal}</span>
-                <span className="text-muted-foreground"> open-pool slots posted this month ÷ </span>
-                <span className="font-medium">{teachers.length}</span>
-                <span className="text-muted-foreground"> active teachers = </span>
-                <span className="font-semibold text-primary">{monthlyCap} per teacher</span>
-                <span className="text-muted-foreground"> (informational).</span>
-              </p>
-
-              <CollapsibleSection count={monthlyCapRows.length} itemLabel="teacher">
-                <Table>
-                  <THead>
-                    <TR>
-                      <TH>Teacher</TH>
-                      <TH>Claimed this month</TH>
-                      <TH>Monthly fair share</TH>
-                      <TH>Headroom</TH>
-                    </TR>
-                  </THead>
-                  <TBody>
-                    {monthlyCapRows.map(({ teacher, claimed, remaining }) => (
-                      <TR key={teacher.id}>
-                        <TD>
-                          <div className="font-medium">{teacher.full_name ?? "—"}</div>
-                          <div className="text-xs text-muted-foreground">{teacher.email}</div>
-                        </TD>
-                        <TD>{claimed}</TD>
-                        <TD className="text-muted-foreground">{monthlyCap}</TD>
-                        <TD>
-                          {remaining > 0 ? (
-                            <Badge tone="success">{remaining} more</Badge>
-                          ) : (
-                            <Badge tone="warning">At share</Badge>
-                          )}
-                        </TD>
-                      </TR>
-                    ))}
-                  </TBody>
-                </Table>
-              </CollapsibleSection>
-            </>
-          )}
+        <CardContent>
+          <SlotCalculator defaultTeachers={teachers.length} currentMonth={zonedYearMonth(new Date(), schoolTz)} />
         </CardContent>
       </Card>
 
@@ -1184,5 +1023,6 @@ async function AssessmentsBody({ teacherFilter, month }: { teacherFilter?: strin
         </CardContent>
       </Card>
     </div>
+    </CreateSlotsProvider>
   );
 }
