@@ -1,7 +1,14 @@
 import { Suspense } from "react";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { config } from "@/lib/config";
-import { formatInZone, formatInZoneWithDay, toZonedInputValue, zonedTimeToUtcISO } from "@/lib/utils";
+import {
+  formatInZone,
+  formatInZoneWithDay,
+  toZonedInputValue,
+  zonedTimeToUtcISO,
+  weekStartDateStr,
+  ASSESSMENT_WEEK_TIMEZONE,
+} from "@/lib/utils";
 import { needsAssessment } from "@/lib/assessment";
 import {
   cancelScheduledAssessment,
@@ -14,6 +21,7 @@ import {
 } from "../actions";
 import { AssignAssessmentRow } from "@/components/admin/assign-assessment-row";
 import { SlotCreationLogTable } from "@/components/admin/slot-creation-log-table";
+import { WeeklySlotCalculator } from "@/components/admin/weekly-slot-calculator";
 import { ScheduledAssessmentsPanel, type ScheduledRow } from "@/components/admin/scheduled-assessments-panel";
 import { AdminUnavailableAlerts } from "@/components/admin/unavailable-alerts";
 import { LeadTemperatureBadge } from "@/components/lead-temperature-badge";
@@ -167,6 +175,14 @@ async function AssessmentsBody({ teacherFilter, month }: { teacherFilter?: strin
   const nextMonth = selMonthNum === 12 ? `${selYear + 1}-01` : `${selYear}-${String(selMonthNum + 1).padStart(2, "0")}`;
   const monthEnd = new Date(zonedTimeToUtcISO(`${nextMonth}-01T00:00`, schoolTz));
 
+  // Weekly slot calculator — same Monday-start week claim_assessment_slot
+  // itself buckets by (ASSESSMENT_WEEK_TIMEZONE, not the configurable
+  // schoolTz — see its definition), so these numbers match exactly what a
+  // teacher hits when they try to claim.
+  const thisWeekKey = weekStartDateStr(new Date(), ASSESSMENT_WEEK_TIMEZONE);
+  const weekStart = new Date(zonedTimeToUtcISO(`${thisWeekKey}T00:00`, ASSESSMENT_WEEK_TIMEZONE));
+  const weekEnd = new Date(weekStart.getTime() + 7 * 86_400_000);
+
   let slotQuery = admin
     .from("assessment_slots")
     .select(
@@ -187,6 +203,9 @@ async function AssessmentsBody({ teacherFilter, month }: { teacherFilter?: strin
     { data: resultsData },
     { data: unavailableData },
     { data: creationLogData },
+    { data: weekLedgerData },
+    { data: weekClaimedData },
+    { data: monthClaimedData },
   ] = await Promise.all([
     admin
       .from("users")
@@ -226,8 +245,50 @@ async function AssessmentsBody({ teacherFilter, month }: { teacherFilter?: strin
       .gte("created_at", monthStart.toISOString())
       .lt("created_at", monthEnd.toISOString())
       .order("created_at", { ascending: false }),
+    // The ledger createAssessmentSlot credits — this week's "true" posted
+    // total, immune to shrinking from bookings or expiry cleanup (see
+    // 0084_assessment_slot_weekly_total_ledger.sql).
+    admin
+      .from("assessment_slot_weekly_totals")
+      .select("pool_slots_opened")
+      .eq("week_start", thisWeekKey)
+      .maybeSingle(),
+    // Same query claim_assessment_slot runs per-teacher, just unfiltered —
+    // how many each teacher has actually claimed this week so far.
+    admin
+      .from("assessment_slots")
+      .select("teacher_id")
+      .eq("claimed_by_teacher", true)
+      .gte("starts_at", weekStart.toISOString())
+      .lt("starts_at", weekEnd.toISOString()),
+    // Same shape, for the monthly (informational-only — nothing enforces a
+    // monthly limit) view below, over the same month as "Slots created".
+    admin
+      .from("assessment_slots")
+      .select("teacher_id")
+      .eq("claimed_by_teacher", true)
+      .gte("starts_at", monthStart.toISOString())
+      .lt("starts_at", monthEnd.toISOString()),
   ]);
   const teachers = (teacherData ?? []) as TeacherRow[];
+
+  // Weekly slot calculator — mirrors claim_assessment_slot's own fair-share
+  // formula exactly (ledger total ÷ active teachers, rounded up) so this
+  // never drifts from what a teacher actually experiences when claiming.
+  const thisWeekTotal = weekLedgerData?.pool_slots_opened ?? 0;
+  const weeklyCap = teachers.length > 0 ? Math.ceil(thisWeekTotal / teachers.length) : 0;
+  const claimedThisWeekByTeacher = new Map<string, number>();
+  for (const row of (weekClaimedData ?? []) as { teacher_id: string | null }[]) {
+    if (!row.teacher_id) continue;
+    claimedThisWeekByTeacher.set(row.teacher_id, (claimedThisWeekByTeacher.get(row.teacher_id) ?? 0) + 1);
+  }
+  const weeklyCapRows = teachers
+    .map((t) => {
+      const claimed = claimedThisWeekByTeacher.get(t.id) ?? 0;
+      return { teacher: t, claimed, remaining: Math.max(weeklyCap - claimed, 0) };
+    })
+    .sort((a, b) => b.claimed - a.claimed);
+
   const creationLogs = (creationLogData ?? []) as unknown as SlotCreationLogRow[];
   // Names for whoever created a batch, and whichever teacher it was directly
   // assigned to — both can reference a disabled/non-teacher user (e.g. a COO
@@ -249,6 +310,29 @@ async function AssessmentsBody({ teacherFilter, month }: { teacherFilter?: strin
     }
   }
   const creationLogTotalSlots = creationLogs.reduce((sum, l) => sum + (l.details?.total ?? 0), 0);
+
+  // Monthly mirror of the weekly calculator above — informational only.
+  // Nothing in claim_assessment_slot enforces a monthly limit; this is just
+  // the same fair-share math totalled over the selected month, so the admin
+  // can gauge pacing without mistaking it for a second, separate cap.
+  // Direct single-teacher assignments (details.teacher_id set) are excluded,
+  // same as the weekly ledger excludes them — they never compete in the pool.
+  const monthlyPoolTotal = creationLogs.reduce(
+    (sum, l) => sum + (l.details?.teacher_id ? 0 : (l.details?.total ?? 0)),
+    0,
+  );
+  const monthlyCap = teachers.length > 0 ? Math.ceil(monthlyPoolTotal / teachers.length) : 0;
+  const claimedThisMonthByTeacher = new Map<string, number>();
+  for (const row of (monthClaimedData ?? []) as { teacher_id: string | null }[]) {
+    if (!row.teacher_id) continue;
+    claimedThisMonthByTeacher.set(row.teacher_id, (claimedThisMonthByTeacher.get(row.teacher_id) ?? 0) + 1);
+  }
+  const monthlyCapRows = teachers
+    .map((t) => {
+      const claimed = claimedThisMonthByTeacher.get(t.id) ?? 0;
+      return { teacher: t, claimed, remaining: Math.max(monthlyCap - claimed, 0) };
+    })
+    .sort((a, b) => b.claimed - a.claimed);
 
   // Current status of every individual slot this month's batches created —
   // booked / claimed-but-not-yet-booked / still sitting open / assigned
@@ -544,6 +628,144 @@ async function AssessmentsBody({ teacherFilter, month }: { teacherFilter?: strin
               leave as &quot;Open&quot;.
             </p>
           </form>
+        </CardContent>
+      </Card>
+
+      <Card id="calculator">
+        <CardHeader>
+          <CardTitle>Assessment slot calculator</CardTitle>
+          <CardDescription>
+            This week&apos;s fair-share claim limit — the week&apos;s open-pool slots split evenly
+            across active teachers — and how many each teacher has claimed so far.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {teachers.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No teachers yet.</p>
+          ) : (
+            <>
+              <p className="text-sm">
+                <span className="font-medium">{thisWeekTotal}</span>
+                <span className="text-muted-foreground"> open-pool slots posted this week ÷ </span>
+                <span className="font-medium">{teachers.length}</span>
+                <span className="text-muted-foreground"> active teachers = </span>
+                <span className="font-semibold text-primary">{weeklyCap} max per teacher</span>
+                <span className="text-muted-foreground">
+                  {" "}
+                  (a slot still unclaimed 24h after posting opens up to everyone regardless).
+                </span>
+              </p>
+
+              <WeeklySlotCalculator currentTotal={thisWeekTotal} teacherCount={teachers.length} />
+
+              <Table>
+                <THead>
+                  <TR>
+                    <TH>Teacher</TH>
+                    <TH>Claimed this week</TH>
+                    <TH>Weekly cap</TH>
+                    <TH>Can still claim</TH>
+                  </TR>
+                </THead>
+                <TBody>
+                  {weeklyCapRows.map(({ teacher, claimed, remaining }) => (
+                    <TR key={teacher.id}>
+                      <TD>
+                        <div className="font-medium">{teacher.full_name ?? "—"}</div>
+                        <div className="text-xs text-muted-foreground">{teacher.email}</div>
+                      </TD>
+                      <TD>{claimed}</TD>
+                      <TD className="text-muted-foreground">{weeklyCap}</TD>
+                      <TD>
+                        {remaining > 0 ? (
+                          <Badge tone="success">{remaining} more</Badge>
+                        ) : (
+                          <Badge tone="warning">At cap</Badge>
+                        )}
+                      </TD>
+                    </TR>
+                  ))}
+                </TBody>
+              </Table>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card id="calculator-month">
+        <CardHeader>
+          <CardTitle>Monthly slot calculator</CardTitle>
+          <CardDescription>
+            Same fair-share split, totalled for a whole month instead of just this week — for
+            planning ahead, not a separate limit. Only the weekly cap above is actually
+            enforced when a teacher claims a slot.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <form
+            action="/admin/assessments#calculator-month"
+            method="get"
+            className="flex flex-wrap items-end gap-3"
+          >
+            <div className="space-y-1.5">
+              <Label htmlFor="month_filter_calc">Month</Label>
+              <Input
+                id="month_filter_calc"
+                name="month"
+                type="month"
+                defaultValue={selectedMonth}
+                className="w-40"
+              />
+            </div>
+            <Button type="submit" variant="outline">
+              Filter
+            </Button>
+          </form>
+
+          {teachers.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No teachers yet.</p>
+          ) : (
+            <>
+              <p className="text-sm">
+                <span className="font-medium">{monthlyPoolTotal}</span>
+                <span className="text-muted-foreground"> open-pool slots posted this month ÷ </span>
+                <span className="font-medium">{teachers.length}</span>
+                <span className="text-muted-foreground"> active teachers = </span>
+                <span className="font-semibold text-primary">{monthlyCap} per teacher</span>
+                <span className="text-muted-foreground"> (informational).</span>
+              </p>
+
+              <Table>
+                <THead>
+                  <TR>
+                    <TH>Teacher</TH>
+                    <TH>Claimed this month</TH>
+                    <TH>Monthly fair share</TH>
+                    <TH>Headroom</TH>
+                  </TR>
+                </THead>
+                <TBody>
+                  {monthlyCapRows.map(({ teacher, claimed, remaining }) => (
+                    <TR key={teacher.id}>
+                      <TD>
+                        <div className="font-medium">{teacher.full_name ?? "—"}</div>
+                        <div className="text-xs text-muted-foreground">{teacher.email}</div>
+                      </TD>
+                      <TD>{claimed}</TD>
+                      <TD className="text-muted-foreground">{monthlyCap}</TD>
+                      <TD>
+                        {remaining > 0 ? (
+                          <Badge tone="success">{remaining} more</Badge>
+                        ) : (
+                          <Badge tone="warning">At share</Badge>
+                        )}
+                      </TD>
+                    </TR>
+                  ))}
+                </TBody>
+              </Table>
+            </>
+          )}
         </CardContent>
       </Card>
 

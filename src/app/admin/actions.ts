@@ -27,53 +27,17 @@ import {
 import { cancelBroadwayAdmission, removeBroadwaySection } from "@/lib/broadway";
 import { logAudit } from "@/lib/audit";
 import { config, CURRICULUM_OPTIONS } from "@/lib/config";
-import { zonedTimeToUtcISO, toZonedInputValue } from "@/lib/utils";
+import {
+  zonedTimeToUtcISO,
+  toZonedInputValue,
+  zonedYMD,
+  zonedWeekday,
+  addDays,
+  weekStartDateStr,
+  ASSESSMENT_WEEK_TIMEZONE,
+} from "@/lib/utils";
 import { needsAssessment } from "@/lib/assessment";
 import type { Application, Parent } from "@/lib/types";
-
-// ---------------------------------------------------------------------------
-// Weekly recurrence helpers — an admin picks a weekday (Monday, Tuesday…) and
-// a time rather than a single calendar date. "Weekday" is 0=Sunday..6=Saturday
-// (JS convention), evaluated in school time so DST-less IST-style zones and
-// zones with DST both resolve the same wall-clock weekday.
-// ---------------------------------------------------------------------------
-function zonedYMD(date: Date, timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  })
-    .formatToParts(date)
-    .reduce<Record<string, string>>((acc, p) => {
-      acc[p.type] = p.value;
-      return acc;
-    }, {});
-  return { y: Number(parts.year), m: Number(parts.month), d: Number(parts.day) };
-}
-
-function zonedWeekday(date: Date, timeZone: string) {
-  const name = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "long" }).format(date);
-  return ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].indexOf(name);
-}
-
-// Add `days` calendar days to a Y/M/D triple (pure calendar arithmetic).
-function addDays(ymd: { y: number; m: number; d: number }, days: number) {
-  const t = Date.UTC(ymd.y, ymd.m - 1, ymd.d) + days * 86_400_000;
-  const dt = new Date(t);
-  return { y: dt.getUTCFullYear(), m: dt.getUTCMonth() + 1, d: dt.getUTCDate() };
-}
-
-// The Monday ("YYYY-MM-DD", school time) of the ISO week containing `date` —
-// matches claim_assessment_slot's own date_trunc('week', …) bucketing, so a
-// batch of open slots lands in the same weekly-cap ledger row the RPC reads.
-function weekStartDateStr(date: Date, timeZone: string): string {
-  const weekday = zonedWeekday(date, timeZone); // 0=Sunday..6=Saturday
-  const deltaToMonday = weekday === 0 ? 6 : weekday - 1;
-  const { y, m, d } = addDays(zonedYMD(date, timeZone), -deltaToMonday);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${y}-${pad(m)}-${pad(d)}`;
-}
 
 // Local "YYYY-MM-DDTHH:mm" wall-clock strings (school time) for `weeks`
 // weekly occurrences of `weekday` at `time`, starting from the next one at
@@ -167,10 +131,13 @@ export async function createAssessmentSlot(formData: FormData) {
   // claim_assessment_slot reads this (not a live count) so the weekly cap
   // never shrinks later from bookings or expiry cleanup. Skipped for a
   // direct single-teacher assignment, which never competes in that pool.
+  // Bucketed by ASSESSMENT_WEEK_TIMEZONE (not schoolTz) so this always lands
+  // on the exact ledger row claim_assessment_slot itself reads, even if
+  // SCHOOL_TIMEZONE is ever overridden to a different zone.
   if (!teacher_id) {
     const deltaByWeek = new Map<string, number>();
     for (const { start } of occurrences) {
-      const key = weekStartDateStr(start, schoolTz);
+      const key = weekStartDateStr(start, ASSESSMENT_WEEK_TIMEZONE);
       deltaByWeek.set(key, (deltaByWeek.get(key) ?? 0) + quantity);
     }
     for (const [weekStart, delta] of deltaByWeek) {

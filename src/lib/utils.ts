@@ -58,6 +58,63 @@ export function formatDateTime(value: string | Date): string {
   });
 }
 
+// claim_assessment_slot (supabase/migrations/0083_assessment_slot_weekly_cap.sql,
+// superseded by 0084_assessment_slot_weekly_total_ledger.sql) hardcodes this
+// exact literal for its own week-boundary math rather than reading a config
+// value. Anything that needs to bucket by the SAME week the RPC enforces —
+// the ledger-increment in createAssessmentSlot, and the admin slot
+// calculator — must use this constant, not config.school.timezone, so they
+// can never silently diverge from real enforcement if SCHOOL_TIMEZONE is
+// ever overridden to a different zone.
+export const ASSESSMENT_WEEK_TIMEZONE = "Asia/Kolkata";
+
+// ---------------------------------------------------------------------------
+// Weekday/week-boundary helpers, evaluated in a given IANA timezone so a
+// DST-less IST-style zone and a DST-observing one both resolve the same
+// wall-clock weekday. Shared by the admin "Create slots" recurrence math and
+// the weekly-claim-cap ledger (see createAssessmentSlot / claim_assessment_slot)
+// — both need to agree on exactly which calendar week a given instant falls
+// in, so this is the single source of truth rather than two copies drifting.
+// ---------------------------------------------------------------------------
+export function zonedYMD(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+    .formatToParts(date)
+    .reduce<Record<string, string>>((acc, p) => {
+      acc[p.type] = p.value;
+      return acc;
+    }, {});
+  return { y: Number(parts.year), m: Number(parts.month), d: Number(parts.day) };
+}
+
+export function zonedWeekday(date: Date, timeZone: string) {
+  const name = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "long" }).format(date);
+  return ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].indexOf(name);
+}
+
+// Add `days` calendar days to a Y/M/D triple (pure calendar arithmetic).
+export function addDays(ymd: { y: number; m: number; d: number }, days: number) {
+  const t = Date.UTC(ymd.y, ymd.m - 1, ymd.d) + days * 86_400_000;
+  const dt = new Date(t);
+  return { y: dt.getUTCFullYear(), m: dt.getUTCMonth() + 1, d: dt.getUTCDate() };
+}
+
+// The Monday ("YYYY-MM-DD", in `timeZone`) of the ISO week containing `date`
+// — matches claim_assessment_slot's own date_trunc('week', …) bucketing
+// (Monday start), so a JS-computed week key always lands on the same ledger
+// row the RPC reads.
+export function weekStartDateStr(date: Date, timeZone: string): string {
+  const weekday = zonedWeekday(date, timeZone); // 0=Sunday..6=Saturday
+  const deltaToMonday = weekday === 0 ? 6 : weekday - 1;
+  const { y, m, d } = addDays(zonedYMD(date, timeZone), -deltaToMonday);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${y}-${pad(m)}-${pad(d)}`;
+}
+
 export function formatDate(value: string | Date): string {
   const d = typeof value === "string" ? new Date(value) : value;
   return d.toLocaleDateString("en-IN", { dateStyle: "medium", timeZone: config.school.timezone });
