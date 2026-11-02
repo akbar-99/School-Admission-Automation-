@@ -13,6 +13,7 @@ import {
   rescheduleSlotTime,
 } from "../actions";
 import { AssignAssessmentRow } from "@/components/admin/assign-assessment-row";
+import { SlotCreationLogTable } from "@/components/admin/slot-creation-log-table";
 import { ScheduledAssessmentsPanel, type ScheduledRow } from "@/components/admin/scheduled-assessments-panel";
 import { AdminUnavailableAlerts } from "@/components/admin/unavailable-alerts";
 import { LeadTemperatureBadge } from "@/components/lead-temperature-badge";
@@ -547,53 +548,20 @@ async function AssessmentsBody({ teacherFilter, month }: { teacherFilter?: strin
           {creationLogs.length === 0 ? (
             <p className="text-sm text-muted-foreground">No slots were created in this month.</p>
           ) : (
-            <Table>
-              <THead>
-                <TR>
-                  <TH>Created</TH>
-                  <TH>Created by</TH>
-                  <TH>Day &amp; time</TH>
-                  <TH>Quantity</TH>
-                  <TH>Assigned to</TH>
-                </TR>
-              </THead>
-              <TBody>
-                {creationLogs.map((l) => {
-                  const d = l.details;
-                  return (
-                    <TR key={l.id}>
-                      <TD className="whitespace-nowrap">{formatInZoneWithDay(l.created_at, schoolTz)} {schoolLabel}</TD>
-                      <TD>{l.actor_id ? (creationLogUserNameById.get(l.actor_id) ?? "—") : "—"}</TD>
-                      <TD>
-                        {d ? `${WEEKDAY_NAMES[d.weekday] ?? "—"}, ${d.time} ${schoolLabel}` : "—"}
-                      </TD>
-                      <TD>
-                        {d ? (
-                          <>
-                            {d.total} slot{d.total > 1 ? "s" : ""}
-                            {d.weeks > 1 && (
-                              <span className="text-xs text-muted-foreground">
-                                {" "}
-                                ({d.quantity}/week × {d.weeks} weeks)
-                              </span>
-                            )}
-                          </>
-                        ) : (
-                          "—"
-                        )}
-                      </TD>
-                      <TD>
-                        {d?.teacher_id ? (
-                          (creationLogUserNameById.get(d.teacher_id) ?? "—")
-                        ) : (
-                          <Badge tone="info">Open pool</Badge>
-                        )}
-                      </TD>
-                    </TR>
-                  );
-                })}
-              </TBody>
-            </Table>
+            <SlotCreationLogTable
+              rows={creationLogs.map((l) => {
+                const d = l.details;
+                return {
+                  id: l.id,
+                  createdLabel: `${formatInZoneWithDay(l.created_at, schoolTz)} ${schoolLabel}`,
+                  createdByName: l.actor_id ? (creationLogUserNameById.get(l.actor_id) ?? "—") : "—",
+                  dayTimeLabel: d ? `${WEEKDAY_NAMES[d.weekday] ?? "—"}, ${d.time} ${schoolLabel}` : "—",
+                  totalLabel: d ? `${d.total} slot${d.total > 1 ? "s" : ""}` : "—",
+                  weeksNote: d && d.weeks > 1 ? `(${d.quantity}/week × ${d.weeks} weeks)` : null,
+                  assignedToName: d?.teacher_id ? (creationLogUserNameById.get(d.teacher_id) ?? "—") : null,
+                };
+              })}
+            />
           )}
         </CardContent>
       </Card>
