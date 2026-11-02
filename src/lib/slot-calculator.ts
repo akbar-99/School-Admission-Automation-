@@ -23,7 +23,9 @@ export function parseMonth(month: string): { year: number; month: number } | nul
   if (!m) return null;
   const year = Number(m[1]);
   const mon = Number(m[2]);
-  if (mon < 1 || mon > 12) return null;
+  // Date.UTC maps years 0–99 to 1900–1999, so a typed "0099-11" would
+  // silently describe another century; only plausible planning years pass.
+  if (year < 2000 || year > 2099 || mon < 1 || mon > 12) return null;
   return { year, month: mon };
 }
 
@@ -123,7 +125,9 @@ export function nearestFairNumbers(
   target: number,
   teachers: number,
 ): { exact: boolean; below: FairOption | null; above: FairOption | null } {
-  if (!Number.isInteger(target) || !Number.isInteger(teachers) || target <= 0 || teachers <= 0) {
+  // Safe integers only — above 2^53 the modulo below is computed on an
+  // already-rounded number and can call an odd total "even".
+  if (!Number.isSafeInteger(target) || !Number.isSafeInteger(teachers) || target <= 0 || teachers <= 0) {
     return { exact: false, below: null, above: null };
   }
   if (target % teachers === 0) {

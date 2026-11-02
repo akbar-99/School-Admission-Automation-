@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { X } from "lucide-react";
+import { toZonedInputValue } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,45 @@ import {
 
 // Create slots caps "Slots per week" at 50 (AssessmentSlotSchema.quantity).
 const MAX_PER_POSTING = 50;
+
+// Calculator inputs survive the page remount that follows every Create
+// slots post (server redirect), for this browser tab only.
+const STORAGE_KEY = "admin.slotCalculator.v1";
+
+interface StoredInputs {
+  month: string;
+  teachers: string;
+  perTeacherPerDay: string;
+  workingWeekdays: number[];
+  holidays: string[];
+  target: string;
+  // The live teacher count and current month when saved — if either has
+  // moved on since, the saved value is stale and the live one is used.
+  baseTeachers: number;
+  baseMonth: string;
+}
+
+function readStoredInputs(): StoredInputs | null {
+  try {
+    const raw = window.sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw) as StoredInputs;
+    const strings = [s?.month, s?.teachers, s?.perTeacherPerDay, s?.target, s?.baseMonth];
+    if (
+      !strings.every((v) => typeof v === "string") ||
+      typeof s.baseTeachers !== "number" ||
+      !Array.isArray(s.workingWeekdays) ||
+      !s.workingWeekdays.every((d) => Number.isInteger(d) && d >= 0 && d <= 6) ||
+      !Array.isArray(s.holidays) ||
+      !s.holidays.every((h) => typeof h === "string" && /^\d{4}-\d{2}-\d{2}$/.test(h))
+    ) {
+      return null;
+    }
+    return s;
+  } catch {
+    return null;
+  }
+}
 
 function toPositiveInt(value: string): number {
   const n = Number(value);
@@ -45,7 +85,7 @@ function formatDay(ymd: string): string {
 }
 
 export function SlotCalculator({ defaultTeachers, currentMonth }: { defaultTeachers: number; currentMonth: string }) {
-  const { applyPlan } = useCreateSlots();
+  const { applyPlan, schoolTz } = useCreateSlots();
   const [month, setMonth] = useState(currentMonth);
   const [teachers, setTeachers] = useState(String(defaultTeachers));
   const [perTeacherPerDay, setPerTeacherPerDay] = useState("1");
@@ -53,6 +93,44 @@ export function SlotCalculator({ defaultTeachers, currentMonth }: { defaultTeach
   const [holidays, setHolidays] = useState<string[]>([]);
   const [holidayDraft, setHolidayDraft] = useState("");
   const [target, setTarget] = useState("");
+  const [restored, setRestored] = useState(false);
+
+  // Read after hydration so the first render matches the server's defaults.
+  useEffect(() => {
+    const saved = readStoredInputs();
+    if (saved) {
+      // A staff change or a new month since saving makes those two stale;
+      // everything else the admin typed is still theirs to keep.
+      if (saved.baseMonth === currentMonth) setMonth(saved.month);
+      if (saved.baseTeachers === defaultTeachers) setTeachers(saved.teachers);
+      setPerTeacherPerDay(saved.perTeacherPerDay);
+      setWorkingWeekdays(saved.workingWeekdays);
+      setHolidays(saved.holidays);
+      setTarget(saved.target);
+    }
+    setRestored(true);
+    // Restore once per mount: the two defaults are deliberately not
+    // dependencies, or a refreshed value would re-restore over live edits.
+  }, []);
+
+  useEffect(() => {
+    if (!restored) return;
+    try {
+      const stored: StoredInputs = {
+        month,
+        teachers,
+        perTeacherPerDay,
+        workingWeekdays,
+        holidays,
+        target,
+        baseTeachers: defaultTeachers,
+        baseMonth: currentMonth,
+      };
+      window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+    } catch {
+      // Storage blocked — the inputs just reset after the next post.
+    }
+  }, [restored, month, teachers, perTeacherPerDay, workingWeekdays, holidays, target, defaultTeachers, currentMonth]);
 
   const teacherCount = toPositiveInt(teachers);
   const each = toPositiveInt(perTeacherPerDay);
@@ -65,9 +143,18 @@ export function SlotCalculator({ defaultTeachers, currentMonth }: { defaultTeach
     workingDaysPerWeek: workingWeekdays.length,
     workingDaysInMonth: dates.length,
   });
-  const fair = nearestFairNumbers(Number(target), teacherCount);
+  const targetNum = Number(target);
+  const fair = nearestFairNumbers(targetNum, teacherCount);
   const monthLabel = formatMonthLabel(month);
   const daysLabel = describeWeekdays(workingWeekdays);
+
+  // Create slots only ever posts from the next upcoming date, so a holiday
+  // already behind us can't have a slot posted on it. Only reached once the
+  // admin has added a holiday (client-side), never during the server render.
+  function upcomingSkippedHolidays(): string[] {
+    const todayYmd = toZonedInputValue(new Date(), schoolTz).slice(0, 10);
+    return skippedHolidays.filter((h) => h >= todayYmd);
+  }
 
   function toggleWeekday(value: number) {
     setWorkingWeekdays((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]));
@@ -270,16 +357,16 @@ export function SlotCalculator({ defaultTeachers, currentMonth }: { defaultTeach
                 type="button"
                 size="sm"
                 disabled={fillBlockedReason !== null}
-                onClick={() => applyPlan({ quantity: teacherCount, month })}
+                onClick={() => applyPlan({ quantity: teacherCount, month, workingWeekdays })}
               >
                 Use these numbers
               </Button>
               {fillBlockedReason && <span className="text-xs text-muted-foreground">{fillBlockedReason}</span>}
             </div>
-            {skippedHolidays.length > 0 && fillBlockedReason === null && (
+            {skippedHolidays.length > 0 && fillBlockedReason === null && upcomingSkippedHolidays().length > 0 && (
               <p className="text-xs text-warning">
                 Create slots doesn&apos;t skip holidays yet — delete any slot on{" "}
-                {skippedHolidays.map(formatDay).join(", ")} from &quot;All slots&quot; after posting.
+                {upcomingSkippedHolidays().map(formatDay).join(", ")} from &quot;All slots&quot; after posting.
               </p>
             )}
           </div>
@@ -300,21 +387,23 @@ export function SlotCalculator({ defaultTeachers, currentMonth }: { defaultTeach
           />
           {teacherCount === 0 ? (
             <span className="text-sm text-muted-foreground">Enter the number of teachers first.</span>
-          ) : !fair.above ? (
+          ) : target.trim() === "" ? (
             <span className="text-sm text-muted-foreground">
               Type a total to see the nearest numbers that split evenly between {teacherCount} teachers.
             </span>
+          ) : !fair.above ? (
+            <span className="text-sm text-muted-foreground">Enter a whole number above 0.</span>
           ) : fair.exact ? (
             <span className="text-sm">
               <Badge tone="success">
-                {target} = {fair.above.each} each
+                {targetNum} = {fair.above.each} each
               </Badge>{" "}
               <span className="text-muted-foreground">splits evenly between {teacherCount} teachers.</span>
             </span>
           ) : (
             <span className="flex flex-wrap items-center gap-2 text-sm">
               <span className="text-muted-foreground">
-                {target} doesn&apos;t split evenly between {teacherCount} teachers. Nearest fair numbers:
+                {targetNum} doesn&apos;t split evenly between {teacherCount} teachers. Nearest fair numbers:
               </span>
               {fair.below && (
                 <Badge tone="info">

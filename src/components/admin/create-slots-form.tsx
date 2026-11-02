@@ -1,11 +1,16 @@
 "use client";
 
+import type { FormEvent } from "react";
 import { SubmitButton } from "@/components/submit-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { formatMonthLabel, WEEKDAYS_MON_FIRST } from "@/lib/slot-calculator";
 import { useCreateSlots } from "@/components/admin/create-slots-context";
+
+// Mirrors createAssessmentSlot's own "max 200 at once" check (actions.ts), so
+// the admin sees it before posting instead of after a round-trip.
+const MAX_SLOTS_PER_POST = 200;
 
 export function CreateSlotsForm({
   teachers,
@@ -16,11 +21,33 @@ export function CreateSlotsForm({
   schoolLabel: string;
   action: (formData: FormData) => void | Promise<void>;
 }) {
-  const { values, plan, setValue, clearPlan } = useCreateSlots();
+  const { values, plan, setValue, clearPlan, weeksLeftNow, refreshPlan } = useCreateSlots();
   const dayName = WEEKDAYS_MON_FIRST.find((d) => String(d.value) === values.weekday)?.long ?? "day";
+  const total = Number(values.quantity) * Number(values.weeks);
+  const noDatesLeft = plan !== null && plan.weeksLeft === 0;
+  const overLimit = Number.isFinite(total) && total > MAX_SLOTS_PER_POST;
+  const offWorkingDays = plan !== null && !plan.workingWeekdays.includes(Number(values.weekday));
+
+  // Re-count the weeks at the moment of posting: if the chosen time today
+  // has passed since the form was filled, the server would start a week
+  // later and spill the last posting into next month. Cancelling in
+  // onSubmit stops React from running the action at all, so the form isn't
+  // reset and the refreshed "No …s left" message explains why.
+  function guardSubmit(e: FormEvent<HTMLFormElement>) {
+    if (weeksLeftNow() === 0) {
+      e.preventDefault();
+      refreshPlan();
+    }
+  }
+
+  function submit(formData: FormData) {
+    const weeksLeft = weeksLeftNow();
+    if (weeksLeft !== null && weeksLeft > 0) formData.set("weeks", String(weeksLeft));
+    return action(formData);
+  }
 
   return (
-    <form action={action} className="space-y-1.5">
+    <form action={submit} onSubmit={guardSubmit} className="space-y-1.5">
       <div className="flex flex-wrap items-end gap-4">
         <div className="space-y-1.5">
           <Label htmlFor="weekday">Day</Label>
@@ -106,25 +133,36 @@ export function CreateSlotsForm({
             ))}
           </Select>
         </div>
-        <SubmitButton pendingText="Creating…">Create slot(s)</SubmitButton>
+        <SubmitButton pendingText="Creating…" disabled={noDatesLeft || overLimit}>
+          Create slot(s)
+        </SubmitButton>
       </div>
       <p className="text-xs text-muted-foreground">
         Assign teacher only works when slots per week and repeat weeks are both 1. Otherwise leave as
         &quot;Open&quot;.
       </p>
+      {overLimit && (
+        <p className="text-xs text-warning">
+          That&apos;s {total} slots in one post ({values.quantity} × {values.weeks} weeks) — Create slots allows
+          at most {MAX_SLOTS_PER_POST}. Lower the weeks and post the rest separately.
+        </p>
+      )}
       {plan && (
         <p className="text-xs">
-          {plan.weeksLeft > 0 ? (
-            <span className="text-muted-foreground">
-              From the calculator: {values.quantity} slots per time (one per teacher), repeated for the{" "}
-              {plan.weeksLeft} {dayName}
-              {plan.weeksLeft === 1 ? "" : "s"} left in {formatMonthLabel(plan.month)}. Repeat for each
-              time and working day.{" "}
-            </span>
-          ) : (
+          {noDatesLeft ? (
             <span className="text-warning">
               No {dayName}s left in {formatMonthLabel(plan.month)} — pick another day.{" "}
             </span>
+          ) : (
+            <span className="text-muted-foreground">
+              From the calculator: {values.quantity} slots per time (one per teacher), repeated for the{" "}
+              {plan.weeksLeft} {dayName}
+              {plan.weeksLeft === 1 ? "" : "s"} left in {formatMonthLabel(plan.month)}. Post again for each
+              time and working day — these numbers stay filled in.{" "}
+            </span>
+          )}
+          {offWorkingDays && (
+            <span className="text-warning">{dayName} isn&apos;t one of the calculator&apos;s working days. </span>
           )}
           <button type="button" onClick={clearPlan} className="font-medium text-primary hover:underline">
             Stop following

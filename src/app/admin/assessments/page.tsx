@@ -17,6 +17,7 @@ import { SlotCreationLogTable } from "@/components/admin/slot-creation-log-table
 import { CreateSlotsProvider } from "@/components/admin/create-slots-context";
 import { CreateSlotsForm } from "@/components/admin/create-slots-form";
 import { SlotCalculator } from "@/components/admin/slot-calculator";
+import { CollapsibleSection } from "@/components/admin/collapsible-section";
 import { ScheduledAssessmentsPanel, type ScheduledRow } from "@/components/admin/scheduled-assessments-panel";
 import { AdminUnavailableAlerts } from "@/components/admin/unavailable-alerts";
 import { LeadTemperatureBadge } from "@/components/lead-temperature-badge";
@@ -390,7 +391,7 @@ async function AssessmentsBody({ teacherFilter, month }: { teacherFilter?: strin
   }
 
   return (
-    <CreateSlotsProvider schoolTz={schoolTz}>
+    <CreateSlotsProvider schoolTz={schoolTz} activeTeachers={teachers.length}>
     <div className="space-y-6">
       <AdminUnavailableAlerts initialAlerts={unavailableInitialAlerts} />
 
@@ -488,12 +489,14 @@ async function AssessmentsBody({ teacherFilter, month }: { teacherFilter?: strin
         <CardHeader>
           <CardTitle>Slot calculator</CardTitle>
           <CardDescription>
-            Plan how many slots to create so every teacher gets the same number. Nothing is saved
-            here — &quot;Use these numbers&quot; only fills the Create slots form above.
+            Plan how many slots to create so every teacher gets the same number. Nothing is posted
+            from here — &quot;Use these numbers&quot; only fills the Create slots form above.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <SlotCalculator defaultTeachers={teachers.length} currentMonth={zonedYearMonth(new Date(), schoolTz)} />
+          <CollapsibleSection label="calculator" storageKey="admin.slotCalculator.open">
+            <SlotCalculator defaultTeachers={teachers.length} currentMonth={zonedYearMonth(new Date(), schoolTz)} />
+          </CollapsibleSection>
         </CardContent>
       </Card>
 

@@ -40,6 +40,13 @@ test("no working days checked gives 0", () => {
 test("invalid month gives no dates", () => {
   assert.equal(workingDatesInMonth("2026-13", DEFAULT_WORKING_WEEKDAYS, []).dates.length, 0);
   assert.equal(workingDatesInMonth("nonsense", DEFAULT_WORKING_WEEKDAYS, []).dates.length, 0);
+  // Years 0–99 would otherwise be read by Date.UTC as 1900–1999.
+  assert.equal(workingDatesInMonth("0099-11", DEFAULT_WORKING_WEEKDAYS, []).dates.length, 0);
+});
+
+test("February 2028 (leap year) has 29 days, 25 of them Mon–Sat", () => {
+  assert.equal(workingDatesInMonth("2028-02", [0, 1, 2, 3, 4, 5, 6], []).dates.length, 29);
+  assert.equal(workingDatesInMonth("2028-02", DEFAULT_WORKING_WEEKDAYS, []).dates.length, 25);
 });
 
 test("plan: 13 teachers, 1 slot each per day, Mon–Sat, November 2026", () => {
@@ -86,7 +93,7 @@ test("nearest fair numbers: fewer slots than teachers has no fair number below",
 });
 
 test("nearest fair numbers: empty, zero or invalid input gives nothing", () => {
-  for (const [target, teachers] of [[0, 8], [-4, 8], [10, 0], [2.5, 8]]) {
+  for (const [target, teachers] of [[0, 8], [-4, 8], [10, 0], [2.5, 8], [2 ** 53 + 1, 2], [Infinity, 8]]) {
     assert.deepEqual(nearestFairNumbers(target, teachers), { exact: false, below: null, above: null });
   }
 });
