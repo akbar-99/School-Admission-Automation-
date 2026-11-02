@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { config } from "@/lib/config";
-import { formatInZone, formatInZoneWithDay, toZonedInputValue } from "@/lib/utils";
+import { formatInZone, formatInZoneWithDay, toZonedInputValue, zonedTimeToUtcISO } from "@/lib/utils";
 import { needsAssessment } from "@/lib/assessment";
 import {
   cancelScheduledAssessment,
@@ -81,6 +81,34 @@ interface TeacherStats {
   pass: number;
   fail: number;
 }
+interface SlotCreationDetails {
+  teacher_id: string | null;
+  weekday: number;
+  time: string;
+  quantity: number;
+  weeks: number;
+  total: number;
+  slot_ids: string[];
+}
+interface SlotCreationLogRow {
+  id: number;
+  actor_id: string | null;
+  details: SlotCreationDetails | null;
+  created_at: string;
+}
+
+const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+// "YYYY-MM" for `date` in `timeZone` — matches the <input type="month"> format.
+function zonedYearMonth(date: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit" })
+    .formatToParts(date)
+    .reduce<Record<string, string>>((acc, p) => {
+      acc[p.type] = p.value;
+      return acc;
+    }, {});
+  return `${parts.year}-${parts.month}`;
+}
 
 // The heading needs no data; everything else on this page comes from a
 // single 6-way Promise.all plus in-memory aggregation, so it's wrapped in
@@ -88,9 +116,9 @@ interface TeacherStats {
 export default async function AdminAssessmentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ ok?: string; error?: string; teacher?: string }>;
+  searchParams: Promise<{ ok?: string; error?: string; teacher?: string; month?: string }>;
 }) {
-  const { ok, error, teacher: teacherFilter } = await searchParams;
+  const { ok, error, teacher: teacherFilter, month } = await searchParams;
 
   return (
     <div className="space-y-6">
@@ -105,7 +133,7 @@ export default async function AdminAssessmentsPage({
       {error && <Alert variant="error">{error}</Alert>}
 
       <Suspense fallback={<AssessmentsSkeleton />}>
-        <AssessmentsBody teacherFilter={teacherFilter} />
+        <AssessmentsBody teacherFilter={teacherFilter} month={month} />
       </Suspense>
     </div>
   );
@@ -126,10 +154,17 @@ function AssessmentsSkeleton() {
   );
 }
 
-async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
+async function AssessmentsBody({ teacherFilter, month }: { teacherFilter?: string; month?: string }) {
   const admin = createSupabaseAdminClient();
   const schoolTz = config.school.timezone;
   const schoolLabel = config.school.timezoneLabel;
+
+  // "Slots created" report range — defaults to the current school-time month.
+  const selectedMonth = month && /^\d{4}-\d{2}$/.test(month) ? month : zonedYearMonth(new Date(), schoolTz);
+  const [selYear, selMonthNum] = selectedMonth.split("-").map(Number);
+  const monthStart = new Date(zonedTimeToUtcISO(`${selectedMonth}-01T00:00`, schoolTz));
+  const nextMonth = selMonthNum === 12 ? `${selYear + 1}-01` : `${selYear}-${String(selMonthNum + 1).padStart(2, "0")}`;
+  const monthEnd = new Date(zonedTimeToUtcISO(`${nextMonth}-01T00:00`, schoolTz));
 
   let slotQuery = admin
     .from("assessment_slots")
@@ -150,6 +185,7 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
     { data: allSlotsData },
     { data: resultsData },
     { data: unavailableData },
+    { data: creationLogData },
   ] = await Promise.all([
     admin
       .from("users")
@@ -179,8 +215,39 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
       )
       .eq("unavailable_reported", true)
       .order("starts_at", { ascending: true }),
+    // Every "Create slots" submission this month, newest first — the audit
+    // trail createAssessmentSlot already writes, just surfaced here instead
+    // of only existing as a raw row in audit_logs.
+    admin
+      .from("audit_logs")
+      .select("id, actor_id, details, created_at")
+      .eq("action", "assessment.slot_created")
+      .gte("created_at", monthStart.toISOString())
+      .lt("created_at", monthEnd.toISOString())
+      .order("created_at", { ascending: false }),
   ]);
   const teachers = (teacherData ?? []) as TeacherRow[];
+  const creationLogs = (creationLogData ?? []) as unknown as SlotCreationLogRow[];
+  // Names for whoever created a batch, and whichever teacher it was directly
+  // assigned to — both can reference a disabled/non-teacher user (e.g. a COO
+  // account, or a teacher since removed), so this is a dedicated lookup
+  // rather than reusing the active-teachers-only `teachers` list above.
+  const creationLogUserIds = Array.from(
+    new Set(
+      creationLogs.flatMap((l) => [l.actor_id, l.details?.teacher_id ?? null]).filter((id): id is string => Boolean(id)),
+    ),
+  );
+  const creationLogUserNameById = new Map<string, string>();
+  if (creationLogUserIds.length > 0) {
+    const { data: creationLogUsers } = await admin
+      .from("users")
+      .select("id, full_name, email")
+      .in("id", creationLogUserIds);
+    for (const u of creationLogUsers ?? []) {
+      creationLogUserNameById.set(u.id, u.full_name ?? u.email ?? "—");
+    }
+  }
+  const creationLogTotalSlots = creationLogs.reduce((sum, l) => sum + (l.details?.total ?? 0), 0);
   const requests = ((requestData ?? []) as unknown as RequestRow[]).filter((r) =>
     needsAssessment(r.grade_applying ?? ""),
   );
@@ -446,6 +513,88 @@ async function AssessmentsBody({ teacherFilter }: { teacherFilter?: string }) {
               leave as &quot;Open&quot;.
             </p>
           </form>
+        </CardContent>
+      </Card>
+
+      <Card id="slot-log">
+        <CardHeader>
+          <CardTitle>Slots created this month ({creationLogTotalSlots})</CardTitle>
+          <CardDescription>
+            Every batch posted via &quot;Create slots&quot; above, who created it, and how many slots.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form
+            action="/admin/assessments#slot-log"
+            method="get"
+            className="mb-4 flex flex-wrap items-end gap-3"
+          >
+            <div className="space-y-1.5">
+              <Label htmlFor="month_filter">Month</Label>
+              <Input
+                id="month_filter"
+                name="month"
+                type="month"
+                defaultValue={selectedMonth}
+                className="w-40"
+              />
+            </div>
+            <Button type="submit" variant="outline">
+              Filter
+            </Button>
+          </form>
+
+          {creationLogs.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No slots were created in this month.</p>
+          ) : (
+            <Table>
+              <THead>
+                <TR>
+                  <TH>Created</TH>
+                  <TH>Created by</TH>
+                  <TH>Day &amp; time</TH>
+                  <TH>Quantity</TH>
+                  <TH>Assigned to</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {creationLogs.map((l) => {
+                  const d = l.details;
+                  return (
+                    <TR key={l.id}>
+                      <TD className="whitespace-nowrap">{formatInZoneWithDay(l.created_at, schoolTz)} {schoolLabel}</TD>
+                      <TD>{l.actor_id ? (creationLogUserNameById.get(l.actor_id) ?? "—") : "—"}</TD>
+                      <TD>
+                        {d ? `${WEEKDAY_NAMES[d.weekday] ?? "—"}, ${d.time} ${schoolLabel}` : "—"}
+                      </TD>
+                      <TD>
+                        {d ? (
+                          <>
+                            {d.total} slot{d.total > 1 ? "s" : ""}
+                            {d.weeks > 1 && (
+                              <span className="text-xs text-muted-foreground">
+                                {" "}
+                                ({d.quantity}/week × {d.weeks} weeks)
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          "—"
+                        )}
+                      </TD>
+                      <TD>
+                        {d?.teacher_id ? (
+                          (creationLogUserNameById.get(d.teacher_id) ?? "—")
+                        ) : (
+                          <Badge tone="info">Open pool</Badge>
+                        )}
+                      </TD>
+                    </TR>
+                  );
+                })}
+              </TBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
 
