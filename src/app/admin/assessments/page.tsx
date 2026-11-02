@@ -249,6 +249,36 @@ async function AssessmentsBody({ teacherFilter, month }: { teacherFilter?: strin
     }
   }
   const creationLogTotalSlots = creationLogs.reduce((sum, l) => sum + (l.details?.total ?? 0), 0);
+
+  // Current status of every individual slot this month's batches created —
+  // booked / claimed-but-not-yet-booked / still sitting open / assigned
+  // directly to one teacher / gone (its time passed, nobody ever claimed
+  // it, and the expiry cron removed it — see assessment-reminders cron).
+  const creationLogSlotIds = creationLogs.flatMap((l) => l.details?.slot_ids ?? []);
+  const { data: creationLogSlotStatusData } = creationLogSlotIds.length
+    ? await admin
+        .from("assessment_slots")
+        .select("id, teacher_id, claimed_by_teacher, application_id")
+        .in("id", creationLogSlotIds)
+    : { data: [] };
+  const creationLogSlotStatusById = new Map(
+    (creationLogSlotStatusData ?? []).map((s) => [
+      s.id as string,
+      s as { teacher_id: string | null; claimed_by_teacher: boolean; application_id: string | null },
+    ]),
+  );
+  const creationLogStats = creationLogSlotIds.reduce(
+    (acc, id) => {
+      const s = creationLogSlotStatusById.get(id);
+      if (!s) acc.expired += 1;
+      else if (s.application_id) acc.booked += 1;
+      else if (s.claimed_by_teacher) acc.claimedUnbooked += 1;
+      else if (s.teacher_id) acc.directlyAssigned += 1;
+      else acc.stillOpen += 1;
+      return acc;
+    },
+    { booked: 0, claimedUnbooked: 0, stillOpen: 0, directlyAssigned: 0, expired: 0 },
+  );
   const requests = ((requestData ?? []) as unknown as RequestRow[]).filter((r) =>
     needsAssessment(r.grade_applying ?? ""),
   );
@@ -544,6 +574,21 @@ async function AssessmentsBody({ teacherFilter, month }: { teacherFilter?: strin
               Filter
             </Button>
           </form>
+
+          {creationLogs.length > 0 && (
+            <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-muted-foreground">Of these {creationLogTotalSlots} slots:</span>
+              <Badge tone="success">{creationLogStats.booked} booked</Badge>
+              <Badge tone="info">{creationLogStats.claimedUnbooked} claimed, awaiting booking</Badge>
+              <Badge tone="warning">{creationLogStats.stillOpen} still open (unclaimed)</Badge>
+              {creationLogStats.directlyAssigned > 0 && (
+                <Badge tone="neutral">{creationLogStats.directlyAssigned} assigned directly</Badge>
+              )}
+              {creationLogStats.expired > 0 && (
+                <Badge tone="danger">{creationLogStats.expired} expired, never claimed</Badge>
+              )}
+            </div>
+          )}
 
           {creationLogs.length === 0 ? (
             <p className="text-sm text-muted-foreground">No slots were created in this month.</p>
