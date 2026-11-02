@@ -64,6 +64,17 @@ function addDays(ymd: { y: number; m: number; d: number }, days: number) {
   return { y: dt.getUTCFullYear(), m: dt.getUTCMonth() + 1, d: dt.getUTCDate() };
 }
 
+// The Monday ("YYYY-MM-DD", school time) of the ISO week containing `date` —
+// matches claim_assessment_slot's own date_trunc('week', …) bucketing, so a
+// batch of open slots lands in the same weekly-cap ledger row the RPC reads.
+function weekStartDateStr(date: Date, timeZone: string): string {
+  const weekday = zonedWeekday(date, timeZone); // 0=Sunday..6=Saturday
+  const deltaToMonday = weekday === 0 ? 6 : weekday - 1;
+  const { y, m, d } = addDays(zonedYMD(date, timeZone), -deltaToMonday);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${y}-${pad(m)}-${pad(d)}`;
+}
+
 // Local "YYYY-MM-DDTHH:mm" wall-clock strings (school time) for `weeks`
 // weekly occurrences of `weekday` at `time`, starting from the next one at
 // or after now.
@@ -150,6 +161,21 @@ export async function createAssessmentSlot(formData: FormData) {
   const { data, error } = await admin.from("assessment_slots").insert(rows).select("id");
   if (error || !data) {
     redirect("/admin/assessments?error=" + encodeURIComponent(error?.message ?? "Could not create slots."));
+  }
+
+  // Credit each posted open-pool slot to its week's fair-share ledger —
+  // claim_assessment_slot reads this (not a live count) so the weekly cap
+  // never shrinks later from bookings or expiry cleanup. Skipped for a
+  // direct single-teacher assignment, which never competes in that pool.
+  if (!teacher_id) {
+    const deltaByWeek = new Map<string, number>();
+    for (const { start } of occurrences) {
+      const key = weekStartDateStr(start, schoolTz);
+      deltaByWeek.set(key, (deltaByWeek.get(key) ?? 0) + quantity);
+    }
+    for (const [weekStart, delta] of deltaByWeek) {
+      await admin.rpc("increment_weekly_pool_total", { p_week_start: weekStart, p_delta: delta });
+    }
   }
 
   await logAudit({
