@@ -22,6 +22,7 @@ import {
   outcomeLabel,
   leadSourceLabel,
   type Application,
+  type ApplicationClassChange,
   type Parent,
   type Payment,
   type Student,
@@ -743,6 +744,64 @@ export async function notifyGradeNoLongerNeedsAssessment(appId: string) {
       body: `${context}Their class was corrected to ${app.grade_applying}, which no longer requires an assessment — they can continue with their remaining details.`,
     }),
   );
+}
+
+// A "Change class" that landed without a new assessment (the new class is
+// KG 1): the parent continues from wherever they were — the details form if
+// they hadn't filled it yet, otherwise the agreement for the new class.
+export async function notifyClassChangeApplied(appId: string, targetStatus: string, curriculum: string | null) {
+  if (targetStatus === "DETAILS_PENDING") {
+    await notifyGradeNoLongerNeedsAssessment(appId);
+    return;
+  }
+  const admin = createSupabaseAdminClient();
+  const { data: appRow } = await admin.from("applications").select("*").eq("id", appId).maybeSingle();
+  if (!appRow) return;
+  const app = appRow as Application;
+  const { data: parentRow } = await admin.from("parents").select("*").eq("id", app.parent_id).maybeSingle();
+  if (parentRow) await sendAgreement(app, parentRow as Parent, curriculum);
+}
+
+// The admin cancelled a class change before the new assessment — tell the
+// parent (who was asked to book one) that nothing more is needed and the
+// original class stands.
+export async function notifyClassChangeCancelled(appId: string, change: ApplicationClassChange) {
+  const admin = createSupabaseAdminClient();
+  const { data: appRow } = await admin.from("applications").select("*").eq("id", appId).maybeSingle();
+  if (!appRow) return;
+  const app = appRow as Application;
+  const { data: parentRow } = await admin.from("parents").select("*").eq("id", app.parent_id).maybeSingle();
+  const parent = parentRow as Parent | null;
+  const context = await applicationContext(app);
+  const contact = await leadCreatorContact(app);
+  const toLabel = change.to_curriculum ? `${change.to_grade} (${change.to_curriculum})` : change.to_grade;
+  const fromLabel = change.from_grade ?? "the original class";
+
+  const messages = [
+    ...(await notifyLeadCreator(app, {
+      applicationId: app.id,
+      event: "N-2",
+      subject: "Your lead's class change was cancelled",
+      body: `${context}The change to ${toLabel} was cancelled; they continue in ${fromLabel} as before.`,
+    })),
+  ];
+  if (parent) {
+    messages.push(
+      ...multiChannel(
+        {
+          applicationId: app.id,
+          event: "N-2",
+          subject: "Class change cancelled",
+          body:
+            `Hello ${parent.full_name},\n\nThe change of class to ${toLabel} has been cancelled, so no new assessment is needed. ` +
+            `Your child's admission for ${fromLabel} continues as before:\n${applyUrl(app.access_token)}\n\n` +
+            `Questions? Contact ${contact.name} at ${contact.phone}.`,
+        },
+        parent,
+      ),
+    );
+  }
+  await dispatch(messages);
 }
 
 // Unlike a brand-new or corrected-grade submission (where the parent is
@@ -1740,10 +1799,20 @@ export async function notifySlotTimeChanged(input: {
 // ---------------------------------------------------------------------------
 // N-5 Assessment result; N-10 on fail. Pass -> agreement (N-6).
 // ---------------------------------------------------------------------------
+interface FinishedClassChange {
+  status: "APPLIED" | "REVERTED";
+  target_status?: string;
+  restored_status?: string;
+  from_grade: string | null;
+  to_grade: string;
+  to_curriculum: string | null;
+}
+
 export async function handleAssessmentResult(
   appId: string,
   outcome: "PASS" | "FAIL",
   remarks: string | null,
+  actorId: string | null = null,
 ) {
   const admin = createSupabaseAdminClient();
   const { data: appRow } = await admin.from("applications").select("*").eq("id", appId).single();
@@ -1758,6 +1827,34 @@ export async function handleAssessmentResult(
     .eq("application_id", appId)
     .maybeSingle();
   const subjects = ((rRow?.subjects as SubjectResult[] | undefined) ?? []);
+
+  // A "Change class" in progress (0085): a PASS lands it (back to the
+  // details form or the agreement for the new class), a FAIL puts the
+  // original class, result and stage back — instead of the usual details /
+  // rejection steps below. Called after reading the subjects above, since a
+  // FAIL restores the old result row. If 0085 isn't applied yet the RPC
+  // doesn't exist, the call errors, and the normal flow runs unchanged.
+  let change: FinishedClassChange | null = null;
+  const { data: finished, error: finishError } = await admin.rpc("finish_class_change", {
+    p_application: appId,
+    p_passed: outcome === "PASS",
+    p_actor: actorId,
+  });
+  if (finishError) {
+    // PGRST202 = function not found (0085 not applied yet) — expected, not an error.
+    if (finishError.code !== "PGRST202") {
+      console.error("[class-change] finish_class_change failed; continuing with the normal result flow", finishError.message);
+    }
+  } else {
+    const f = finished as { status?: string } | null;
+    if (f?.status === "APPLIED" || f?.status === "REVERTED") change = finished as FinishedClassChange;
+  }
+  const changeLabel = change
+    ? change.to_curriculum
+      ? `${change.to_grade} (${change.to_curriculum})`
+      : change.to_grade
+    : null;
+
   const subjectLines = subjects
     .map(
       (s) =>
@@ -1820,10 +1917,17 @@ export async function handleAssessmentResult(
   // separate N-2b send right after this one) into the same message — the two
   // always fired back-to-back with no parent action in between, so sending
   // them separately was just a duplicate ping.
+  const detailsStep = `Next step: please complete your remaining admission details (documents, addresses and parent information) here:\n${portal}`;
   const nextStepLine =
-    outcome === "PASS"
-      ? `\nNext step: please complete your remaining admission details (documents, addresses and parent information) here:\n${portal}`
-      : `\nYou can also view the full results online here:\n${portal}`;
+    change?.status === "APPLIED"
+      ? change.target_status === "AGREEMENT_SENT"
+        ? `\nYour child's class is now ${changeLabel}. Your updated admission agreement follows in the next message — please review and sign it here:\n${portal}`
+        : `\nYour child's class is now ${changeLabel}. ${detailsStep}`
+      : change?.status === "REVERTED" && change.restored_status !== "REJECTED"
+        ? `\nYour child's admission for ${change.from_grade} continues exactly as before — no action is needed:\n${portal}`
+        : outcome === "PASS"
+          ? `\n${detailsStep}`
+          : `\nYou can also view the full results online here:\n${portal}`;
   const parentBody =
     `Hello ${parent.full_name},\n\n` +
     `Your child's assessment result is: ${outcomeLabel(outcome)}.\n` +
@@ -1836,6 +1940,11 @@ export async function handleAssessmentResult(
     `\n\nQuestions? Contact ${contact.name} at ${contact.phone}.`;
 
   const resultContext = staffContextLine(await studentLabel(app), parent.full_name);
+  const changeNote = change
+    ? change.status === "APPLIED"
+      ? ` Class change ${change.from_grade} → ${changeLabel} applied.`
+      : ` Class change to ${changeLabel} not applied — they stay in ${change.from_grade}.`
+    : "";
 
   // N-5 result to parent (with per-subject scores + attached files) + admin
   await dispatch([
@@ -1857,15 +1966,26 @@ export async function handleAssessmentResult(
       applicationId: app.id,
       event: "N-5",
       subject: "Assessment result recorded",
-      body: `${resultContext}Result for Grade ${app.grade_applying} applicant: ${outcomeLabel(outcome)}.`,
+      body: `${resultContext}Result for Grade ${app.grade_applying} applicant: ${outcomeLabel(outcome)}.${changeNote}`,
     }),
     ...(await notifyLeadCreator(app, {
       applicationId: app.id,
       event: "N-5",
       subject: "Your lead's assessment result is in",
-      body: `${resultContext}Result: ${outcomeLabel(outcome)}.`,
+      body: `${resultContext}Result: ${outcomeLabel(outcome)}.${changeNote}`,
     })),
   ]);
+
+  // The class change already set the right stage; only the agreement for
+  // the new class is left to send. No rejection notice on a failed change —
+  // the original admission simply continues (or stays as it was).
+  if (change) {
+    if (change.status === "APPLIED" && change.target_status === "AGREEMENT_SENT") {
+      const { data: fresh } = await admin.from("applications").select("*").eq("id", app.id).single();
+      await sendAgreement(fresh as Application, parent, change.to_curriculum);
+    }
+    return;
+  }
 
   if (outcome === "PASS") {
     await admin

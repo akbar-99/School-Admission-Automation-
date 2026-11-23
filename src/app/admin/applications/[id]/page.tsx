@@ -16,17 +16,30 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Alert } from "@/components/ui/alert";
 import {
+  cancelClassChange,
   deleteApplication,
   grantRetest,
   reassignLeadOwner,
   recordManualPayment,
   retryEnrollment,
   rotateAccessToken,
+  startClassChange,
   updateApplicationGrade,
 } from "../../actions";
 import { needsAssessment } from "@/lib/assessment";
 import { getClassOptions } from "@/lib/classes";
+import { classChangeAvailable, getOpenClassChange, listClassChanges } from "@/lib/class-change-server";
+import {
+  curriculumOfGrade,
+  describeClass,
+  nextClass,
+  otherCurriculumClass,
+  type ClassChoice,
+  type Curriculum,
+} from "@/lib/class-change";
 import { StudentEditForm } from "@/components/admin/student-edit-form";
+import { CancelClassChangeButton, ClassChangePanel } from "@/components/admin/class-change-panel";
+import { Badge } from "@/components/ui/badge";
 import { leadSourceLabel, outcomeLabel, type Application, type Student, type Parent, type Payment, type SubjectResult, type AssessmentOutcome } from "@/lib/types";
 
 const DOC_LABEL: Record<string, string> = {
@@ -122,6 +135,31 @@ export default async function ApplicationDetailPage({
   // sectioned, grade and section can drift apart (use Transfer instead).
   const classOptions = app.section_id ? [] : await getClassOptions();
 
+  // "Change class" (0085): before an assessment the plain class box is
+  // enough; once assessed (and before any payment or section — phase 1) the
+  // change re-assesses for the new class instead.
+  const [openChange, classChanges, changeFeatureLive] = await Promise.all([
+    getOpenClassChange(app.id),
+    listClassChanges(app.id),
+    classChangeAvailable(),
+  ]);
+  const assessed = Boolean(result);
+  const currentClass: ClassChoice = {
+    grade: app.grade_applying ?? "",
+    curriculum:
+      curriculumOfGrade(app.grade_applying ?? "") ??
+      ((student?.curriculum ?? app.preferred_curriculum) as Curriculum | null),
+  };
+  const showClassBox = !app.section_id && !assessed && !openChange;
+  const canChangeClass =
+    changeFeatureLive &&
+    !app.section_id &&
+    assessed &&
+    payments.length === 0 &&
+    !openChange &&
+    ["DETAILS_PENDING", "AGREEMENT_SENT", "REJECTED"].includes(app.status);
+  const changeLaterPhase = changeFeatureLive && assessed && !openChange && (payments.length > 0 || Boolean(app.section_id));
+
   // Every lead-attribution stat (Team dashboard, performance report) groups
   // by created_by — this list lets an admin reassign it directly, e.g. when
   // two staff share the same display name and a lead got logged under the
@@ -168,6 +206,24 @@ export default async function ApplicationDetailPage({
       {ok && (
         <Alert variant="success" className="print:hidden">
           {ok}
+        </Alert>
+      )}
+
+      {openChange && (
+        <Alert variant="info" className="print:hidden flex flex-wrap items-center justify-between gap-3">
+          <span>
+            <span className="font-medium">Class change in progress:</span>{" "}
+            {describeClass({
+              grade: openChange.from_grade ?? "—",
+              curriculum: (openChange.from_student_curriculum ?? openChange.from_preferred_curriculum) as Curriculum | null,
+            })}{" "}
+            → {describeClass({ grade: openChange.to_grade, curriculum: openChange.to_curriculum as Curriculum | null })}.
+            Waiting for the assessment for the new class — the parent was asked to book it, or schedule it under
+            Assessments. Passed: it applies by itself. Not passed: everything goes back.
+          </span>
+          {["FORM_SUBMITTED", "ASSESSMENT_SCHEDULED"].includes(app.status) && (
+            <CancelClassChangeButton applicationId={app.id} action={cancelClassChange} />
+          )}
         </Alert>
       )}
 
@@ -226,7 +282,7 @@ export default async function ApplicationDetailPage({
 
       <Section title="Application">
         <Field label="Category" value={app.category ?? "—"} />
-        {app.section_id ? (
+        {!showClassBox ? (
           <Field label="Class / grade" value={app.grade_applying ?? "—"} />
         ) : (
           <div className="print:hidden">
@@ -295,6 +351,88 @@ export default async function ApplicationDetailPage({
           }
         />
       </Section>
+
+      {(canChangeClass || changeLaterPhase) && (
+        <Card className="print:hidden">
+          <CardHeader>
+            <CardTitle>Change class</CardTitle>
+            <CardDescription>
+              For a parent who wants the other curriculum, or who applied for the class their child is in now
+              (admissions are for next year, so it should be one class up). Their details are kept.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {canChangeClass ? (
+              <ClassChangePanel
+                applicationId={app.id}
+                current={currentClass}
+                otherCurriculum={otherCurriculumClass(currentClass.grade, currentClass.curriculum, classOptions)}
+                oneClassUp={nextClass(currentClass.grade, currentClass.curriculum, classOptions)}
+                classes={classOptions}
+                needsAssessmentFor={Object.fromEntries(classOptions.map((g) => [g, needsAssessment(g)]))}
+                action={startClassChange}
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                {app.section_id ? "This applicant is already enrolled in a section" : "A payment has already been started"}{" "}
+                — changing class at this stage (fee difference, seat move, Broadway) is coming in phase 2.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {classChanges.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Class changes</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            {classChanges.map((c) => (
+              <div key={c.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border pb-2 last:border-0 last:pb-0">
+                <span className="text-muted-foreground">{formatDateTime(c.created_at)}</span>
+                <span>
+                  {describeClass({
+                    grade: c.from_grade ?? "—",
+                    curriculum: (c.from_student_curriculum ?? c.from_preferred_curriculum) as Curriculum | null,
+                  })}{" "}
+                  → <span className="font-medium">{describeClass({ grade: c.to_grade, curriculum: c.to_curriculum as Curriculum | null })}</span>
+                </span>
+                <Badge
+                  tone={
+                    c.status === "applied"
+                      ? "success"
+                      : c.status === "failed"
+                        ? "danger"
+                        : c.status === "cancelled"
+                          ? "neutral"
+                          : "info"
+                  }
+                >
+                  {c.status === "applied"
+                    ? "Applied"
+                    : c.status === "failed"
+                      ? "Not passed — original kept"
+                      : c.status === "cancelled"
+                        ? "Cancelled"
+                        : "Waiting for assessment"}
+                </Badge>
+                {c.old_result?.outcome && (
+                  <span className="text-xs text-muted-foreground">
+                    Earlier result: {outcomeLabel(c.old_result.outcome)}
+                  </span>
+                )}
+                {c.new_result?.outcome && (
+                  <span className="text-xs text-muted-foreground">
+                    New-class result: {outcomeLabel(c.new_result.outcome)}
+                  </span>
+                )}
+                {c.reason && <span className="text-xs text-muted-foreground">“{c.reason}”</span>}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <Section title="Student">
         <Field label="Student&apos;s name" value={student?.full_name ?? "—"} />

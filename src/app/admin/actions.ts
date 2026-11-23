@@ -20,6 +20,8 @@ import {
   notifySlotReassigned,
   notifySlotTimeChanged,
   notifyTeacherSlotAssigned,
+  notifyClassChangeApplied,
+  notifyClassChangeCancelled,
   relabelSectionInGoogleSheet,
   removeEnrollmentFromGoogleSheet,
   syncEnrollmentToGoogleSheet,
@@ -38,6 +40,15 @@ import {
   ASSESSMENT_WEEK_TIMEZONE,
 } from "@/lib/utils";
 import { needsAssessment } from "@/lib/assessment";
+import { getClassOptions } from "@/lib/classes";
+import { getOpenClassChange } from "@/lib/class-change-server";
+import {
+  classChangeKind,
+  curriculumOfGrade,
+  describeClass,
+  resolveCurriculum,
+  type Curriculum,
+} from "@/lib/class-change";
 import type { Application, Parent } from "@/lib/types";
 
 // Local "YYYY-MM-DDTHH:mm" wall-clock strings (school time) for `weeks`
@@ -691,6 +702,27 @@ export async function updateApplicationGrade(formData: FormData) {
   if (appRow!.grade_applying === grade_applying) {
     redirect(`/admin/applications/${application_id}?ok=` + encodeURIComponent("No change."));
   }
+  // Once assessed, a plain label swap would keep the old class's result and
+  // curriculum — "Change class" re-assesses for the new class instead.
+  const [{ count: resultCount }, openChange] = await Promise.all([
+    admin
+      .from("assessment_results")
+      .select("id", { count: "exact", head: true })
+      .eq("application_id", application_id),
+    getOpenClassChange(application_id),
+  ]);
+  if (openChange) {
+    redirect(
+      `/admin/applications/${application_id}?error=` +
+        encodeURIComponent("A class change is in progress — cancel it first if the class needs to be different."),
+    );
+  }
+  if ((resultCount ?? 0) > 0) {
+    redirect(
+      `/admin/applications/${application_id}?error=` +
+        encodeURIComponent("This applicant has already been assessed — use Change class, so they're assessed for the new class."),
+    );
+  }
 
   // The new grade can require an assessment the old one didn't (e.g. "KG 1"
   // -> "KG 2" — only KG 1 is exempt). The parent's own slot-booking UI and
@@ -772,6 +804,22 @@ export async function updateApplicationGrade(formData: FormData) {
     }
   }
 
+  // STD n is CBSE and STAGE n is Cambridge, so switching between them is
+  // also a curriculum switch — keep both curriculum fields in step (KG
+  // classes exist in both curricula and leave it unchanged).
+  const impliedCurriculum = curriculumOfGrade(grade_applying);
+  if (impliedCurriculum) {
+    await admin.from("applications").update({ preferred_curriculum: impliedCurriculum }).eq("id", application_id);
+    const { data: withStudent } = await admin
+      .from("applications")
+      .select("student_id")
+      .eq("id", application_id)
+      .maybeSingle();
+    if (withStudent?.student_id) {
+      await admin.from("students").update({ curriculum: impliedCurriculum }).eq("id", withStudent.student_id);
+    }
+  }
+
   await logAudit({
     actorId: profile.id,
     actorRole: profile.role,
@@ -781,6 +829,7 @@ export async function updateApplicationGrade(formData: FormData) {
     details: {
       from: appRow!.grade_applying,
       to: grade_applying,
+      curriculum: impliedCurriculum,
       status_reset_to_form_submitted: needsStatusReset,
       assessment_slot_released: needsAssessmentRelease,
     },
@@ -806,6 +855,163 @@ export async function updateApplicationGrade(formData: FormData) {
             : "Class updated.",
       ),
   );
+}
+
+// ---------------------------------------------------------------------------
+// "Change class" after an assessment — the other curriculum, or one class up
+// (start_class_change, 0085). The parent's details are kept; the old result
+// is kept as history; the applicant takes an assessment for the new class
+// (none for KG 1) and the change lands automatically when it's recorded
+// (finish_class_change, called from handleAssessmentResult). Phase 1: only
+// before any payment and before a section is assigned.
+// ---------------------------------------------------------------------------
+const StartClassChangeSchema = z.object({
+  application_id: z.string().uuid(),
+  to_grade: z.string().trim().min(1, "Pick the new class."),
+  kg_curriculum: z.enum(CURRICULUM_OPTIONS).optional().or(z.literal("")),
+  reason: z.string().trim().max(300).optional(),
+});
+
+const CLASS_CHANGE_REFUSALS: Record<string, string> = {
+  NOT_FOUND: "Application not found.",
+  ALREADY_SECTIONED:
+    "This applicant is already enrolled in a section — changing class after enrolment isn't available yet (phase 2).",
+  INVALID_STATUS:
+    "Change class is for applicants who have been assessed but haven't paid yet. Before the assessment, just use the Class / grade box.",
+  PAYMENT_STARTED:
+    "A payment has already been started for this applicant — changing class after payment isn't available yet (phase 2).",
+  CHANGE_OPEN: "A class change is already in progress for this applicant — finish or cancel it first.",
+  BAD_GRADE: "Pick the new class.",
+  NO_CHANGE: "That's the same class and curriculum the applicant already has.",
+};
+
+export async function startClassChange(formData: FormData) {
+  const { profile } = await requireRole(["admin", "coo"]);
+  const applicationId = String(formData.get("application_id") ?? "");
+  const back = (msg: string, type: "ok" | "error") =>
+    redirect(`/admin/applications/${applicationId}?${type}=` + encodeURIComponent(msg));
+
+  const parsed = StartClassChangeSchema.safeParse({
+    application_id: applicationId,
+    to_grade: formData.get("to_grade"),
+    kg_curriculum: formData.get("kg_curriculum") ?? "",
+    reason: formData.get("reason") ?? undefined,
+  });
+  if (!parsed.success) back(parsed.error.issues[0].message, "error");
+  const input = parsed.data!;
+
+  const admin = createSupabaseAdminClient();
+  const { data: appRow } = await admin
+    .from("applications")
+    .select("grade_applying, preferred_curriculum, student_id")
+    .eq("id", input.application_id)
+    .maybeSingle();
+  if (!appRow) back("Application not found.", "error");
+  const studentCurriculum = appRow!.student_id
+    ? ((await admin.from("students").select("curriculum").eq("id", appRow!.student_id).maybeSingle()).data
+        ?.curriculum as string | null | undefined) ?? null
+    : null;
+
+  const available = await getClassOptions();
+  const toGrade = available.find((g) => g.replace(/\s+/g, "").toLowerCase() === input.to_grade.replace(/\s+/g, "").toLowerCase());
+  if (!toGrade) back(`"${input.to_grade}" isn't one of the school's classes.`, "error");
+  const toCurriculum = resolveCurriculum(toGrade!, (input.kg_curriculum || null) as Curriculum | null);
+  if (!toCurriculum) back("Pick the curriculum (CBSE or Cambridge) for the KG class.", "error");
+
+  const fromGrade = appRow!.grade_applying ?? "";
+  const fromCurriculum =
+    curriculumOfGrade(fromGrade) ?? ((studentCurriculum ?? appRow!.preferred_curriculum) as Curriculum | null);
+  const kind = classChangeKind(
+    { grade: fromGrade, curriculum: fromCurriculum },
+    { grade: toGrade!, curriculum: toCurriculum },
+    available,
+  );
+  const toNeedsAssessment = needsAssessment(toGrade!);
+
+  const { data, error } = await admin.rpc("start_class_change", {
+    p_application: input.application_id,
+    p_to_grade: toGrade,
+    p_to_curriculum: toCurriculum,
+    p_kind: kind,
+    p_needs_assessment: toNeedsAssessment,
+    p_reason: input.reason ?? null,
+    p_actor: profile.id,
+  });
+  if (error) back(`Could not start the class change: ${error.message}`, "error");
+  const r = data as { status: string; change_id?: string; target_status?: string };
+  if (r.status !== "STARTED" && r.status !== "APPLIED") {
+    back(CLASS_CHANGE_REFUSALS[r.status] ?? `Could not start the class change (${r.status}).`, "error");
+  }
+
+  const toLabel = describeClass({ grade: toGrade!, curriculum: toCurriculum });
+  const fromLabel = describeClass({ grade: fromGrade, curriculum: fromCurriculum });
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: r.status === "APPLIED" ? "admin.class_change_applied" : "admin.class_change_started",
+    entity: "application",
+    entityId: input.application_id,
+    details: { change_id: r.change_id, kind, from: fromLabel, to: toLabel, reason: input.reason || null },
+  });
+
+  if (r.status === "STARTED") {
+    await notifyGradeNeedsAssessment(input.application_id, toLabel);
+  } else {
+    await notifyClassChangeApplied(input.application_id, r.target_status ?? "", toCurriculum);
+  }
+
+  revalidatePath(`/admin/applications/${input.application_id}`);
+  revalidatePath("/admin");
+  revalidatePath("/admin/assessments");
+  back(
+    r.status === "STARTED"
+      ? `Class change to ${toLabel} started. The parent has been asked to book the assessment for the new class; the change applies automatically when it's passed.`
+      : `Class changed to ${toLabel}. No assessment is needed for this class, so the applicant continues straight away.`,
+    "ok",
+  );
+}
+
+export async function cancelClassChange(formData: FormData) {
+  const { profile } = await requireRole(["admin", "coo"]);
+  const applicationId = String(formData.get("application_id") ?? "");
+  const back = (msg: string, type: "ok" | "error") =>
+    redirect(`/admin/applications/${applicationId}?${type}=` + encodeURIComponent(msg));
+  if (!z.string().uuid().safeParse(applicationId).success) back("Invalid application.", "error");
+
+  const open = await getOpenClassChange(applicationId);
+  const admin = createSupabaseAdminClient();
+  const { data, error } = await admin.rpc("cancel_class_change", {
+    p_application: applicationId,
+    p_actor: profile.id,
+  });
+  if (error) back(`Could not cancel the class change: ${error.message}`, "error");
+  const r = data as { status: string; change_id?: string };
+  if (r.status !== "CANCELLED") {
+    back(
+      r.status === "NO_OPEN_CHANGE"
+        ? "There's no class change in progress."
+        : r.status === "INVALID_STATUS"
+          ? "The new assessment has already been recorded, so the change can no longer be cancelled."
+          : `Could not cancel the class change (${r.status}).`,
+      "error",
+    );
+  }
+
+  await logAudit({
+    actorId: profile.id,
+    actorRole: profile.role,
+    action: "admin.class_change_cancelled",
+    entity: "application",
+    entityId: applicationId,
+    details: { change_id: r.change_id, to: open?.to_grade ?? null, back_to: open?.from_grade ?? null },
+  });
+  if (open) await notifyClassChangeCancelled(applicationId, open);
+
+  revalidatePath(`/admin/applications/${applicationId}`);
+  revalidatePath("/admin");
+  revalidatePath("/admin/assessments");
+  revalidatePath("/teacher");
+  back("Class change cancelled — the applicant is back exactly where they were.", "ok");
 }
 
 const UpdateStudentDetailsSchema = z.object({

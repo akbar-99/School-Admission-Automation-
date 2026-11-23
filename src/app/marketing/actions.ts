@@ -11,6 +11,7 @@ import { sendFacebookMessage } from "@/lib/facebook";
 import { cancelBroadwayAdmission } from "@/lib/broadway";
 import { logAudit } from "@/lib/audit";
 import { classCategory } from "@/lib/assessment";
+import { getOpenClassChange } from "@/lib/class-change-server";
 import { CURRICULUM_OPTIONS } from "@/lib/config";
 import { SCORE_QUESTIONS, scoreLead } from "@/lib/lead-scoring";
 import { LEAD_SOURCES, type Application, type Parent } from "@/lib/types";
@@ -363,7 +364,12 @@ export async function updateLeadDetails(formData: FormData) {
   // section, which needs the dedicated admin flow instead. Re-checked here
   // server-side regardless of what the form showed, since canEditClass on
   // the client is just a display hint, not an authorization boundary.
-  const canEditClass = !app!.section_id && (app!.status === "LEAD_CREATED" || app!.status === "FORM_SUBMITTED");
+  // ...and never while the school is changing the class (0085): the class
+  // must stay what the new assessment is for.
+  const canEditClass =
+    !app!.section_id &&
+    (app!.status === "LEAD_CREATED" || app!.status === "FORM_SUBMITTED") &&
+    !(await getOpenClassChange(app!.id));
   // No separate "Category" input — it's always derived from the class, same
   // as at lead creation (see classCategory below).
   await admin

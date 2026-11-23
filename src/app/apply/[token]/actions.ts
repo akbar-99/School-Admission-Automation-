@@ -6,6 +6,7 @@ import { z } from "zod";
 import { loadApplicationByToken } from "@/lib/parent";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { classCategory, needsAssessment } from "@/lib/assessment";
+import { getOpenClassChange } from "@/lib/class-change-server";
 import { ensureOrderForApplication, ensureStudyMaterialOnlyOrder, markPaymentCompleted } from "@/lib/payments";
 import {
   handleFormSubmitted,
@@ -329,7 +330,9 @@ export async function updateMinimalDetails(formData: FormData) {
   const app = bundle.application;
   if (app.status === "LEAD_CREATED") redirect(`/apply/${token}`);
 
-  const gradeEditable = app.status === "FORM_SUBMITTED";
+  // Not while the school is changing the class (0085) — the class is then
+  // set by the admin and must stay what the new assessment is for.
+  const gradeEditable = app.status === "FORM_SUBMITTED" && !(await getOpenClassChange(app.id));
   const parsed = UpdateMinimalDetailsSchema.safeParse({
     student_name: formData.get("student_name"),
     grade: gradeEditable ? formData.get("grade") || undefined : undefined,

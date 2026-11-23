@@ -201,6 +201,29 @@ export interface Section {
   updated_at: string;
 }
 
+// One "Change class" request (supabase/migrations/0085_class_change.sql) —
+// the other curriculum, or one class up, after an assessment.
+export interface ApplicationClassChange {
+  id: string;
+  application_id: string;
+  kind: "curriculum" | "next_class" | "other";
+  from_grade: string | null;
+  from_preferred_curriculum: string | null;
+  from_student_curriculum: string | null;
+  from_status: AppStatus;
+  to_grade: string;
+  to_curriculum: string | null;
+  needs_assessment: boolean;
+  status: "awaiting_assessment" | "applied" | "failed" | "cancelled";
+  old_result: { outcome?: string; remarks?: string | null } | null;
+  new_result: { outcome?: string; remarks?: string | null } | null;
+  reason: string | null;
+  requested_by: string | null;
+  finished_by: string | null;
+  created_at: string;
+  finished_at: string | null;
+}
+
 export interface AssessmentSlot {
   id: string;
   teacher_id: string | null;

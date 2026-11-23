@@ -259,7 +259,7 @@ export async function submitResult(formData: FormData) {
   });
 
   // Pass -> agreement (N-6); Fail -> rejected (N-10)
-  await handleAssessmentResult(input.application_id, input.outcome, input.remarks ?? null);
+  await handleAssessmentResult(input.application_id, input.outcome, input.remarks ?? null, profile.id);
   revalidatePath("/teacher");
   redirect("/teacher?recorded=1");
 }

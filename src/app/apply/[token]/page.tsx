@@ -8,6 +8,7 @@ import { config, CURRICULUM_OPTIONS } from "@/lib/config";
 import { getSettings, getStudyMaterialFeeForGrade } from "@/lib/settings";
 import { getClassOptions, isKgClass, filterClassOptionsByCurriculum } from "@/lib/classes";
 import { needsAssessment } from "@/lib/assessment";
+import { getOpenClassChange } from "@/lib/class-change-server";
 import {
   formatDateTime,
   formatINR,
@@ -110,6 +111,10 @@ async function Content({
   // and the Onboarding pack below (booksDepartmentPhones/booksProviderWebsite).
   const curriculum = student?.curriculum ?? app.preferred_curriculum;
   const isCbse = curriculum === "CBSE";
+  // The school is changing the class (0085) — the parent books an
+  // assessment for the new class and can't edit the class meanwhile.
+  const classChange =
+    status === "FORM_SUBMITTED" || status === "ASSESSMENT_SCHEDULED" ? await getOpenClassChange(app.id) : null;
 
   // These four reads are all independent of each other (none needs another's
   // result), so they run as one Promise.all round-trip instead of one after
@@ -191,7 +196,7 @@ async function Content({
           studentName={app.lead_student_name ?? ""}
           grade={app.grade_applying ?? ""}
           gradeOptions={filterClassOptionsByCurriculum(classOptions, app.preferred_curriculum)}
-          gradeEditable={status === "FORM_SUBMITTED"}
+          gradeEditable={status === "FORM_SUBMITTED" && !classChange}
           age={app.reported_age}
           email={parent.email ?? ""}
           whatsapp={parent.phone ?? ""}
@@ -307,6 +312,15 @@ async function Content({
             />
           </CardContent>
         </Card>
+      )}
+
+      {classChange && (
+        <InfoCard title="Assessment for the new class" tone="info">
+          Your child&apos;s class is being changed to {classChange.to_grade}
+          {classChange.to_curriculum ? ` (${classChange.to_curriculum})` : ""}. Please take the assessment for the
+          new class — everything you already filled in is kept. If the new class doesn&apos;t work out, the admission
+          for {classChange.from_grade} continues as before.
+        </InfoCard>
       )}
 
       {status === "FORM_SUBMITTED" && needsAssessment(app.grade_applying ?? "") && (
