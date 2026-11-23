@@ -15,7 +15,7 @@ import { SectionStudentsToggle, type SectionStudentRow } from "@/components/admi
 import type { AppStatus, Section } from "@/lib/types";
 
 const BROADWAY_HINT =
-  "Broadway class name: auto-filled from Grade, Section and Batch (KG also needs a Curriculum pick) — edit it directly to override.";
+  "To rename a batch, change Batch and Save — the Broadway class name, Broadway and the Google Sheet follow automatically. The pencil next to the Broadway class name is only for a custom name.";
 
 export default async function SectionsPage({
   searchParams,

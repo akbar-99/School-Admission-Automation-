@@ -1,9 +1,12 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { Pencil, RotateCcw } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
+import { buildBroadwayClassName, isAutomaticBroadwayName, isKgGrade } from "@/lib/section-names";
 
 // Grouped by grade band so the dropdown shows a heading over each school's
 // set of timings, rather than one flat list mixing all of them together.
@@ -30,28 +33,6 @@ const TIMING_GROUPS: { label: string; options: string[] }[] = [
 const ALL_TIMING_PRESETS = TIMING_GROUPS.flatMap((g) => g.options);
 
 const CUSTOM = "__custom__";
-
-// Same "KG" test as lib/classes.ts's isKgClass — duplicated rather than
-// imported since that file is server-only and this component runs client-side.
-function isKgGrade(grade: string): boolean {
-  return /kg/i.test(grade);
-}
-
-// Mirrors the exact format enroll_application builds for the admission
-// app's own "Grade-Section - Batch" label (supabase/migrations/0063, the
-// `v_grade || '-' || v_section_nm || coalesce(' - ' || v_section_batch, '')`
-// line) — the Broadway class name is meant to be the same string, just with
-// a curriculum prefix for KG (whose grade alone doesn't encode CBSE vs
-// Cambridge the way "STD …"/"STAGE …" already do for every other grade).
-function buildBroadwayClassName(grade: string, name: string, batch: string, kgCurriculum: string): string {
-  const g = grade.trim();
-  const n = name.trim();
-  const b = batch.trim();
-  if (!g || !n) return "";
-  const base = `${g}-${n}${b ? ` - ${b}` : ""}`;
-  if (isKgGrade(g)) return kgCurriculum ? `${kgCurriculum} ${base}` : "";
-  return base;
-}
 
 // A <select> of preset timings, grouped by grade band, plus an "Add a time"
 // option that reveals a free-text input — covers the fixed school schedules
@@ -140,12 +121,15 @@ export function SectionBroadwayFields({
   const [name, setName] = useState(initialName);
   const [batch, setBatch] = useState(initialBatch);
   const [kgCurriculum, setKgCurriculum] = useState(initialCurriculum);
-  // Once the admin edits the Broadway class name directly, stop overwriting
-  // it as Grade/Section/Batch change — it's a live-computed default, not a
-  // locked-in value. A saved value already on the row (editing an existing
-  // section) counts as a manual override from the start, so reopening the
-  // form never silently replaces an admin's existing entry.
-  const [broadwayTouched, setBroadwayTouched] = useState(Boolean(initialBroadwayInputName));
+  // The Broadway class name follows Grade/Section/Batch/Curriculum unless the
+  // admin chooses to type their own (the pencil). A saved name in the
+  // automatic shape — even one built from an older batch — keeps following,
+  // so renaming the batch renames it too; only a genuinely hand-typed name
+  // is kept as an override when the form reopens.
+  const [broadwayTouched, setBroadwayTouched] = useState(
+    Boolean(initialBroadwayInputName) &&
+      !isAutomaticBroadwayName(initialBroadwayInputName, initialGrade, initialName),
+  );
   const [broadwayValue, setBroadwayValue] = useState(initialBroadwayInputName);
 
   const kg = isKgGrade(grade);
@@ -211,17 +195,52 @@ export function SectionBroadwayFields({
       )}
       <div className={isEdit ? "space-y-1" : "space-y-1.5"}>
         <Label htmlFor={id("broadway_input_name")} className={labelClass}>Broadway class name</Label>
-        <Input
-          id={id("broadway_input_name")}
-          name="broadway_input_name"
-          placeholder="CBSE KG 1-A - ORCHID"
-          className={heightClass + (isEdit ? "w-44" : "w-56")}
-          value={displayValue}
-          onChange={(e) => {
-            setBroadwayTouched(true);
-            setBroadwayValue(e.target.value);
-          }}
-        />
+        <div className="flex items-center gap-1">
+          <Input
+            id={id("broadway_input_name")}
+            name="broadway_input_name"
+            placeholder="CBSE KG 1-A - ORCHID"
+            className={cn(
+              heightClass,
+              isEdit ? "w-44" : "w-56",
+              !broadwayTouched && "bg-muted/50 text-muted-foreground",
+            )}
+            value={displayValue}
+            readOnly={!broadwayTouched}
+            title={broadwayTouched ? undefined : "Follows Grade, Section and Batch automatically"}
+            onChange={(e) => setBroadwayValue(e.target.value)}
+          />
+          {broadwayTouched ? (
+            <button
+              type="button"
+              onClick={() => setBroadwayTouched(false)}
+              title={autoValue ? `Go back to the automatic name (${autoValue})` : "Go back to the automatic name"}
+              aria-label="Use the automatic Broadway class name"
+              className={cn(
+                "flex shrink-0 items-center justify-center rounded-md border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
+                isEdit ? "size-9" : "size-11",
+              )}
+            >
+              <RotateCcw className="size-4" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setBroadwayValue(autoValue);
+                setBroadwayTouched(true);
+              }}
+              title="Type your own Broadway class name instead"
+              aria-label="Edit the Broadway class name"
+              className={cn(
+                "flex shrink-0 items-center justify-center rounded-md border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
+                isEdit ? "size-9" : "size-11",
+              )}
+            >
+              <Pencil className="size-4" />
+            </button>
+          )}
+        </div>
       </div>
       <ClassTimingPicker
         id={id("class_timing")}
