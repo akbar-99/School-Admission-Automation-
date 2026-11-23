@@ -2403,6 +2403,22 @@ export async function changeBroadwaySectionAfterTransfer(
 // ---------------------------------------------------------------------------
 export type SyncSectionToBroadwayStatus = "synced" | "failed" | "skipped";
 
+// Each student placed in a Broadway class keeps its own copy of that class's
+// name (shown on Admin → Broadway). When the section is renamed — e.g. its
+// batch TULIP becomes ROSE — Broadway renames the class but those copies
+// would keep saying TULIP, so refresh them. Only students actually placed in
+// this Broadway class are touched; never throws.
+async function refreshStudentsBroadwayClassName(sectionId: string, classId: string | null, name: string | null) {
+  if (!classId || !name) return;
+  const { error } = await createSupabaseAdminClient()
+    .from("applications")
+    .update({ broadway_class_name: name })
+    .eq("section_id", sectionId)
+    .eq("broadway_class_id", classId)
+    .neq("broadway_class_name", name);
+  if (error) console.error("[broadway] refreshing students' class name failed", error);
+}
+
 export async function syncSectionToBroadway(section: {
   id: string;
   grade: string;
@@ -2436,6 +2452,7 @@ export async function syncSectionToBroadway(section: {
         broadway_error: null,
       })
       .eq("id", section.id);
+    await refreshStudentsBroadwayClassName(section.id, result.classId, result.name);
     await logAudit({
       action: "broadway.section_synced",
       entity: "section",
@@ -2519,6 +2536,7 @@ export async function pushAllSectionsToBroadway(): Promise<{ sent: number; synce
           broadway_error: null,
         })
         .eq("id", r.id);
+      await refreshStudentsBroadwayClassName(r.id, r.classId, r.name);
     } else {
       failed += 1;
       await admin.from("sections").update({ broadway_sync_status: "failed", broadway_error: r.error }).eq("id", r.id);
