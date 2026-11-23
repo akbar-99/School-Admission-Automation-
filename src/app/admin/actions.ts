@@ -20,6 +20,7 @@ import {
   notifySlotReassigned,
   notifySlotTimeChanged,
   notifyTeacherSlotAssigned,
+  relabelSectionInGoogleSheet,
   removeEnrollmentFromGoogleSheet,
   syncEnrollmentToGoogleSheet,
   syncSectionToBroadway,
@@ -1538,6 +1539,16 @@ export async function adjustCapacity(formData: FormData) {
   sectionsBack("Capacity updated.");
 }
 
+// Postgres unique_violation — here, sections_grade_name_batch_key (one row
+// per grade + section + batch; supabase/migrations/0026, 0027).
+const UNIQUE_VIOLATION = "23505";
+
+function duplicateSectionMessage(grade: string, name: string, batch: string | null): string {
+  return batch
+    ? `${grade} section ${name} already has a batch called ${batch}. Pick a different batch name.`
+    : `${grade} section ${name} already exists.`;
+}
+
 // Edit an existing section's grade, name, capacity and Broadway class name.
 const UpdateSectionSchema = z.object({
   section_id: z.string().uuid(),
@@ -1568,7 +1579,7 @@ export async function updateSection(formData: FormData) {
   const admin = createSupabaseAdminClient();
   const { data: section } = await admin
     .from("sections")
-    .select("filled")
+    .select("filled, grade, name, batch, class_timing")
     .eq("id", section_id)
     .single();
   if (!section) sectionsBack("Section not found", "error");
@@ -1578,6 +1589,7 @@ export async function updateSection(formData: FormData) {
 
   const gradeUpper = grade.toUpperCase();
   const nameUpper = name.toUpperCase();
+  const batchUpper = batch ? batch.toUpperCase() : null;
   // The <select required> on the client is just a hint — enforce it here too,
   // since a KG section with no curriculum set is exactly the gap that let
   // CBSE and Cambridge students end up mixed in the same batch.
@@ -1593,14 +1605,19 @@ export async function updateSection(formData: FormData) {
     .update({
       grade: gradeUpper,
       name: nameUpper,
-      batch: batch || null,
+      batch: batchUpper,
       broadway_input_name: broadway_input_name || null,
       class_timing: class_timing || null,
       curriculum: curriculum || null,
       capacity,
     })
     .eq("id", section_id);
-  if (error) sectionsBack(error.message, "error");
+  if (error) {
+    sectionsBack(
+      error.code === UNIQUE_VIOLATION ? duplicateSectionMessage(gradeUpper, nameUpper, batchUpper) : error.message,
+      "error",
+    );
+  }
 
   await logAudit({
     actorId: profile.id,
@@ -1611,7 +1628,8 @@ export async function updateSection(formData: FormData) {
     details: {
       grade,
       name,
-      batch: batch || null,
+      batch: batchUpper,
+      previous_batch: section!.batch,
       broadway_input_name: broadway_input_name || null,
       class_timing: class_timing || null,
       curriculum: curriculum || null,
@@ -1622,13 +1640,23 @@ export async function updateSection(formData: FormData) {
     id: section_id,
     grade: gradeUpper,
     name: nameUpper,
-    batch: batch || null,
+    batch: batchUpper,
     capacity,
     broadwayInputName: broadway_input_name || null,
     classTiming: class_timing || null,
   });
+  // Students are linked to the section by id, so they follow a rename by
+  // themselves; the Google Sheet is the one copy keyed by the class *name*.
+  const sheetProblem = await relabelSectionInGoogleSheet(
+    section_id,
+    { grade: section!.grade, name: section!.name, batch: section!.batch, class_timing: section!.class_timing },
+    { grade: gradeUpper, name: nameUpper, batch: batchUpper, class_timing: class_timing || null },
+  );
   revalidatePath("/admin/sections");
   revalidatePath("/admin/broadway");
+  if (sheetProblem) {
+    sectionsBack(`Section updated, but the Google Sheet tab wasn't updated: ${sheetProblem}`, "error");
+  }
   sectionsBack("Section updated.");
 }
 
@@ -1790,6 +1818,7 @@ export async function createSection(formData: FormData) {
 
   const gradeUpper = grade.toUpperCase();
   const nameUpper = name.toUpperCase();
+  const batchUpper = batch ? batch.toUpperCase() : null;
   if (/kg/i.test(gradeUpper) && !curriculum) {
     sectionsBack("Pick a curriculum for this KG section.", "error");
   }
@@ -1800,7 +1829,7 @@ export async function createSection(formData: FormData) {
     .insert({
       grade: gradeUpper,
       name: nameUpper,
-      batch: batch || null,
+      batch: batchUpper,
       broadway_input_name: broadway_input_name || null,
       class_timing: class_timing || null,
       curriculum: curriculum || null,
@@ -1808,7 +1837,12 @@ export async function createSection(formData: FormData) {
     })
     .select("id")
     .single();
-  if (error) sectionsBack(error.message, "error");
+  if (error) {
+    sectionsBack(
+      error.code === UNIQUE_VIOLATION ? duplicateSectionMessage(gradeUpper, nameUpper, batchUpper) : error.message,
+      "error",
+    );
+  }
 
   await logAudit({
     actorId: profile.id,
@@ -1819,7 +1853,7 @@ export async function createSection(formData: FormData) {
     details: {
       grade,
       name,
-      batch: batch || null,
+      batch: batchUpper,
       broadway_input_name: broadway_input_name || null,
       class_timing: class_timing || null,
       curriculum: curriculum || null,
@@ -1830,7 +1864,7 @@ export async function createSection(formData: FormData) {
     id: created!.id,
     grade: gradeUpper,
     name: nameUpper,
-    batch: batch || null,
+    batch: batchUpper,
     capacity,
     broadwayInputName: broadway_input_name || null,
     classTiming: class_timing || null,

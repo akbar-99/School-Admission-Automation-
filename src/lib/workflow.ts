@@ -15,7 +15,7 @@ import {
   pushBroadwaySections,
   isNextYearAdmission,
 } from "@/lib/broadway";
-import { appendEnrollmentRow, removeEnrollmentRow, sanitizeTabName } from "@/lib/google-sheets";
+import { appendEnrollmentRow, relabelSectionTab, removeEnrollmentRow, sanitizeTabName } from "@/lib/google-sheets";
 import { needsAssessment } from "@/lib/assessment";
 import { fetchSchoolLogo } from "@/lib/school-logo";
 import {
@@ -2208,6 +2208,74 @@ export async function removeEnrollmentFromGoogleSheet(
   } catch (err) {
     console.error("[google-sheets] removeEnrollmentFromGoogleSheet threw unexpectedly", err);
   }
+}
+
+interface SectionLabelState {
+  grade: string;
+  name: string;
+  batch: string | null;
+  class_timing: string | null;
+}
+
+// After an admin edits a section's grade, section, batch or class timing:
+// move its Google Sheet tab to the new name and refresh those columns on
+// every student row, so the sheet keeps one tab per class. Returns a short
+// problem description for the admin when it couldn't (or null when fine /
+// nothing to do). Never throws.
+export async function relabelSectionInGoogleSheet(
+  sectionId: string,
+  before: SectionLabelState,
+  after: SectionLabelState,
+): Promise<string | null> {
+  if (!config.googleSheets.enabled) return null;
+  const unchanged =
+    before.grade === after.grade &&
+    before.name === after.name &&
+    (before.batch ?? null) === (after.batch ?? null) &&
+    (before.class_timing ?? null) === (after.class_timing ?? null);
+  if (unchanged) return null;
+
+  const oldTab = sheetTabName(before.grade, before.name, before.batch);
+  const newTab = sheetTabName(after.grade, after.name, after.batch);
+  // Everyone ever enrolled into this section, withdrawn included — a
+  // withdrawal keeps section_id, and their row stays on the tab.
+  const admin = createSupabaseAdminClient();
+  const { data: apps, error } = await admin
+    .from("applications")
+    .select("admission_number")
+    .eq("section_id", sectionId)
+    .not("admission_number", "is", null);
+  if (error) {
+    console.error("[google-sheets] section relabel: student lookup failed", error);
+    return `couldn't look up the section's students (${error.message})`;
+  }
+  const admissionNumbers = new Set((apps ?? []).map((a) => String(a.admission_number).trim()));
+
+  const result = await relabelSectionTab(
+    oldTab,
+    newTab,
+    { grade: after.grade, sectionName: after.name, batch: after.batch, classTiming: after.class_timing },
+    admissionNumbers,
+  );
+  if (!result.ok) {
+    console.error("[google-sheets] section relabel failed", result.error);
+    await logAudit({
+      action: "google_sheets.relabel_failed",
+      entity: "section",
+      entityId: sectionId,
+      details: { error: result.error, old_tab: oldTab, new_tab: newTab },
+    });
+    return result.error;
+  }
+  if (result.renamed || result.rowsUpdated > 0) {
+    await logAudit({
+      action: "google_sheets.section_relabelled",
+      entity: "section",
+      entityId: sectionId,
+      details: { old_tab: oldTab, new_tab: newTab, renamed: result.renamed, rows_updated: result.rowsUpdated },
+    });
+  }
+  return null;
 }
 
 // Admin "Retry" for any stuck broadway_status (no_mapping or send_failed) —

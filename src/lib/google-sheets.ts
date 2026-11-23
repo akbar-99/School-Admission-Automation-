@@ -311,6 +311,146 @@ export async function appendEnrollmentRow(row: EnrollmentSheetRow, tabName: stri
   }
 }
 
+export interface SectionSheetLabels {
+  grade: string;
+  sectionName: string;
+  batch: string | null;
+  classTiming: string | null;
+}
+
+export type RelabelResult =
+  | { ok: true; renamed: boolean; rowsUpdated: number }
+  | { ok: false; error: string };
+
+// A section was edited (grade, section, batch or class timing): rename its
+// tab from oldTab to newTab and rewrite the Grade/Section/Batch/Class Timing
+// cells of every student row on it, so existing students stay on the same
+// tab as new ones and later transfers/deletions (which look the tab up from
+// the section's *current* name) still find their rows. Columns are located
+// by their header text, not position, so an older tab with a different
+// layout is never overwritten in the wrong column. A missing old tab means
+// no student was ever synced — nothing to do. If the tab holds any student
+// who isn't in this section (an older shared tab, e.g. "KG 1-A" from before
+// batches existed), nothing is changed: relabelling it would mis-label
+// someone else's students. Never throws.
+export async function relabelSectionTab(
+  oldTab: string,
+  newTab: string,
+  labels: SectionSheetLabels,
+  sectionAdmissionNumbers: ReadonlySet<string>,
+): Promise<RelabelResult> {
+  if (!config.googleSheets.enabled) return { ok: true, renamed: false, rowsUpdated: 0 };
+  try {
+    const token = await getAccessToken();
+    if (!token) return { ok: false, error: "Could not authenticate with Google" };
+    const auth = { Authorization: `Bearer ${token}` };
+
+    const metaRes = await fetch(`${SHEETS_API}/${config.googleSheets.spreadsheetId}?fields=sheets.properties`, {
+      headers: auth,
+    });
+    if (!metaRes.ok) {
+      return { ok: false, error: `metadata fetch failed (${metaRes.status}): ${await metaRes.text()}` };
+    }
+    const meta = (await metaRes.json()) as { sheets?: { properties: { title: string; sheetId: number } }[] };
+    const sheets = meta.sheets ?? [];
+    const oldSheet = sheets.find((s) => s.properties.title === oldTab);
+    if (!oldSheet) return { ok: true, renamed: false, rowsUpdated: 0 };
+
+    const oldColRes = await fetch(
+      `${SHEETS_API}/${config.googleSheets.spreadsheetId}/values/${encodeURIComponent(a1Range(oldTab, "A:A"))}`,
+      { headers: auth },
+    );
+    if (!oldColRes.ok) {
+      return { ok: false, error: `row read failed (${oldColRes.status}): ${await oldColRes.text()}` };
+    }
+    const oldColumn = ((await oldColRes.json()) as { values?: string[][] }).values ?? [];
+    const foreign = oldColumn
+      .slice(1) // header
+      .map((row) => (row[0] ?? "").trim())
+      .filter((admissionNo) => admissionNo !== "" && !sectionAdmissionNumbers.has(admissionNo));
+    if (foreign.length > 0) {
+      return {
+        ok: false,
+        error: `the tab "${oldTab}" also has ${foreign.length} student(s) from other classes (${foreign.slice(0, 5).join(", ")}${foreign.length > 5 ? ", …" : ""}), so it was left as it is — move those rows by hand`,
+      };
+    }
+
+    let renamed = false;
+    if (oldTab !== newTab) {
+      if (sheets.some((s) => s.properties.title === newTab)) {
+        return {
+          ok: false,
+          error: `a tab named "${newTab}" already exists, so "${oldTab}" was not renamed — merge or delete one of them in the sheet`,
+        };
+      }
+      const renameRes = await fetch(`${SHEETS_API}/${config.googleSheets.spreadsheetId}:batchUpdate`, {
+        method: "POST",
+        headers: { ...auth, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requests: [
+            {
+              updateSheetProperties: {
+                properties: { sheetId: oldSheet.properties.sheetId, title: newTab },
+                fields: "title",
+              },
+            },
+          ],
+        }),
+      });
+      if (!renameRes.ok) {
+        return { ok: false, error: `tab rename failed (${renameRes.status}): ${await renameRes.text()}` };
+      }
+      renamed = true;
+    }
+
+    const [headerRes, colRes] = await Promise.all([
+      fetch(`${SHEETS_API}/${config.googleSheets.spreadsheetId}/values/${encodeURIComponent(a1Range(newTab, "1:1"))}`, {
+        headers: auth,
+      }),
+      fetch(`${SHEETS_API}/${config.googleSheets.spreadsheetId}/values/${encodeURIComponent(a1Range(newTab, "A:A"))}`, {
+        headers: auth,
+      }),
+    ]);
+    if (!headerRes.ok || !colRes.ok) {
+      const bad = headerRes.ok ? colRes : headerRes;
+      return { ok: false, error: `row read failed (${bad.status}): ${await bad.text()}` };
+    }
+    const header = ((await headerRes.json()) as { values?: string[][] }).values?.[0] ?? [];
+    const lastRow = ((await colRes.json()) as { values?: string[][] }).values?.length ?? 0;
+    const dataRows = lastRow - 1; // row 1 is the header
+    if (dataRows <= 0) return { ok: true, renamed, rowsUpdated: 0 };
+
+    const columns: [string, string][] = [
+      ["Grade", labels.grade],
+      ["Section", labels.sectionName],
+      ["Batch", labels.batch ?? ""],
+      ["Class Timing", labels.classTiming ?? ""],
+    ];
+    const data = columns
+      .map(([title, value]) => ({ index: header.indexOf(title), value }))
+      .filter((c) => c.index >= 0)
+      .map(({ index, value }) => ({
+        range: a1Range(newTab, `${columnLetter(index)}2:${columnLetter(index)}${lastRow}`),
+        values: Array.from({ length: dataRows }, () => [value]),
+      }));
+    if (data.length === 0) return { ok: true, renamed, rowsUpdated: 0 };
+
+    // RAW, like every other free-text write here — a batch or timing typed
+    // by an admin must never be evaluated as a formula.
+    const writeRes = await fetch(`${SHEETS_API}/${config.googleSheets.spreadsheetId}/values:batchUpdate`, {
+      method: "POST",
+      headers: { ...auth, "Content-Type": "application/json" },
+      body: JSON.stringify({ valueInputOption: "RAW", data }),
+    });
+    if (!writeRes.ok) {
+      return { ok: false, error: `row update failed (${writeRes.status}): ${await writeRes.text()}` };
+    }
+    return { ok: true, renamed, rowsUpdated: dataRows };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 // Finds the row on tabName whose Admission No. (column A) matches, and
 // deletes it — used when an applicant is deleted, or transferred to a
 // different class (delete from the old tab, then appendEnrollmentRow puts a
