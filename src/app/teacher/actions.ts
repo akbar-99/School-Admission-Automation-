@@ -7,6 +7,7 @@ import { requireRole } from "@/lib/auth";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { handleAssessmentResult, notifySlotClaimed, notifyTeacherUnavailable } from "@/lib/workflow";
 import { logAudit } from "@/lib/audit";
+import { scoreEntriesFromForm, subjectsMissingScores } from "@/lib/result-scores";
 
 // Slot creation is admin-only — see src/app/admin/actions.ts (createAssessmentSlot).
 // Teachers conduct assessments, record results for their assigned slots, and
@@ -226,6 +227,22 @@ export async function submitResult(formData: FormData) {
     if (!slot || slot.teacher_id !== profile.id) {
       redirect("/teacher?error=" + encodeURIComponent("You can only record results for your own assessment slots."));
     }
+  }
+
+  // Every subject needs a score before a result can be recorded — checked
+  // before parseSubjects uploads any attachment, so a refused submit leaves
+  // no stray files behind. The Record result button enforces the same rule.
+  const missingScores = subjectsMissingScores(
+    scoreEntriesFromForm((name) => {
+      const v = formData.get(name);
+      return typeof v === "string" ? v : null;
+    }),
+  );
+  if (missingScores.length > 0) {
+    redirect(
+      "/teacher?error=" +
+        encodeURIComponent(`Enter a score for ${missingScores.join(", ")} (0 up to the maximum) to record the result.`),
+    );
   }
 
   const subjects = await parseSubjects(admin, input.application_id, formData);

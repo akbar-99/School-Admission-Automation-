@@ -7,6 +7,7 @@ import { formatDate, formatInZone, isZoomLinkActive } from "@/lib/utils";
 import { submitResult, claimAssessmentSlot, reportUnavailable } from "./actions";
 import { SubmitButton } from "@/components/submit-button";
 import { OpenSlotsPool, type PoolSeries } from "@/components/teacher/open-slots-pool";
+import { RecordResultButton } from "@/components/teacher/record-result-button";
 import { TeacherLiveAlerts } from "@/components/teacher/live-alerts";
 import { ZoomLinkGate } from "@/components/zoom-link-gate";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -381,9 +382,7 @@ async function TeacherBody() {
                     <Textarea name="remarks" placeholder="Optional remarks…" className="min-h-10" />
                   </div>
                 </div>
-                <SubmitButton size="sm" pendingText="Saving…">
-                  Record result
-                </SubmitButton>
+                <RecordResultButton />
               </form>
               {!s.unavailable_reported && (
                 <form action={reportUnavailable}>
