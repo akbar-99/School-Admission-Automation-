@@ -573,6 +573,7 @@ export async function sendAgreement(app: Application, parent: Parent, curriculum
 // ---------------------------------------------------------------------------
 async function notifyDetailsPending(app: Application, parent: Parent) {
   const portal = applyUrl(app.access_token);
+  const contact = await leadCreatorContact(app);
   await dispatch(
     multiChannel(
       {
@@ -580,6 +581,12 @@ async function notifyDetailsPending(app: Application, parent: Parent) {
         event: "N-2b",
         subject: "Complete your admission details",
         body: `Hello ${parent.full_name},\n\nPlease complete the remaining admission details (documents, addresses and parent information) to continue:\n${portal}`,
+        // details_pending_v1 — confirmed APPROVED + still UTILITY via the
+        // Graph API directly, not just the dashboard badge.
+        whatsappTemplate: {
+          name: "details_pending_v1",
+          params: [parent.full_name, portal, contact.name, contact.phone],
+        },
       },
       parent,
     ),
@@ -605,6 +612,7 @@ export async function handleFormSubmitted(appId: string) {
   const parent = parentRow as Parent;
 
   const messages: OutboundMessage[] = [];
+  const contact = await leadCreatorContact(app);
 
   // Parent confirmation
   messages.push(
@@ -614,6 +622,17 @@ export async function handleFormSubmitted(appId: string) {
         event: "N-2",
         subject: "Application received",
         body: `Hello ${parent.full_name},\n\nWe have received your admission application for ${app.grade_applying}. We will be in touch with the next steps.`,
+        // application_received_v1 — confirmed APPROVED + still UTILITY via
+        // the Graph API directly, not just the dashboard badge.
+        whatsappTemplate: {
+          name: "application_received_v1",
+          params: [
+            parent.full_name,
+            app.grade_applying ?? app.category ?? "the selected class",
+            contact.name,
+            contact.phone,
+          ],
+        },
       },
       parent,
     ),
@@ -796,6 +815,12 @@ export async function notifyClassChangeCancelled(appId: string, change: Applicat
             `Hello ${parent.full_name},\n\nThe change of class to ${toLabel} has been cancelled, so no new assessment is needed. ` +
             `Your child's admission for ${fromLabel} continues as before:\n${applyUrl(app.access_token)}\n\n` +
             `Questions? Contact ${contact.name} at ${contact.phone}.`,
+          // class_change_cancelled_v1 — confirmed APPROVED + still UTILITY
+          // via the Graph API directly, not just the dashboard badge.
+          whatsappTemplate: {
+            name: "class_change_cancelled_v1",
+            params: [parent.full_name, toLabel, fromLabel, applyUrl(app.access_token), contact.name, contact.phone],
+          },
         },
         parent,
       ),
@@ -891,6 +916,7 @@ export async function handleSlotBooked(
     : "";
 
   const context = staffContextLine(await studentLabel(app), parent.full_name);
+  const contact = await leadCreatorContact(app);
 
   // Teacher + lead-creator names, so the staff alerts below can name both
   // sides to each other — marketing sees who's teaching it, the teacher sees
@@ -945,6 +971,14 @@ export async function handleSlotBooked(
         event: "N-4",
         subject: "Assessment slot confirmed",
         body: `Hello ${parent.full_name},\n\nYour assessment is confirmed for ${when}.${joinLine}`,
+        // assessment_booked_v1 — confirmed APPROVED + still UTILITY via the
+        // Graph API directly. Points to the portal rather than the raw Zoom
+        // link (same reasoning as assessment_starting_soon_v3): it works
+        // whether or not the Zoom meeting exists yet.
+        whatsappTemplate: {
+          name: "assessment_booked_v1",
+          params: [parent.full_name, when, applyUrl(app.access_token), contact.name, contact.phone],
+        },
       },
       parent,
     ),
@@ -1016,6 +1050,7 @@ export async function backfillZoomLink(appId: string): Promise<boolean> {
   const parent = parentRow as Parent;
   const when = `${formatInZone(slot.starts_at, config.school.timezone)} ${config.school.timezoneLabel}`;
   const context = staffContextLine(await studentLabel(app), parent.full_name);
+  const contact = await leadCreatorContact(app);
 
   const messages: OutboundMessage[] = [
     ...multiChannel(
@@ -1026,6 +1061,12 @@ export async function backfillZoomLink(appId: string): Promise<boolean> {
         body: `Hello ${parent.full_name},\n\nHere's the online meeting link for your assessment on ${when}:\n${meeting.joinUrl}${
           meeting.passcode ? `\nPasscode: ${meeting.passcode}` : ""
         }`,
+        // assessment_link_ready_v1 — confirmed APPROVED + still UTILITY via
+        // the Graph API directly. Portal link, not the raw Zoom link.
+        whatsappTemplate: {
+          name: "assessment_link_ready_v1",
+          params: [parent.full_name, when, applyUrl(app.access_token), contact.name, contact.phone],
+        },
       },
       parent,
     ),
@@ -1376,6 +1417,12 @@ export async function notifyMissedAssessment(appId: string, missedSlot: { starts
         body:
           `Hello ${parent.full_name},\n\nWe noticed your child's assessment scheduled for ${when} wasn't attended.\n\n` +
           `Please pick a new time here:\n${link}\n\nQuestions? Contact ${contact.name} at ${contact.phone}.`,
+        // assessment_missed_v1 — confirmed APPROVED + still UTILITY via the
+        // Graph API directly, not just the dashboard badge.
+        whatsappTemplate: {
+          name: "assessment_missed_v1",
+          params: [parent.full_name, when, link, contact.name, contact.phone],
+        },
       },
       parent,
     ),
@@ -1694,6 +1741,7 @@ export async function notifySlotReassigned(input: {
           meeting.passcode ? `\nPasscode: ${meeting.passcode}` : ""
         }`
       : "";
+    const contact = await leadCreatorContact(app);
     messages.push(
       ...multiChannel(
         {
@@ -1701,6 +1749,12 @@ export async function notifySlotReassigned(input: {
           event: "SLOT_REASSIGNED",
           subject: "Your assessment teacher has changed",
           body: `Hello ${parent.full_name},\n\nYour assessment on ${when} is still confirmed, with a different teacher.${joinLine}`,
+          // assessment_teacher_changed_v1 — confirmed APPROVED + still
+          // UTILITY via the Graph API directly. Portal link, not raw Zoom.
+          whatsappTemplate: {
+            name: "assessment_teacher_changed_v1",
+            params: [parent.full_name, when, applyUrl(app.access_token), contact.name, contact.phone],
+          },
         },
         parent,
       ),
@@ -2007,6 +2061,12 @@ export async function handleAssessmentResult(
           event: "N-10",
           subject: "Admission update",
           body: `Hello ${parent.full_name},\n\nThank you for your interest. Unfortunately we are unable to offer admission at this time. We wish your child the very best.\n\nQuestions? Contact ${contact.name} at ${contact.phone}.`,
+          // admission_decision_v1 — confirmed APPROVED + still UTILITY via
+          // the Graph API directly, not just the dashboard badge.
+          whatsappTemplate: {
+            name: "admission_decision_v1",
+            params: [parent.full_name, contact.name, contact.phone],
+          },
         },
         parent,
       ),
@@ -2898,6 +2958,19 @@ export async function handleStudyMaterialPaymentCompleted(applicationId: string)
         body:
           `Hello ${parent.full_name},\n\nWe have received your study material payment of ${formatINR(amount)}. A receipt is available in your portal: ${applyUrl(app.access_token)}\n\n` +
           `Questions? Contact ${contact.name} at ${contact.phone}.`,
+        // Reuses N-7's already-approved payment_received_v2. The receipt
+        // route shows the most recent completed payment, which at this
+        // point is this study-material one.
+        whatsappTemplate: {
+          name: "payment_received_v2",
+          params: [
+            parent.full_name,
+            `${formatINR(amount)} for study material`,
+            `${config.appUrl}/api/receipt/${app.access_token}`,
+            contact.name,
+            contact.phone,
+          ],
+        },
       },
       parent,
     ),
